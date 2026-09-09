@@ -122,12 +122,19 @@ public enum SectionSource: String, Sendable {
   case planner
   case user
   case ai
+  /// The service's fourth value. A section written before provenance was
+  /// tracked, or by something that did not say who it was. Kept rather than
+  /// folded into one of the others because guessing here is exactly the mistake
+  /// the provenance badge exists to prevent — labelling a hand-written retro as
+  /// planner output invites a rerun to overwrite it.
+  case unknown
 
   public var label: String {
     switch self {
     case .planner: "自动规划"
     case .user: "手工编辑"
     case .ai: "AI"
+    case .unknown: "来源不明"
     }
   }
 
@@ -136,6 +143,7 @@ public enum SectionSource: String, Sendable {
     case .planner: .accent
     case .user: .neutral
     case .ai: .warn
+    case .unknown: .neutral
     }
   }
 }
@@ -215,6 +223,14 @@ public struct Cycle: Sendable, Equatable, Identifiable {
   public var runId: String?
   public var sections: [CycleSection]
   public var updatedAt: Date
+  /// Non-nil when the file's YAML front matter could not be parsed.
+  ///
+  /// Load-bearing, not diagnostic: the service *refuses* to write any section
+  /// of such a cycle (`cycles/file.ts` — "Refusing to write … its frontmatter
+  /// could not be parsed"). Without this the UI offers an edit button that can
+  /// only ever fail, and the user learns the file is broken by having their
+  /// typing rejected.
+  public var frontmatterError: String?
 
   public init(
     id: String,
@@ -225,7 +241,8 @@ public struct Cycle: Sendable, Equatable, Identifiable {
     ownerId: String,
     runId: String?,
     sections: [CycleSection],
-    updatedAt: Date
+    updatedAt: Date,
+    frontmatterError: String? = nil
   ) {
     self.id = id
     self.label = label
@@ -236,7 +253,11 @@ public struct Cycle: Sendable, Equatable, Identifiable {
     self.runId = runId
     self.sections = sections
     self.updatedAt = updatedAt
+    self.frontmatterError = frontmatterError
   }
+
+  /// Whether any section of this cycle can be saved at all.
+  public var isWritable: Bool { frontmatterError == nil }
 
   public func section(_ kind: CycleSectionKind) -> CycleSection? {
     sections.first { $0.kind == kind }
@@ -377,18 +398,31 @@ public enum KeyResultHealth: String, Sendable {
 public struct KeyResult: Sendable, Equatable, Identifiable {
   public let id: String
   public var title: String
-  public var priority: String
+  /// `P0` / `P1`, when the file says so.
+  ///
+  /// Optional because the OKR markdown has no priority column — the value, when
+  /// present, comes from an objective-level `Priority:` line that the service's
+  /// normaliser writes and its reader ignores. A file without one shows no pill
+  /// rather than an empty one.
+  public var priority: String?
   public var progress: Double
   public var detail: String?
-  public var health: KeyResultHealth
+  /// Optional, and usually absent.
+  ///
+  /// The OKR format carries no health, status or at-risk notion at all — this
+  /// was verified against the service's own reader. Deriving it from progress
+  /// alone is worse than leaving it out: without the cycle's date range, a key
+  /// result at 0% on day one is indistinguishable from one at 0% on the last
+  /// day, and the screen would open a fresh quarter painted red.
+  public var health: KeyResultHealth?
 
   public init(
     id: String,
     title: String,
-    priority: String,
+    priority: String?,
     progress: Double,
     detail: String? = nil,
-    health: KeyResultHealth
+    health: KeyResultHealth?
   ) {
     self.id = id
     self.title = title

@@ -1,9 +1,8 @@
 # Daily OS · macOS
 
-Daily OS 的 macOS 前端外壳：设计系统 + 八屏 UI 骨架 + 菜单栏项，跑在 mock 数据上。
+Daily OS 的 macOS 客户端：设计系统 + 八屏 + 菜单栏项，读你本机 daily-os 服务的真实数据。
 
-**这个仓库不包含后端，也不发起任何网络请求。** 它是形态和样式的真相源。
-真实产品（前端 + 后端 + 发布物）在私有仓库里，通过依赖这个包来复用整套 UI。
+**这个仓库不包含后端。** 服务在 daily-os 服务仓库里，跑在你自己的机器上；这里是它的客户端。
 
 - 设计决策与 token：[DESIGN.md](DESIGN.md)
 - iOS 端：[daily-os-ios](https://github.com/alexli-77/daily-os-ios)
@@ -11,12 +10,13 @@ Daily OS 的 macOS 前端外壳：设计系统 + 八屏 UI 骨架 + 菜单栏项
 
 ---
 
-## 两个 library
+## 三个 library
 
 | Target | 平台 | 内容 |
 | --- | --- | --- |
-| `DailyOSCore` | macOS + iOS | 色板、字体、间距、全部组件、领域模型、mock fixture、`AppState` |
+| `DailyOSCore` | macOS + iOS | 色板、字体、间距、全部组件、领域模型、fixture、`AppState` |
 | `DailyOSMac` | macOS | 分栏外壳、八个屏幕、菜单栏项 |
+| `DailyOSClient` | macOS + iOS | 本地服务的传输层、各端点解码器、`LiveAppState` |
 
 `DailyOSCore` 声明支持 iOS 且不含任何 macOS 专属 API，所以
 [daily-os-ios](https://github.com/alexli-77/daily-os-ios) 直接 SPM 依赖它，
@@ -121,27 +121,15 @@ App/                Xcode app target 的 scene 定义（刻意很薄）
 
 ---
 
-## 私有仓库怎么消费这个包
+## 数据是怎么进来的
 
-整个外壳只跟 `AppState` 一个类型说话。没有任何屏幕直接读 `MockData`，
-也没有任何 view 做 I/O。所以接真实数据是**替换一个类型**，不是改二十个文件：
+整个外壳只跟 `AppState` 一个类型说话。没有任何屏幕直接读 fixture，也没有任何 view 做 I/O。
+所以接真实数据是**替换一个类型**，不是改二十个文件——`LiveAppState`
+（`Sources/DailyOSClient/LiveAppState.swift`）继承 `AppState` 并覆写那几个 mutation，
+**八个屏幕一行都没改**。
 
-```swift
-import DailyOSCore
-
-@MainActor
-final class LiveAppState: AppState {
-  private let client: DailyOSClient   // 私有仓库自己的 HTTP/SSE 客户端
-
-  override func updateSection(cycleID: Cycle.ID, kind: CycleSectionKind, body: String) {
-    Task {
-      try await client.writeCycleSection(cycleID, kind, body)
-      await reload()
-    }
-  }
-  // send() / capture() / toggleSchedule() 同理
-}
-```
+写入是乐观的：先改本地再发请求，失败时 toast 说明并 `reload()` 把真相放回去。
+本地服务的往返是几毫秒，转圈等待会让勾一个复选框像在提交表单。
 
 `AppState` 上的每个 mutation 都很小，并且**按用户意图命名**而不是按它改的字段命名
 （`capture` / `acceptDraft` / `toggleTodo`），因为那正是需要接后端的接缝。
@@ -172,10 +160,41 @@ swift run daily-os-checks
 
 ---
 
+## 接后端
+
+服务把地址和令牌写在自己 checkout 的 `data/runtime/ui.json` 里，那个令牌直接认证为 admin
+（服务源码的注释点名了 mac-companion 是预期调用方）。所以：
+
+- **没有登录界面，也不存密码。** app 读那个文件，走 `Authorization: Bearer`
+- 令牌每次服务重启重新生成，client 在 401 时**重读文件重试一次**——那是正常路径不是错误
+- 不发 `Origin` 头。服务把无 Origin 的请求当作非浏览器客户端并跳过 CSRF 检查
+
+唯一需要告诉 app 的是**服务仓库在哪**，首次启动会让你选目录。
+
+```bash
+swift run daily-os-live <path-to-daily-os-feishu>
+```
+
+拿真实服务验证解码器，只打印数量和长度、不打印你的内容。`daily-os-checks` 证明解析器符合格式；
+这个证明它们**扛得住你磁盘上的文件**——两回事：fixture 是整齐的，被手工编辑了八个月的周期文件不是。
+目前发现的每一个解码 bug（小数秒、空 `updatedAt`、`team.self` 为 null、第四个 `source` 值）
+编译器和 fixture 都看不见。
+
+### 已接 / 未接
+
+| 已接真实数据 | 仍是示例数据 |
+| --- | --- |
+| 今天、周期、OKR、设置 | 对话、运行、产物、排程 |
+
+未接的屏幕在侧栏标了「演示」。半接的界面比未接的更让人困惑——示例数据足够像真的，
+而这个误会只有在你按它行动之后才会发现。
+
 ## 现状与边界
 
 - `swift build` 通过，零 warning；`daily-os-checks` 通过。
 - `xcodebuild` 通过，App 能启动，scene 层（`MenuBarExtra` / `Window` / `CommandGroup`）不崩。
+- **写入路径没有端到端验证过。** 读取全部对着真实服务跑通了（12 个周期 / 24 段 / 3 个 OKR 文件 /
+  59 个 KR）。但保存段落、点三色圈、快捷捕获这些**会写你的文件**，没有你的明确许可不会去试。
 - **但没有人逐屏看过 macOS 版。** 已验证的是「能编、能起、不崩」，不是「布局对」。
   iOS 版是逐屏在模拟器里看过的（并因此改掉了一个日期 locale 的 bug，见 0.1.1），
   macOS 版还没享受同等待遇。上面那节的 preview 是为了让这件事变成十分钟的活，

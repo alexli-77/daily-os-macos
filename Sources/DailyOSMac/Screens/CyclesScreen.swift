@@ -123,9 +123,16 @@ private struct CycleDetail: View {
 
   var body: some View {
     ScreenScaffold(cycle.label, subtitle: subtitle) {
+      if let problem = cycle.frontmatterError {
+        BrokenFrontmatterBanner(cycle: cycle, problem: problem)
+      }
       ForEach(CycleSectionKind.allCases) { kind in
         if let section = cycle.section(kind) {
-          CycleSectionPanel(cycle: cycle, section: section, editable: state.isViewingSelf)
+          CycleSectionPanel(
+            cycle: cycle,
+            section: section,
+            editable: state.isViewingSelf && cycle.isWritable
+          )
         }
       }
     } toolbar: {
@@ -370,6 +377,39 @@ private struct TaskDots: View {
       }
     }
     .opacity(enabled ? 1 : 0.55)
+  }
+}
+
+/// A cycle whose YAML front matter does not parse.
+///
+/// The service refuses to write *any* section of such a file, so the honest
+/// thing is to withdraw the edit controls and say why. The alternative — which
+/// is what this screen did until the wire format was checked — is an edit
+/// button that accepts your typing and then fails on save, teaching you that
+/// the app is broken rather than that the file is.
+private struct BrokenFrontmatterBanner: View {
+  let cycle: Cycle
+  let problem: String
+
+  var body: some View {
+    Panel {
+      VStack(alignment: .leading, spacing: Metrics.xs) {
+        HStack(spacing: Metrics.xs) {
+          Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.danger)
+          Text("这个周期文件的 front matter 解析不了，暂时不能编辑").inkStyle(Typo.bodyStrong)
+        }
+        Text(problem)
+          .font(Typo.mono)
+          .foregroundStyle(Palette.inkMuted)
+          .textSelection(.enabled)
+        Text("在编辑器里打开 \(cycle.relativePath) 修好文件顶部的 YAML，之后这里会自动恢复可编辑。")
+          .mutedStyle(Typo.body)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(Metrics.xs)
+      .background(Palette.softBackground(for: .danger))
+      .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
+    }
   }
 }
 

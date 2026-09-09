@@ -56,6 +56,16 @@ private struct Sidebar: View {
         if section == .cycles, state.pendingDraftCount > 0 {
           Pill("\(state.pendingDraftCount)", tone: .warn)
         }
+        // A screen still on the fixture says so here rather than looking like
+        // your data. The demo content is plausible enough to be mistaken for
+        // real, and that mistake is only found by acting on it.
+        if !state.wiredSections.contains(section) {
+          Spacer(minLength: 0)
+          Text("演示")
+            .font(Typo.label)
+            .foregroundStyle(Palette.inkMuted)
+            .help("这一屏还没接后端，显示的是示例数据")
+        }
       }
     } icon: {
       Image(systemName: section.icon)

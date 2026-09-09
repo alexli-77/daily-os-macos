@@ -92,13 +92,17 @@ private struct KeyResultRow: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.xxs) {
       HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
-        Pill(kr.priority, tone: kr.priority == "P0" ? .accent : .neutral)
+        if let priority = kr.priority {
+          Pill(priority, tone: priority == "P0" ? .accent : .neutral)
+        }
         Text(kr.title).inkStyle()
         Spacer(minLength: Metrics.xs)
-        Pill(kr.health.label, tone: kr.health.tone)
+        if let health = kr.health {
+          Pill(health.label, tone: health.tone)
+        }
       }
       HStack(spacing: Metrics.xs) {
-        ProgressTrack(fraction: kr.progress, tone: kr.health.tone)
+        ProgressTrack(fraction: kr.progress, tone: kr.health?.tone ?? .accent)
         Text("\(Int(kr.progress * 100))%")
           .font(Typo.tabularCaption)
           .foregroundStyle(Palette.inkMuted)

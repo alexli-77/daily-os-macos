@@ -30,6 +30,8 @@ targets:
         product: DailyOSCore
       - package: DailyOS
         product: DailyOSMac
+      - package: DailyOS
+        product: DailyOSClient
     info:
       path: App/Info.plist
       properties:

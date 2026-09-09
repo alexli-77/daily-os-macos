@@ -48,6 +48,15 @@ open class AppState {
   // Transient
   public var toast: String?
 
+  /// Which sections read real data.
+  ///
+  /// Defaults to everything, because the fixture backs every screen. A live
+  /// store narrows it, and the sidebar marks the rest. Half-wired screens that
+  /// silently show demo content are worse than unwired ones: the fixture is
+  /// plausible enough to be mistaken for your own data, and the mistake is only
+  /// discovered when you act on it.
+  public var wiredSections: Set<AppSection> = Set(AppSection.allCases)
+
   /// Seeds every collection from `MockData`. A subclass calls `super.init()`
   /// and then replaces the collections with whatever the service returned, so
   /// the first frame is populated rather than empty.
