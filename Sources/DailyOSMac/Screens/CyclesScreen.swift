@@ -161,7 +161,12 @@ private struct CycleSectionPanel: View {
   var body: some View {
     Panel(section.kind.label, subtitle: section.kind.hint) {
       VStack(alignment: .leading, spacing: Metrics.sm) {
-        if section.pendingDraft != nil {
+        // Gated on `editable`, not just on the draft existing. `acceptDraft`
+        // only ever writes to `cycles` — your own — so on a teammate's cycle the
+        // 合入 and 丢弃 buttons would render and then do nothing. Read-only means
+        // the control is absent, and a control that is present but inert is the
+        // worst of the three options.
+        if section.pendingDraft != nil, editable {
           DraftBanner(
             expanded: $showsDraftComparison,
             onAccept: { state.acceptDraft(cycleID: cycle.id, kind: section.kind) },
@@ -193,6 +198,12 @@ private struct CycleSectionPanel: View {
 
         HStack(spacing: Metrics.xs) {
           Pill(section.source.label, tone: section.source.tone)
+          // On a teammate's cycle the draft is still worth knowing about — it
+          // explains why their 要务 and their retro disagree — so the fact
+          // survives read-only even though the merge actions do not.
+          if section.pendingDraft != nil, !editable {
+            Pill("有新草稿", tone: .warn)
+          }
           Text("更新于 \(Fmt.stamp(section.updatedAt))").mutedStyle()
         }
       }
