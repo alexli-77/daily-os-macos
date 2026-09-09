@@ -130,9 +130,10 @@ swift run daily-os-checks
 ## 现状与边界
 
 - `swift build` 通过，零 warning；`daily-os-checks` 通过。
-- **App 本身没在 Xcode 里跑起来过**：写这个仓库的机器只有 Command Line Tools。
-  `DailyOSMac` 的代码类型检查是过的（它就是用 macOS SDK 编的），但 scene 层
-  （`MenuBarExtra`、`Window`、`CommandGroup`）第一次真跑预期要一轮小修。
+- `xcodebuild` 通过，App 能启动，scene 层（`MenuBarExtra` / `Window` / `CommandGroup`）不崩。
+- **但没有人逐屏看过 macOS 版。** 已验证的是「能编、能起、不崩」，不是「布局对」。
+  iOS 版是逐屏在模拟器里看过的（并因此改掉了一个日期 locale 的 bug，见 0.1.1），
+  macOS 版还没享受同等待遇。
 - Mock 数据是通用 demo 内容，不含任何真实的 OKR、issue id、团队名或文件路径。
   这个仓库是公开的，上游项目有 privacy-scan 门禁，别把真东西写进 `MockData.swift`。
 - 还没做的：App Icon、签名与公证、Sparkle 或 DMG 分发、动效规范。见 [DESIGN.md §10](DESIGN.md#10-还没做的)。
