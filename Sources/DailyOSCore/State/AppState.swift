@@ -31,6 +31,9 @@ open class AppState {
   public var schedules: [ScheduleEntry]
   public var threads: [ChatThread]
   public var sources: [SourceConnection]
+  /// Free-form conversation is a service-side config flag; the client reflects
+  /// it rather than discovering it by being refused. See `AgentMode`.
+  public var agentMode: AgentMode
 
   // Selection
   public var section: AppSection = .today
@@ -62,6 +65,7 @@ open class AppState {
     schedules = MockData.schedules
     threads = MockData.threads
     sources = MockData.sources
+    agentMode = MockData.agentMode
 
     viewingMemberID = MockData.account.id
     selectedCycleID = MockData.cycles.first?.id
@@ -111,9 +115,26 @@ open class AppState {
     threads.first { $0.id == selectedThreadID } ?? threads.first
   }
 
-  /// Today's token spend, for the status strip.
+  /// Today's token spend. Still derived — the Runs screen shows it. It left the
+  /// Today screen because cost is a question about the machine, and Today is a
+  /// question about the day.
   public var todayTokens: Int { runs.reduce(0) { $0 + $1.totalTokens } }
   public var todayCost: Double { runs.reduce(0) { $0 + $1.costUSD } }
+
+  /// What the Today header reports.
+  ///
+  /// Counts the plan, not the inbox: the plan is what you said you would do
+  /// today, and progress against a list you keep adding to is not progress.
+  /// Captures land in 我的待办 and are counted there.
+  public var dayProgress: DayProgress {
+    let target = plan.count
+    let done = plan.filter { $0.state == .done }.count
+    let planned = plan.reduce(0) { $0 + ($1.estimatedMinutes ?? 0) }
+    let remaining = plan
+      .filter { $0.state == .open }
+      .reduce(0) { $0 + ($1.estimatedMinutes ?? 0) }
+    return DayProgress(done: done, target: target, plannedMinutes: planned, remainingMinutes: remaining)
+  }
 
   /// Drives the sidebar badge and the menu bar dot.
   public var pendingDraftCount: Int {
@@ -208,6 +229,47 @@ open class AppState {
         sentAt: .now
       )
     )
+  }
+
+  /// Delete a conversation.
+  ///
+  /// Keeps a selection: dropping the selected thread and leaving nothing
+  /// selected shows an empty pane that reads like a failure rather than like a
+  /// completed delete.
+  open func deleteThread(_ id: ChatThread.ID) {
+    guard let index = threads.firstIndex(where: { $0.id == id }) else { return }
+    threads.remove(at: index)
+    if selectedThreadID == id {
+      selectedThreadID = threads.indices.contains(index) ? threads[index].id : threads.last?.id
+    }
+    toast = "已删除对话"
+  }
+
+  /// Click one of the three dots on a 要务 item.
+  ///
+  /// Rewrites the single source line in the section's markdown and leaves the
+  /// rest byte-identical — the file is the truth, and a status click must not
+  /// reformat someone's hand-written list as a side effect. Passing the same
+  /// status that is already set clears it, matching the web console.
+  open func setPriorityStatus(
+    cycleID: Cycle.ID,
+    line: Int,
+    to status: CycleTaskStatus?
+  ) {
+    guard isViewingSelf,
+          let cycleIndex = cycles.firstIndex(where: { $0.id == cycleID }),
+          let sectionIndex = cycles[cycleIndex].sections.firstIndex(where: { $0.kind == .priorities })
+    else { return }
+    let section = cycles[cycleIndex].sections[sectionIndex]
+    cycles[cycleIndex].sections[sectionIndex].body = PrioritiesDocument.markdown(
+      section.body,
+      settingLine: line,
+      to: status
+    )
+    cycles[cycleIndex].sections[sectionIndex].source = .user
+    cycles[cycleIndex].sections[sectionIndex].updatedAt = .now
+    cycles[cycleIndex].sections[sectionIndex].isTemplate = false
+    cycles[cycleIndex].updatedAt = .now
   }
 
   open func newThread() {

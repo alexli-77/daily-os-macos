@@ -49,19 +49,35 @@ public enum MockData {
         CycleSection(
           kind: .priorities,
           body: """
-          - [x] 把周期数据落成本地 markdown，作为唯一真相源
-          - [x] 团队同步走 upsert + 轮询，本地优先
-          - [ ] 把配置台面收敛到 owner-only
-          - [ ] 回归测试覆盖周期读写往返
+          ### 工作 · 技术专家
+          - **MIT** 把周期数据落成本地 markdown，作为唯一真相源 ✅
+          - 团队同步走 upsert + 轮询，本地优先 ✅
+          - 把配置台面收敛到 owner-only DEMO-12 🚧
+          - 回归测试覆盖周期读写往返 DEMO-15 ❌
+
+          ### 金钱 · 家庭理财
+          - 季度财富快照后校准三个数：runway / 月支出上限 / 现金储备线 ✅
+          - 决定二次换汇金额并执行 🚧
+
+          ### 自我 · 表达者
+          - 每周完成 2 次思考沉淀，其中至少 1 次可转化为公开输出
           """,
           source: .user,
           updatedAt: daysAgo(3),
           pendingDraft: """
-          - [x] 把周期数据落成本地 markdown，作为唯一真相源
-          - [x] 团队同步走 upsert + 轮询，本地优先
-          - [ ] 把配置台面收敛到 owner-only
-          - [ ] 回归测试覆盖周期读写往返
-          - [ ] 新增：给 Runs 页加 token / 成本列
+          ### 工作 · 技术专家
+          - **MIT** 把周期数据落成本地 markdown，作为唯一真相源 ✅
+          - 团队同步走 upsert + 轮询，本地优先 ✅
+          - 把配置台面收敛到 owner-only DEMO-12 🚧
+          - 回归测试覆盖周期读写往返 DEMO-15 ❌
+          - 新增：给运行页加 token / 成本列
+
+          ### 金钱 · 家庭理财
+          - 季度财富快照后校准三个数：runway / 月支出上限 / 现金储备线 ✅
+          - 决定二次换汇金额并执行 🚧
+
+          ### 自我 · 表达者
+          - 每周完成 2 次思考沉淀，其中至少 1 次可转化为公开输出
           """
         ),
         CycleSection(
@@ -174,10 +190,10 @@ public enum MockData {
   // MARK: Today
 
   public static let plan: [TodoItem] = [
-    TodoItem(id: "p1", text: "把配置台面收敛为 owner-only", kind: .priority, due: now.addingTimeInterval(3600 * 5), sourceRef: "DEMO-12"),
-    TodoItem(id: "p2", text: "周会 · 同步这一期的进展", kind: .schedule, due: now.addingTimeInterval(3600 * 2)),
-    TodoItem(id: "p3", text: "回归测试跑一遍", kind: .priority, sourceRef: "DEMO-15"),
-    TodoItem(id: "p4", text: "读半小时论文", kind: .habit),
+    TodoItem(id: "p1", text: "把配置台面收敛为 owner-only", kind: .priority, due: now.addingTimeInterval(3600 * 5), state: .done, sourceRef: "DEMO-12", estimatedMinutes: 90),
+    TodoItem(id: "p2", text: "周会 · 同步这一期的进展", kind: .schedule, due: now.addingTimeInterval(3600 * 2), estimatedMinutes: 45),
+    TodoItem(id: "p3", text: "回归测试跑一遍", kind: .priority, sourceRef: "DEMO-15", estimatedMinutes: 60),
+    TodoItem(id: "p4", text: "读半小时论文", kind: .habit, estimatedMinutes: 30),
   ]
 
   public static let todos: [TodoItem] = [
@@ -470,6 +486,10 @@ public enum MockData {
   ]
 
   // MARK: Providers
+
+  /// Off, because that is the service's default and therefore the state the UI
+  /// has to handle well. Flip it to `.enabled` in a preview to see the other one.
+  public static let agentMode: AgentMode = .disabled
 
   public static let providers = ["claude", "codex", "openai"]
   public static let models = ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"]

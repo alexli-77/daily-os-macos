@@ -52,6 +52,17 @@ public enum Fmt {
     return String(format: "%dh %02dm", minutes / 60, minutes % 60)
   }
 
+  /// "1h30m" / "45m" — planned effort, which is read in hours-and-minutes, not
+  /// in the seconds-precision form `duration(_:)` uses for machine runs.
+  public static func minutes(_ total: Int) -> String {
+    if total <= 0 { return "0m" }
+    let hours = total / 60
+    let rest = total % 60
+    if hours == 0 { return "\(rest)m" }
+    if rest == 0 { return "\(hours)h" }
+    return "\(hours)h\(rest)m"
+  }
+
   /// "12.4k" — token counts, which get long and are read at a glance.
   public static func compactCount(_ value: Int) -> String {
     if value < 1_000 { return "\(value)" }

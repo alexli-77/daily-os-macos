@@ -172,6 +172,12 @@ public struct CycleSection: Sendable, Equatable, Identifiable {
   /// A newer planner draft that is *not* being applied because the section was
   /// edited by hand. The UI shows it side by side and lets you merge.
   public var pendingDraft: String?
+  /// Still the placeholder the service seeds a new section with.
+  ///
+  /// Worth a badge rather than nothing: an untouched template reads exactly
+  /// like real content at a glance, and "why is my cycle full of things I never
+  /// wrote" is a confusing five minutes.
+  public var isTemplate: Bool
 
   public var id: String { kind.rawValue }
 
@@ -180,13 +186,21 @@ public struct CycleSection: Sendable, Equatable, Identifiable {
     body: String,
     source: SectionSource,
     updatedAt: Date,
-    pendingDraft: String? = nil
+    pendingDraft: String? = nil,
+    isTemplate: Bool = false
   ) {
     self.kind = kind
     self.body = body
     self.source = source
     self.updatedAt = updatedAt
     self.pendingDraft = pendingDraft
+    self.isTemplate = isTemplate
+  }
+
+  /// The 要务 body, parsed into groups. Empty for the other two sections, which
+  /// are prose and stay prose.
+  public var priorities: PrioritiesDocument {
+    kind == .priorities ? PrioritiesDocument(markdown: body) : PrioritiesDocument(markdown: "")
   }
 }
 
@@ -279,6 +293,13 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
   public var state: TodoState
   /// e.g. `LEO-287` — the evidence link back to Linear.
   public var sourceRef: String?
+  /// How long the planner thinks this needs.
+  ///
+  /// A *suggestion*, not a commitment — the Today screen shows it so the day
+  /// has a shape, and so that "four priorities" can be recognised as six hours
+  /// of work before the day starts rather than after it fails. Optional because
+  /// habits and short captures do not carry one.
+  public var estimatedMinutes: Int?
 
   public init(
     id: String,
@@ -286,7 +307,8 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
     kind: TodoKind,
     due: Date? = nil,
     state: TodoState = .open,
-    sourceRef: String? = nil
+    sourceRef: String? = nil,
+    estimatedMinutes: Int? = nil
   ) {
     self.id = id
     self.text = text
@@ -294,7 +316,38 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
     self.due = due
     self.state = state
     self.sourceRef = sourceRef
+    self.estimatedMinutes = estimatedMinutes
   }
+}
+
+/// What the Today screen puts across the top.
+///
+/// Replaces the token / cost / in-flight tiles that used to sit there. Those
+/// were about the machine; this is about the day. Cost still exists — it lives
+/// on the Runs screen, which is where you go when you are asking about the
+/// machine.
+public struct DayProgress: Sendable, Equatable {
+  public let done: Int
+  public let target: Int
+  /// Suggested minutes across everything still open.
+  public let plannedMinutes: Int
+  public let remainingMinutes: Int
+
+  public init(done: Int, target: Int, plannedMinutes: Int, remainingMinutes: Int) {
+    self.done = done
+    self.target = target
+    self.plannedMinutes = plannedMinutes
+    self.remainingMinutes = remainingMinutes
+  }
+
+  public var fraction: Double {
+    target > 0 ? min(Double(done) / Double(target), 1) : 0
+  }
+
+  /// Deliberately not a percentage of *time*. Hours spent is not progress, and
+  /// a bar that fills as the day burns down would say the opposite of what it
+  /// looks like it says.
+  public var isComplete: Bool { target > 0 && done >= target }
 }
 
 // MARK: - OKR

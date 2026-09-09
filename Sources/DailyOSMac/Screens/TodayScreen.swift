@@ -13,7 +13,7 @@ struct TodayScreen: View {
 
   var body: some View {
     ScreenScaffold("今天", subtitle: subtitle) {
-      StatusStrip()
+      DayProgressPanel()
       QuickCapturePanel()
       TwoColumns {
         PlanPanel()
@@ -30,28 +30,59 @@ struct TodayScreen: View {
   }
 }
 
-// MARK: - Status strip
+// MARK: - Day progress
 
-private struct StatusStrip: View {
+/// What the day looks like, in one panel.
+///
+/// This replaces the token / cost / in-flight tiles that used to sit here.
+/// Those answered "what is the machine doing"; they were three unrelated
+/// numbers that happened to be cheap to compute, and none of them changed what
+/// you would do next. Cost still exists — on the Runs screen, which is where
+/// you go when the machine *is* the question.
+///
+/// What is here instead answers "how is today going": how much of the plan is
+/// done, and how the remaining time is meant to be spent. The time allocation
+/// is a suggestion the planner makes, not a commitment — its job is to let you
+/// notice that four priorities is six hours of work *before* the day starts.
+private struct DayProgressPanel: View {
   @Environment(AppState.self) private var state
 
   var body: some View {
+    let progress = state.dayProgress
     Panel {
-      VStack(spacing: Metrics.sm) {
-        HStack(spacing: Metrics.md) {
-          StatTile(
-            "服务",
-            value: state.service.state.label,
-            tone: state.service.state.tone
-          )
-          StatTile("今日 token", value: Fmt.compactCount(state.todayTokens))
-          StatTile("今日成本", value: Fmt.money(state.todayCost))
-          StatTile(
-            "进行中",
-            value: "\(state.activeRuns.count)",
-            tone: state.activeRuns.isEmpty ? .neutral : .accent
-          )
+      VStack(alignment: .leading, spacing: Metrics.sm) {
+        HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
+          Text("今日进度").mutedStyle(Typo.label)
+          Spacer()
+          if state.service.state != .running {
+            StatusDot(state.service.state.label, tone: state.service.state.tone)
+          }
         }
+
+        HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
+          Text("\(progress.done)")
+            .font(.system(.largeTitle, design: .default).weight(.medium).monospacedDigit())
+            .foregroundStyle(progress.isComplete ? Palette.ok : Palette.ink)
+          Text("/ \(progress.target)")
+            .font(Typo.tabularBody)
+            .foregroundStyle(Palette.inkMuted)
+          Text(progress.isComplete ? "今天的计划做完了" : "已完成")
+            .mutedStyle(Typo.body)
+          Spacer(minLength: Metrics.xs)
+          if progress.remainingMinutes > 0 {
+            Text("还需 \(Fmt.minutes(progress.remainingMinutes))")
+              .font(Typo.tabularBody.weight(.medium))
+              .foregroundStyle(Palette.moss)
+          }
+        }
+
+        SegmentedProgress(items: state.plan)
+
+        if progress.plannedMinutes > 0 {
+          PanelDivider()
+          TimeAllocation(items: state.plan, total: progress.plannedMinutes)
+        }
+
         if let note = state.service.note {
           PanelDivider()
           Label(note, systemImage: "exclamationmark.triangle")
@@ -61,6 +92,89 @@ private struct StatusStrip: View {
         }
       }
     }
+  }
+}
+
+/// One segment per planned item, so the bar reads as "three things, one done"
+/// rather than as a continuous percentage. A day is countable; pretending it is
+/// continuous hides that the last 20% is one whole task.
+private struct SegmentedProgress: View {
+  let items: [TodoItem]
+
+  var body: some View {
+    HStack(spacing: 3) {
+      ForEach(items) { item in
+        Capsule()
+          .fill(item.state == .done ? Palette.ok : Palette.surfaceSunken)
+          .frame(height: 6)
+      }
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(Text("已完成 \(items.filter { $0.state == .done }.count) 项，共 \(items.count) 项"))
+  }
+}
+
+/// The suggested split of the day, as one proportional bar plus a legend.
+///
+/// Proportional rather than a list of durations because the useful question is
+/// not "how long is this one" but "what is eating the day" — and that is a
+/// comparison, which is what widths are for.
+private struct TimeAllocation: View {
+  let items: [TodoItem]
+  let total: Int
+
+  private var timed: [TodoItem] { items.filter { ($0.estimatedMinutes ?? 0) > 0 } }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Metrics.xs) {
+      HStack {
+        Text("建议分配").mutedStyle(Typo.label)
+        Spacer()
+        Text("共 \(Fmt.minutes(total))").font(Typo.tabularCaption).foregroundStyle(Palette.inkMuted)
+      }
+
+      GeometryReader { geo in
+        HStack(spacing: 2) {
+          ForEach(timed) { item in
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+              .fill(Palette.foreground(for: item.kind.tone))
+              .opacity(item.state == .done ? 0.35 : 1)
+              .frame(width: width(for: item, in: geo.size.width))
+          }
+        }
+      }
+      .frame(height: 10)
+
+      VStack(alignment: .leading, spacing: Metrics.xxs) {
+        ForEach(timed) { item in
+          HStack(spacing: Metrics.xs) {
+            Circle()
+              .fill(Palette.foreground(for: item.kind.tone))
+              .opacity(item.state == .done ? 0.35 : 1)
+              .frame(width: 6, height: 6)
+            Text(item.text)
+              .font(Typo.caption)
+              .foregroundStyle(item.state == .done ? Palette.inkMuted : Palette.ink)
+              .strikethrough(item.state == .done, color: Palette.inkMuted)
+              .lineLimit(1)
+            Spacer(minLength: Metrics.xs)
+            Text(Fmt.minutes(item.estimatedMinutes ?? 0))
+              .font(Typo.tabularCaption)
+              .foregroundStyle(Palette.inkMuted)
+          }
+        }
+      }
+    }
+  }
+
+  /// Floors at 12pt so a 15-minute task stays visible and clickable next to a
+  /// two-hour one; exact proportion is not worth an invisible segment.
+  private func width(for item: TodoItem, in available: CGFloat) -> CGFloat {
+    guard total > 0, available > 0 else { return 0 }
+    let gaps = CGFloat(max(timed.count - 1, 0)) * 2
+    let usable = max(available - gaps, 0)
+    let share = CGFloat(item.estimatedMinutes ?? 0) / CGFloat(total)
+    return max(usable * share, 12)
   }
 }
 

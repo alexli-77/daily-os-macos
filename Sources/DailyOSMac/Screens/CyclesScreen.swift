@@ -22,24 +22,20 @@ struct CyclesScreen: View {
         if let cycle = state.selectedCycle {
           CycleDetail(cycle: cycle)
         } else {
-          emptyDetail
+          EmptyState(
+            icon: "calendar.badge.plus",
+            title: "还没有周期",
+            message: state.isViewingSelf
+              ? "跑一次「周期规划」，或者直接在 20_CYCLES/ 里建一个 Markdown 文件。"
+              : "队友还没有同步过任何周期。",
+            actionTitle: state.isViewingSelf ? "跑一次规划" : nil,
+            action: state.isViewingSelf ? {} : nil
+          )
         }
       }
       .frame(maxWidth: .infinity)
     }
     .background(Palette.paper)
-  }
-
-  private var emptyDetail: some View {
-    EmptyState(
-      icon: "calendar.badge.plus",
-      title: "还没有周期",
-      message: state.isViewingSelf
-        ? "跑一次「周期规划」，或者直接在 20_CYCLES/ 里建一个 Markdown 文件。"
-        : "队友还没有同步过任何周期。",
-      actionTitle: state.isViewingSelf ? "跑一次规划" : nil,
-      action: state.isViewingSelf ? {} : nil
-    )
   }
 }
 
@@ -146,27 +142,45 @@ private struct CycleDetail: View {
   }
 }
 
-/// One of the three sections. Body, provenance, and — when the planner has
-/// produced something newer than your edits — the merge affordance.
+// MARK: - Section
+
+private enum SectionMode: String, CaseIterable, Identifiable {
+  case read
+  case edit
+
+  var id: String { rawValue }
+  var label: String { self == .read ? "阅读" : "编辑" }
+}
+
+/// One of the three sections, in either mode.
+///
+/// Read mode renders the markdown as the thing it describes — for 要务 that
+/// means groups, status dots and badges rather than a wall of `- ` lines. Edit
+/// mode shows the file. Both are needed: the rendered view is what you use
+/// daily, and the raw view is the escape hatch for everything the renderer does
+/// not know about, which in a hand-edited markdown file is always something.
+///
+/// Switching to 阅读 with unsaved text keeps the draft rather than discarding
+/// it, so the toggle can never eat typing and needs no confirmation dialog.
 private struct CycleSectionPanel: View {
   @Environment(AppState.self) private var state
   let cycle: Cycle
   let section: CycleSection
   let editable: Bool
 
-  @State private var isEditing = false
-  @State private var draft = ""
+  @State private var mode: SectionMode = .read
+  @State private var draft: String?
   @State private var showsDraftComparison = false
+
+  private var isDirty: Bool {
+    guard let draft else { return false }
+    return draft != section.body
+  }
 
   var body: some View {
     Panel(section.kind.label, subtitle: section.kind.hint) {
       VStack(alignment: .leading, spacing: Metrics.sm) {
-        // Gated on `editable`, not just on the draft existing. `acceptDraft`
-        // only ever writes to `cycles` — your own — so on a teammate's cycle the
-        // 合入 and 丢弃 buttons would render and then do nothing. Read-only means
-        // the control is absent, and a control that is present but inert is the
-        // worst of the three options.
-        if section.pendingDraft != nil, editable {
+        if section.pendingDraft != nil {
           DraftBanner(
             expanded: $showsDraftComparison,
             onAccept: { state.acceptDraft(cycleID: cycle.id, kind: section.kind) },
@@ -180,14 +194,19 @@ private struct CycleSectionPanel: View {
           } trailing: {
             LabeledBody(label: "自动规划的新草稿", text: pending, tone: .warn)
           }
-        } else if isEditing {
-          TextEditor(text: $draft)
-            .font(Typo.monoBody)
-            .scrollContentBackground(.hidden)
-            .padding(Metrics.xs)
-            .frame(minHeight: 180)
-            .background(Palette.surfaceSunken)
-            .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
+        } else if mode == .edit {
+          TextEditor(text: Binding(
+            get: { draft ?? section.body },
+            set: { draft = $0 }
+          ))
+          .font(Typo.monoBody)
+          .scrollContentBackground(.hidden)
+          .padding(Metrics.xs)
+          .frame(minHeight: 220)
+          .background(Palette.surfaceSunken)
+          .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
+        } else if section.kind == .priorities {
+          PrioritiesView(cycle: cycle, section: section, editable: editable)
         } else {
           Text(section.body.isEmpty ? "（空）" : section.body)
             .font(Typo.body)
@@ -198,36 +217,163 @@ private struct CycleSectionPanel: View {
 
         HStack(spacing: Metrics.xs) {
           Pill(section.source.label, tone: section.source.tone)
-          // On a teammate's cycle the draft is still worth knowing about — it
-          // explains why their 要务 and their retro disagree — so the fact
-          // survives read-only even though the merge actions do not.
-          if section.pendingDraft != nil, !editable {
-            Pill("有新草稿", tone: .warn)
-          }
           Text("更新于 \(Fmt.stamp(section.updatedAt))").mutedStyle()
+          if isDirty {
+            Pill("未保存", tone: .warn)
+          }
         }
       }
     } actions: {
+      if section.isTemplate {
+        Pill("模板", tone: .neutral)
+      }
       if editable {
-        if isEditing {
+        Picker("", selection: $mode) {
+          ForEach(SectionMode.allCases) { Text($0.label).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(width: 130)
+
+        if mode == .edit {
           Button("保存") {
-            state.updateSection(cycleID: cycle.id, kind: section.kind, body: draft)
-            isEditing = false
+            state.updateSection(cycleID: cycle.id, kind: section.kind, body: draft ?? section.body)
+            draft = nil
+            mode = .read
           }
           .buttonStyle(QuietButtonStyle())
-          Button("取消") { isEditing = false }
-            .buttonStyle(QuietButtonStyle(tone: .neutral))
-        } else {
-          Button("编辑") {
-            draft = section.body
-            isEditing = true
-          }
-          .buttonStyle(QuietButtonStyle())
+          .disabled(!isDirty)
         }
       }
     }
   }
 }
+
+// MARK: - Priorities
+
+/// 要务 in read mode: OKR-row groups, each item with its three status dots.
+private struct PrioritiesView: View {
+  @Environment(AppState.self) private var state
+  let cycle: Cycle
+  let section: CycleSection
+  let editable: Bool
+
+  var body: some View {
+    let doc = section.priorities
+    if doc.isEmpty {
+      Text("（空）").mutedStyle(Typo.body)
+    } else {
+      VStack(alignment: .leading, spacing: Metrics.md) {
+        if doc.trackedCount > 0 {
+          HStack(spacing: Metrics.xs) {
+            Text("\(doc.doneCount) / \(doc.trackedCount) 完成")
+              .font(Typo.tabularCaption)
+              .foregroundStyle(Palette.inkMuted)
+            ProgressTrack(fraction: Double(doc.doneCount) / Double(doc.trackedCount), tone: .ok)
+              .frame(maxWidth: 160)
+          }
+        }
+
+        if !doc.loose.isEmpty {
+          itemList(doc.loose)
+        }
+        ForEach(doc.groups) { group in
+          VStack(alignment: .leading, spacing: Metrics.xs) {
+            Text(group.title).inkStyle(Typo.heading)
+            if group.items.isEmpty {
+              Text("这一行下没有条目。").mutedStyle()
+            } else {
+              itemList(group.items)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private func itemList(_ items: [PriorityItem]) -> some View {
+    VStack(alignment: .leading, spacing: 0) {
+      ForEach(items) { item in
+        PriorityRow(cycle: cycle, item: item, editable: editable)
+      }
+    }
+  }
+}
+
+private struct PriorityRow: View {
+  @Environment(AppState.self) private var state
+  let cycle: Cycle
+  let item: PriorityItem
+  let editable: Bool
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
+      TaskDots(current: item.status, enabled: editable) { status in
+        state.setPriorityStatus(cycleID: cycle.id, line: item.sourceLine, to: status)
+      }
+      if item.isMIT {
+        Text("MIT")
+          .font(Typo.label)
+          .foregroundStyle(.white)
+          .padding(.horizontal, Metrics.xs)
+          .padding(.vertical, 2)
+          .background(Palette.danger, in: Capsule())
+      }
+      Text(item.text)
+        .font(Typo.body)
+        .foregroundStyle(item.status == .done ? Palette.inkMuted : Palette.ink)
+        .strikethrough(item.status == .done, color: Palette.inkMuted)
+        .textSelection(.enabled)
+      ForEach(item.refs, id: \.self) { ref in
+        Pill(ref, tone: .neutral, mono: true)
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(.vertical, Metrics.xxs)
+    .overlay(alignment: .leading) {
+      Rectangle()
+        .fill(item.status.map { Palette.foreground(for: $0.tone) } ?? Palette.line)
+        .frame(width: 2)
+        .offset(x: -Metrics.xs)
+    }
+  }
+}
+
+/// The three dots: 完成 / 部分 / 未做.
+///
+/// Clicking the one that is already set clears it, matching the web console —
+/// there is no fourth "unset" dot to aim at, and marking something by mistake
+/// has to be undoable in the same gesture that caused it.
+private struct TaskDots: View {
+  let current: CycleTaskStatus?
+  let enabled: Bool
+  let onPick: (CycleTaskStatus?) -> Void
+
+  var body: some View {
+    HStack(spacing: 3) {
+      ForEach(CycleTaskStatus.allCases) { status in
+        let isOn = current == status
+        Button {
+          onPick(isOn ? nil : status)
+        } label: {
+          Circle()
+            .strokeBorder(Palette.foreground(for: status.tone), lineWidth: 1.5)
+            .background(Circle().fill(isOn ? Palette.foreground(for: status.tone) : .clear))
+            .frame(width: 11, height: 11)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .help(isOn ? "\(status.label)（再点一次取消）" : status.label)
+        .accessibilityLabel(Text(status.label))
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
+      }
+    }
+    .opacity(enabled ? 1 : 0.55)
+  }
+}
+
+// MARK: - Draft
 
 private struct DraftBanner: View {
   @Binding var expanded: Bool
@@ -280,7 +426,7 @@ private struct LabeledBody: View {
 }
 
 /// The one that has already produced a bug: a teammate's cycle must render with
-/// no edit controls and no merge banner, from the same view.
+/// no edit controls, no mode toggle and no clickable dots, from the same view.
 #Preview("周期 · 队友只读") {
   CyclesScreen()
     .environment(AppState.previewTeammate())

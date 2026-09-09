@@ -23,6 +23,8 @@ struct ChatScreen: View {
 
 private struct ThreadList: View {
   @Environment(AppState.self) private var state
+  @State private var hovered: ChatThread.ID?
+  @State private var pendingDelete: ChatThread?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -32,6 +34,7 @@ private struct ThreadList: View {
         Button { state.newThread() } label: { Image(systemName: "square.and.pencil") }
           .buttonStyle(.plain)
           .foregroundStyle(Palette.moss)
+          .help("新对话")
       }
       .padding(Metrics.sm)
       Divider()
@@ -41,15 +44,46 @@ private struct ThreadList: View {
             SelectableRow(isSelected: thread.id == state.selectedThread?.id) {
               state.selectedThreadID = thread.id
             } content: {
-              VStack(alignment: .leading, spacing: Metrics.xxs) {
-                Text(thread.title).inkStyle().lineLimit(1)
-                Text(Fmt.stamp(thread.updatedAt)).mutedStyle()
+              HStack(spacing: Metrics.xs) {
+                VStack(alignment: .leading, spacing: Metrics.xxs) {
+                  Text(thread.title).inkStyle().lineLimit(1)
+                  Text(Fmt.stamp(thread.updatedAt)).mutedStyle()
+                }
+                Spacer(minLength: 0)
+                // Revealed on hover rather than always present: a delete
+                // control on every row in a list you scroll is a control you
+                // eventually hit by accident.
+                if hovered == thread.id {
+                  Button { pendingDelete = thread } label: {
+                    Image(systemName: "trash")
+                  }
+                  .buttonStyle(.plain)
+                  .foregroundStyle(Palette.inkMuted)
+                  .help("删除对话")
+                }
               }
+            }
+            .onHover { hovered = $0 ? thread.id : (hovered == thread.id ? nil : hovered) }
+            .contextMenu {
+              Button("删除对话", role: .destructive) { pendingDelete = thread }
             }
           }
         }
         .padding(Metrics.xs)
       }
+    }
+    .confirmationDialog(
+      "删除「\(pendingDelete?.title ?? "")」？",
+      isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+      titleVisibility: .visible
+    ) {
+      Button("删除", role: .destructive) {
+        if let thread = pendingDelete { state.deleteThread(thread.id) }
+        pendingDelete = nil
+      }
+      Button("取消", role: .cancel) { pendingDelete = nil }
+    } message: {
+      Text("对话和它的工具调用记录会一起删除，无法撤销。")
     }
   }
 }
@@ -66,11 +100,7 @@ private struct Conversation: View {
           if let thread = state.selectedThread, !thread.messages.isEmpty {
             ForEach(thread.messages) { MessageBubble(message: $0) }
           } else {
-            EmptyState(
-              icon: "bubble.left.and.text.bubble.right",
-              title: "问点什么",
-              message: "它读得到你的周期、OKR 和本地 Vault。问「这一期为什么只完成了一半」比问「帮我总结」有用得多。"
-            )
+            EmptyChatState()
           }
         }
         .padding(Metrics.screenPadding)
@@ -78,6 +108,33 @@ private struct Conversation: View {
       }
       .background(Palette.paper)
       Composer()
+    }
+  }
+}
+
+/// The empty conversation.
+///
+/// What goes here depends on whether free chat is on, because the two states
+/// want opposite things from you: with agent mode on, a good opening is a
+/// question; with it off, the only thing that will work is one of seven words.
+/// Showing the same encouraging prompt in both cases is how you get someone
+/// typing a paragraph into a command parser.
+private struct EmptyChatState: View {
+  @Environment(AppState.self) private var state
+
+  var body: some View {
+    if state.agentMode.allowsFreeChat {
+      EmptyState(
+        icon: "bubble.left.and.text.bubble.right",
+        title: "问点什么",
+        message: "它读得到你的周期、OKR 和本地 Vault。问「这一期为什么只完成了一半」比问「帮我总结」有用得多。"
+      )
+    } else {
+      EmptyState(
+        icon: "terminal",
+        title: "现在只响应指令",
+        message: "自由对话（agent mode）还没开启。下面这些词直接发就能用，或者去设置里打开自由对话。"
+      )
     }
   }
 }
@@ -161,6 +218,8 @@ private struct ToolTrace: View {
   }
 }
 
+// MARK: - Composer
+
 private struct Composer: View {
   @Environment(AppState.self) private var state
 
@@ -168,8 +227,12 @@ private struct Composer: View {
     @Bindable var state = state
     VStack(spacing: 0) {
       Divider()
+      if !state.agentMode.allowsFreeChat {
+        AgentModeNotice()
+      }
+      CommandPalette()
       HStack(alignment: .bottom, spacing: Metrics.xs) {
-        TextField("问一句…", text: $state.composerText, axis: .vertical)
+        TextField(placeholder, text: $state.composerText, axis: .vertical)
           .textFieldStyle(.plain)
           .font(Typo.body)
           .lineLimit(1...6)
@@ -185,6 +248,71 @@ private struct Composer: View {
     }
     .background(Palette.surface)
   }
+
+  private var placeholder: String {
+    state.agentMode.allowsFreeChat ? "问一句…" : "输入指令，例如 plan"
+  }
+}
+
+/// Says the free-chat switch is off *before* you type, and says where it is.
+///
+/// The service already reports this — but only as a reply to a message you have
+/// already sent, which is the wrong moment to find out and reads as a rejection
+/// rather than as a setting.
+private struct AgentModeNotice: View {
+  @Environment(AppState.self) private var state
+
+  var body: some View {
+    HStack(spacing: Metrics.xs) {
+      Image(systemName: "info.circle").foregroundStyle(Palette.inkMuted)
+      Text("自由对话未开启，现在只响应下面这些指令。")
+        .font(Typo.caption)
+        .foregroundStyle(Palette.ink)
+      Spacer(minLength: Metrics.xs)
+      if state.account.role.canConfigure {
+        Button("去开启") { state.section = .settings }
+          .buttonStyle(QuietButtonStyle())
+          .help("设置 → 模型 → 自由对话（interaction.feishu.agent_mode.enabled）")
+      }
+    }
+    .padding(.horizontal, Metrics.sm)
+    .padding(.vertical, Metrics.xs)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Palette.surfaceSunken)
+  }
+}
+
+/// The commands, as chips.
+///
+/// Clicking fills the field instead of sending. Several of these take an
+/// optional suffix after a colon (`plan：今天优先 X`), and sending on click
+/// would hide that the suffix exists — as well as firing a workflow on a single
+/// misplaced click.
+private struct CommandPalette: View {
+  @Environment(AppState.self) private var state
+
+  var body: some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: Metrics.xs) {
+        ForEach(ChatCommand.palette) { command in
+          Button {
+            state.composerText = command.keyword
+          } label: {
+            Text(command.label)
+              .font(Typo.label)
+              .foregroundStyle(Palette.moss)
+              .padding(.horizontal, Metrics.xs)
+              .padding(.vertical, Metrics.xxs)
+              .background(Palette.mossSoft, in: Capsule())
+          }
+          .buttonStyle(.plain)
+          .help("\(command.keyword) — \(command.detail)")
+        }
+      }
+      .padding(.horizontal, Metrics.sm)
+      .padding(.top, Metrics.xs)
+    }
+  }
 }
 
 // MARK: - Previews
@@ -192,6 +320,15 @@ private struct Composer: View {
 #Preview("对话") {
   ChatScreen()
     .environment(AppState.previewOwner())
+    .frame(width: 1_040, height: 720)
+}
+
+/// Free chat switched on — the empty state and the placeholder both change.
+#Preview("对话 · 自由对话已开启") {
+  let state = AppState.previewOwner()
+  state.agentMode = .enabled
+  return ChatScreen()
+    .environment(state)
     .frame(width: 1_040, height: 720)
 }
 

@@ -6,15 +6,43 @@ import DailyOSCore
 /// Deliberately not a form. The objectives live in markdown next to the cycles;
 /// this screen exists so that when you are writing a review you can see what you
 /// said you were doing without leaving the app. Editing opens the file.
+///
+/// The files are tabs rather than a stack. Stacked, the annual objectives sat
+/// below a scroll of quarterly ones and were effectively never seen — and the
+/// two are alternatives you compare, not a sequence you read. Tabs also keep
+/// the file path visible for whichever one you are actually looking at.
 struct OKRScreen: View {
   @Environment(AppState.self) private var state
+  @State private var selectedFileID: OkrFile.ID?
+
+  private var current: OkrFile? {
+    state.okrFiles.first { $0.id == selectedFileID } ?? state.okrFiles.first
+  }
 
   var body: some View {
-    ScreenScaffold("OKR", subtitle: "来自 10_OKR/ 的快照") {
-      ForEach(state.okrFiles) { file in
-        Panel(file.label, subtitle: file.fileName) {
+    ScreenScaffold("OKR", subtitle: current?.fileName) {
+      if state.okrFiles.count > 1 {
+        Picker("", selection: Binding(
+          get: { current?.id ?? "" },
+          set: { selectedFileID = $0 }
+        )) {
+          ForEach(state.okrFiles) { file in
+            Text(file.label).tag(file.id)
+          }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(maxWidth: 320, alignment: .leading)
+      }
+
+      if let file = current {
+        Panel(file.label, subtitle: "\(file.objectives.count) 个目标") {
           if file.objectives.isEmpty {
-            EmptyState(icon: "target", title: "这个文件里还没有目标", message: "在 \(file.fileName) 里写一个 Objective。")
+            EmptyState(
+              icon: "target",
+              title: "这个文件里还没有目标",
+              message: "在 \(file.fileName) 里写一个 Objective。"
+            )
           } else {
             VStack(spacing: Metrics.md) {
               ForEach(Array(file.objectives.enumerated()), id: \.element.id) { index, objective in
@@ -25,6 +53,14 @@ struct OKRScreen: View {
           }
         } actions: {
           Button("打开文件") {}.buttonStyle(QuietButtonStyle())
+        }
+      } else {
+        Panel {
+          EmptyState(
+            icon: "target",
+            title: "还没有 OKR 文件",
+            message: "在 10_OKR/ 下建一个 markdown 文件，这里会读它。"
+          )
         }
       }
     }
