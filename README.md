@@ -67,6 +67,34 @@ Fixture 在 `AppState+Preview.swift`：`previewOwner` / `previewTeammate` / `pre
 2. 删掉模板的 `ContentView.swift` 和 `DailyOSApp.swift`，把本仓库的 `App/DailyOSApp.swift` 加入 target
 3. File → Add Package Dependencies → Add Local → 选仓库根目录 → 勾上 `DailyOSCore` 和 `DailyOSMac`
 
+### 装到另一台 Mac 上（不需要 Apple 开发者账号）
+
+从源码构建出来的 `.app` 双击就能开，不需要签名、不需要公证、不需要那 $99：
+
+```bash
+xcodegen generate
+xcodebuild build -project DailyOS.xcodeproj -scheme DailyOS \
+  -destination 'platform=macOS' -derivedDataPath .build/dd CODE_SIGNING_ALLOWED=NO
+open .build/dd/Build/Products/Debug/DailyOS.app
+```
+
+能这样跑，是因为 **Gatekeeper 拦的是 `com.apple.quarantine` 这个扩展属性，而它是下载器打上去的，不是 app 自带的。** 本地构建的产物没有这个标记，所以不经过 Gatekeeper。
+
+（`CODE_SIGNING_ALLOWED=NO` 不等于完全没签名：Apple Silicon 上 arm64 可执行文件必须有签名才能运行，链接器会自动打一个 ad-hoc 签名。够本机跑，不够分发。）
+
+**拷给别人时，用什么方式传决定了对方要不要跟 Gatekeeper 搏斗：**
+
+| 传输方式 | 带 quarantine | 对方双击 |
+| --- | --- | --- |
+| `scp` / `rsync` / U 盘 | 否 | 直接开 |
+| AirDrop / 浏览器下载 / Messages | 是 | 被拦 |
+
+万一被拦了，对方要走：双击 → 被拦 → 系统设置 → 隐私与安全性 → 往下滚 → 「仍要打开」→ 认证 → 再双击。macOS 15 起 Apple 取消了「右键 → 打开」这个捷径，只剩系统设置这条路。
+
+`xattr -dr com.apple.quarantine` 一行也能解决，但**别把这行写进给别人的安装说明**——让用户在终端里手动关掉一个安全检查，是个很糟的信号，何况他们照做一次之后就会对下一个来路不明的 app 也照做。
+
+**那什么时候才真的需要 $99？** 当你希望一个还不认识你的人，从网页下载完直接双击就能用的时候。在那之前它是纯支出，而这个决定完全可逆——`project.yml` 里 `ENABLE_HARDENED_RUNTIME: YES` 已经预留好了公证的前提。发布链路本身记在 Linear 的 LEO-296 里。
+
 ---
 
 ## 目录
