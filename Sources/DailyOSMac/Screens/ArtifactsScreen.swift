@@ -29,7 +29,7 @@ struct ArtifactsScreen: View {
     EmptyState(
       icon: "shippingbox",
       title: "还没有产物",
-      message: "workflow 生成的文件会出现在这里，并且指回生成它的那次运行。"
+      message: "工作流生成的文件会出现在这里，并且指回生成它的那次运行。"
     )
   }
 }
@@ -94,7 +94,7 @@ private struct ArtifactDetail: View {
           EmptyState(
             icon: artifact.type.icon,
             title: "无法预览",
-            message: "\(artifact.type.rawValue) 不在可预览类型里。用系统默认程序打开。",
+            message: "\(artifact.type.label) 不在可预览类型里。用系统默认程序打开。",
             actionTitle: "打开",
             action: {}
           )
@@ -105,7 +105,7 @@ private struct ArtifactDetail: View {
 
       Panel("信息") {
         VStack(spacing: 0) {
-          KeyValueRow("类型", artifact.type.rawValue, mono: true)
+          KeyValueRow("类型", artifact.type.label, mono: true)
           PanelDivider()
           KeyValueRow("大小", Fmt.bytes(artifact.byteSize))
           PanelDivider()
@@ -125,7 +125,7 @@ private struct ArtifactDetail: View {
   }
 
   private var subtitle: String {
-    "\(artifact.type.rawValue) · \(Fmt.bytes(artifact.byteSize))"
+    "\(artifact.type.label) · \(Fmt.bytes(artifact.byteSize))"
   }
 }
 

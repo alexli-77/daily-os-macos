@@ -69,7 +69,7 @@ private struct Conversation: View {
             EmptyState(
               icon: "bubble.left.and.text.bubble.right",
               title: "问点什么",
-              message: "它读得到你的周期、OKR 和 vault。问「这一期为什么只完成了一半」比问「帮我总结」有用得多。"
+              message: "它读得到你的周期、OKR 和本地 Vault。问「这一期为什么只完成了一半」比问「帮我总结」有用得多。"
             )
           }
         }

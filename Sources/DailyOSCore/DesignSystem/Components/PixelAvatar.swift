@@ -6,7 +6,7 @@ import SwiftUI
 /// function and PRNG included, so an account draws the *same* avatar on the Mac,
 /// on the phone and in the browser. That only holds if the arithmetic matches
 /// exactly — hence FNV-1a and mulberry32 reproduced verbatim rather than
-/// replaced with something more Swift-ish. `PixelAvatarTests` pins the output.
+/// replaced with something more Swift-ish. `daily-os-checks` pins the output.
 public struct PixelAvatar: View {
   private let seed: String
   private let size: CGFloat
@@ -33,7 +33,7 @@ public struct PixelAvatar: View {
     }
     .frame(width: size, height: size)
     .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
-    .accessibilityLabel(Text("Avatar"))
+    .accessibilityLabel(Text("头像"))
   }
 }
 

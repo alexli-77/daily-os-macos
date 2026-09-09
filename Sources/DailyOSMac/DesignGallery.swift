@@ -103,7 +103,7 @@ public struct DesignGallery: View {
           EmptyState(
             icon: "calendar.badge.plus",
             title: "还没有周期",
-            message: "跑一次「周期规划」，或者直接在 20_CYCLES/ 里建一个 markdown 文件。",
+            message: "跑一次「周期规划」，或者直接在 20_CYCLES/ 里建一个 Markdown 文件。",
             actionTitle: "跑一次规划",
             action: {}
           )

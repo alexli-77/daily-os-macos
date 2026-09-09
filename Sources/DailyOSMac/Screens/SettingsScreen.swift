@@ -18,7 +18,7 @@ struct SettingsScreen: View {
   @State private var model = MockData.models.first ?? ""
 
   var body: some View {
-    ScreenScaffold("设置", subtitle: state.account.role.canConfigure ? "只有 owner 能改这里的东西" : nil) {
+    ScreenScaffold("设置", subtitle: state.account.role.canConfigure ? "只有所有者能改这里的东西" : nil) {
       if state.account.role.canConfigure {
         AccountPanel()
         ProviderPanel(provider: $provider, model: $model)
@@ -29,8 +29,8 @@ struct SettingsScreen: View {
         Panel {
           EmptyState(
             icon: "lock",
-            title: "这台机器的配置属于 owner",
-            message: "你可以读写自己的周期和待办，但 provider、密钥和数据源由 owner 管理。"
+            title: "这台机器的配置属于所有者",
+            message: "你可以读写自己的周期和待办，但服务商、密钥和数据源由所有者管理。"
           )
         }
       }
@@ -53,7 +53,7 @@ private struct AccountPanel: View {
             Text(state.account.email).mutedStyle()
           }
           Spacer()
-          Pill(state.account.role.rawValue, tone: .accent)
+          Pill(state.account.role.label, tone: .accent)
         }
         .padding(.bottom, Metrics.sm)
         PanelDivider()
@@ -76,9 +76,9 @@ private struct ProviderPanel: View {
   @Binding var model: String
 
   var body: some View {
-    Panel("模型", subtitle: "决定 workflow 和对话用什么跑") {
+    Panel("模型", subtitle: "决定工作流和对话用什么跑") {
       VStack(spacing: Metrics.sm) {
-        KeyValueRow("Provider") {
+        KeyValueRow("服务商") {
           Picker("", selection: $provider) {
             ForEach(MockData.providers, id: \.self) { Text($0).tag($0) }
           }
@@ -96,7 +96,7 @@ private struct ProviderPanel: View {
           .frame(maxWidth: 220, alignment: .leading)
         }
         PanelDivider()
-        KeyValueRow("API Key") {
+        KeyValueRow("API 密钥") {
           HStack(spacing: Metrics.xs) {
             Text("••••••••••••").font(Typo.monoBody).foregroundStyle(Palette.inkMuted)
             Button("显示") {}.buttonStyle(QuietButtonStyle())
@@ -104,7 +104,7 @@ private struct ProviderPanel: View {
           }
         }
         PanelDivider()
-        KeyValueRow("Skill") {
+        KeyValueRow("技能") {
           HStack(spacing: Metrics.xs) {
             Pill("已安装", tone: .ok)
             Text("weekly-review v1.4").font(Typo.mono).foregroundStyle(Palette.inkMuted)

@@ -35,7 +35,7 @@ struct CyclesScreen: View {
       icon: "calendar.badge.plus",
       title: "还没有周期",
       message: state.isViewingSelf
-        ? "跑一次「周期规划」，或者直接在 20_CYCLES/ 里建一个 markdown 文件。"
+        ? "跑一次「周期规划」，或者直接在 20_CYCLES/ 里建一个 Markdown 文件。"
         : "队友还没有同步过任何周期。",
       actionTitle: state.isViewingSelf ? "跑一次规划" : nil,
       action: state.isViewingSelf ? {} : nil
@@ -178,7 +178,7 @@ private struct CycleSectionPanel: View {
           TwoColumns {
             LabeledBody(label: "当前（你的版本）", text: section.body)
           } trailing: {
-            LabeledBody(label: "planner 新草稿", text: pending, tone: .warn)
+            LabeledBody(label: "自动规划的新草稿", text: pending, tone: .warn)
           }
         } else if isEditing {
           TextEditor(text: $draft)
@@ -237,7 +237,7 @@ private struct DraftBanner: View {
   var body: some View {
     HStack(spacing: Metrics.xs) {
       Image(systemName: "arrow.triangle.branch").foregroundStyle(Palette.warn)
-      Text("planner 有一版新草稿。你手工改过这一段，所以没有自动覆盖。")
+      Text("自动规划生成了新草稿。你手工改过这一段，所以没有自动覆盖。")
         .font(Typo.caption)
         .foregroundStyle(Palette.ink)
       Spacer(minLength: Metrics.xs)

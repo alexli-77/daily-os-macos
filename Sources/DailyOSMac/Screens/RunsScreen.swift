@@ -17,7 +17,7 @@ struct RunsScreen: View {
         if let run = state.selectedRun {
           RunDetail(run: run)
         } else {
-          EmptyState(icon: "waveform.path.ecg", title: "还没有运行记录", message: "跑一次 workflow 之后这里会有记录。")
+          EmptyState(icon: "waveform.path.ecg", title: "还没有运行记录", message: "跑一次工作流之后这里会有记录。")
         }
       }
       .frame(maxWidth: .infinity)

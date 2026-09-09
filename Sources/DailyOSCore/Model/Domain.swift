@@ -55,9 +55,18 @@ public enum Role: String, Sendable {
   case admin
   case member
 
-  /// Only the owner sees the configuration surface. This mirrors LEO-292 —
-  /// hiding the controls is presentation; the service still enforces it.
+  /// Only the owner sees the configuration surface — hiding the controls is
+  /// presentation; the service still enforces it.
   public var canConfigure: Bool { self == .owner || self == .admin }
+
+  /// The on-screen name. `rawValue` is the wire format and stays English.
+  public var label: String {
+    switch self {
+    case .owner: "所有者"
+    case .admin: "管理员"
+    case .member: "成员"
+    }
+  }
 }
 
 public struct Account: Sendable, Equatable, Identifiable {
@@ -116,7 +125,7 @@ public enum SectionSource: String, Sendable {
 
   public var label: String {
     switch self {
-    case .planner: "planner"
+    case .planner: "自动规划"
     case .user: "手工编辑"
     case .ai: "AI"
     }
@@ -141,14 +150,14 @@ public enum CycleSectionKind: String, Sendable, CaseIterable, Identifiable {
   public var label: String {
     switch self {
     case .priorities: "要务"
-    case .retro: "Retro"
-    case .review: "Review"
+    case .retro: "复盘"
+    case .review: "总结"
     }
   }
 
   public var hint: String {
     switch self {
-    case .priorities: "这一期打算做完的事。planner 生成，你可以随时改。"
+    case .priorities: "这一期打算做完的事。自动规划生成，你可以随时改。"
     case .retro: "这一期实际发生了什么。手写为主。"
     case .review: "对比计划与执行之后的结论。"
     }
@@ -490,6 +499,18 @@ public enum ArtifactType: String, Sendable {
     switch self {
     case .markdown, .json, .csv, .image: true
     case .pdf: false
+    }
+  }
+
+  /// Format names stay as they are written everywhere else; only the one that
+  /// is a common noun rather than a format gets translated.
+  public var label: String {
+    switch self {
+    case .markdown: "Markdown"
+    case .json: "JSON"
+    case .image: "图片"
+    case .csv: "CSV"
+    case .pdf: "PDF"
     }
   }
 }
