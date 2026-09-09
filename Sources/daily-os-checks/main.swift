@@ -100,8 +100,24 @@ check(Fmt.compactCount(940) == "940", "counts below 1k should be exact")
 check(Fmt.compactCount(12_400) == "12.4k", "thousands should be compacted")
 check(Fmt.money(0.0312) == "$0.0312", "sub-dollar cost needs four decimals to be readable")
 
+// 5. Dates render in the UI's language, not the device's.
+//
+// This shipped wrong once: the simulator's en_US locale produced
+// "Wednesday, Sep 9 · 当前周期 8.24-9.6" — one sentence in two languages. Asserted
+// on language markers rather than exact strings so the check survives a machine
+// in a different timezone. Delete this block when the UI is actually localised.
+let heading = Fmt.dayHeading(.now)
+check(heading.contains("月") && heading.contains("星期"), "dayHeading fell back to the device locale: \(heading)")
+
+let old = Date.now.addingTimeInterval(-30 * 86_400)
+check(Fmt.stamp(old).contains("月"), "stamp fell back to the device locale: \(Fmt.stamp(old))")
+
+let clock = Fmt.time(.now)
+check(clock.contains(":"), "time should render a clock: \(clock)")
+check(!clock.contains("AM") && !clock.contains("PM"), "time fell back to the device locale: \(clock)")
+
 if failures.isEmpty {
-  print("ok — \(fixtures.count) avatar fixtures, 400 generated seeds, formatting")
+  print("ok — \(fixtures.count) avatar fixtures, 400 generated seeds, formatting, locale")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

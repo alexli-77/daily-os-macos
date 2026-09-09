@@ -24,7 +24,7 @@ struct TodayScreen: View {
   }
 
   private var subtitle: String {
-    let date = Date.now.formatted(.dateTime.month().day().weekday(.wide))
+    let date = Fmt.dayHeading()
     guard let cycle = state.currentCycle else { return date }
     return "\(date) · 当前周期 \(Fmt.cycleTitle(cycle))"
   }

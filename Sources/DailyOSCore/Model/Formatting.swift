@@ -6,9 +6,22 @@ import Foundation
 /// subtly inconsistent — "2 分钟前" in one panel, "14:32" in the next, "2026-09-09
 /// 14:32:07" in a third. One helper each, used everywhere.
 public enum Fmt {
+  /// Dates follow the UI language, not the device.
+  ///
+  /// Every string in this app is hard-coded Chinese; there is no string catalog
+  /// yet. Left to the device locale, a phone set to English renders
+  /// "Wednesday, Sep 9 · 当前周期 8.24-9.6" and "更新于 Sep 6 at 1:21 AM" — the
+  /// two halves of one sentence in two languages, which reads as a bug rather
+  /// than as a setting.
+  ///
+  /// When the UI is actually localised this constant should be deleted, not
+  /// changed: at that point the device locale becomes the right answer and
+  /// pinning it would be the bug.
+  private static let locale = Locale(identifier: "zh_Hans")
+
   /// "14:32"
   public static func time(_ date: Date) -> String {
-    date.formatted(date: .omitted, time: .shortened)
+    date.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(locale))
   }
 
   /// "9月9日 14:32" — for anything older than today.
@@ -16,7 +29,15 @@ public enum Fmt {
     if Calendar.current.isDate(date, inSameDayAs: now) {
       return time(date)
     }
-    return date.formatted(.dateTime.month().day().hour().minute())
+    return date.formatted(.dateTime.month().day().hour().minute().locale(locale))
+  }
+
+  /// "9月9日 星期三" — the Today screen's subtitle.
+  ///
+  /// Here rather than in the screen because both platforms show it and a
+  /// formatter written twice is a formatter that diverges once.
+  public static func dayHeading(_ date: Date = .now) -> String {
+    date.formatted(.dateTime.month().day().weekday(.wide).locale(locale))
   }
 
   /// "1.4s" / "2m 08s" — run durations.
