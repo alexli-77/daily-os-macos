@@ -42,6 +42,23 @@ swift build && swift run daily-os-checks
 brew install xcodegen && xcodegen generate && open DailyOS.xcodeproj
 ```
 
+### 逐屏看
+
+不用跑 App。在 Xcode 里打开任意一个屏幕文件，⌥⌘↩ 打开 canvas，每个屏幕都带 preview：
+
+| 文件 | preview |
+| --- | --- |
+| `DesignGallery.swift` | 全部 token 与组件，浅色 / 深色各一版 |
+| `Screens/*.swift` | 八个屏幕，各带空状态 |
+| `CyclesScreen.swift` | 额外一版「队友只读」——这个状态出过 bug |
+| `SettingsScreen.swift` | 额外一版 member 视角 |
+| `MacRootView.swift` | 整个窗口 |
+| `CompanionMenu.swift` | 菜单栏项，含服务降级 |
+
+Fixture 在 `AppState+Preview.swift`：`previewOwner` / `previewTeammate` / `previewMember` /
+`previewEmpty` / `previewDegraded`。这个 App 有意思的状态不是「有数据 / 没数据」，
+是**谁的数据**和**你被允许对它做什么**——所以这几个是分开的 preview，不是靠脑补的变体。
+
 ### 不用 XcodeGen
 
 `project.yml` 只是省事，手工建也就三步：
@@ -133,7 +150,8 @@ swift run daily-os-checks
 - `xcodebuild` 通过，App 能启动，scene 层（`MenuBarExtra` / `Window` / `CommandGroup`）不崩。
 - **但没有人逐屏看过 macOS 版。** 已验证的是「能编、能起、不崩」，不是「布局对」。
   iOS 版是逐屏在模拟器里看过的（并因此改掉了一个日期 locale 的 bug，见 0.1.1），
-  macOS 版还没享受同等待遇。
+  macOS 版还没享受同等待遇。上面那节的 preview 是为了让这件事变成十分钟的活，
+  但**它们只是让你能看，不代表已经有人看过**。
 - Mock 数据是通用 demo 内容，不含任何真实的 OKR、issue id、团队名或文件路径。
   这个仓库是公开的，上游项目有 privacy-scan 门禁，别把真东西写进 `MockData.swift`。
 - 还没做的：App Icon、签名与公证、Sparkle 或 DMG 分发、动效规范。见 [DESIGN.md §10](DESIGN.md#10-还没做的)。

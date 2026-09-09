@@ -186,3 +186,17 @@ private struct Composer: View {
     .background(Palette.surface)
   }
 }
+
+// MARK: - Previews
+
+#Preview("对话") {
+  ChatScreen()
+    .environment(AppState.previewOwner())
+    .frame(width: 1_040, height: 720)
+}
+
+#Preview("对话 · 空状态") {
+  ChatScreen()
+    .environment(AppState.previewEmpty())
+    .frame(width: 1_040, height: 720)
+}

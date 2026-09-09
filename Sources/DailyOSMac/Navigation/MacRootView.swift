@@ -93,3 +93,10 @@ private struct SidebarFooter: View {
     }
   }
 }
+
+// MARK: - Previews
+
+#Preview("整个窗口") {
+  RootView(state: AppState.previewOwner())
+    .frame(width: 1_120, height: 760)
+}

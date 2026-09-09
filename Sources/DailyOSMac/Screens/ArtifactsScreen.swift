@@ -128,3 +128,17 @@ private struct ArtifactDetail: View {
     "\(artifact.type.rawValue) · \(Fmt.bytes(artifact.byteSize))"
   }
 }
+
+// MARK: - Previews
+
+#Preview("产物") {
+  ArtifactsScreen()
+    .environment(AppState.previewOwner())
+    .frame(width: 1_040, height: 720)
+}
+
+#Preview("产物 · 空状态") {
+  ArtifactsScreen()
+    .environment(AppState.previewEmpty())
+    .frame(width: 1_040, height: 720)
+}

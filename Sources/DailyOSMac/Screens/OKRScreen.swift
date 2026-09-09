@@ -75,3 +75,11 @@ private struct KeyResultRow: View {
     .padding(.vertical, Metrics.xxs)
   }
 }
+
+// MARK: - Previews
+
+#Preview("OKR") {
+  OKRScreen()
+    .environment(AppState.previewOwner())
+    .frame(width: 940, height: 760)
+}

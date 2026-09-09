@@ -143,3 +143,17 @@ private struct StepRow: View {
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
+
+// MARK: - Previews
+
+#Preview("运行") {
+  RunsScreen()
+    .environment(AppState.previewOwner())
+    .frame(width: 1_040, height: 720)
+}
+
+#Preview("运行 · 空状态") {
+  RunsScreen()
+    .environment(AppState.previewEmpty())
+    .frame(width: 1_040, height: 720)
+}

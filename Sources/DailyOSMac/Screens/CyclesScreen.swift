@@ -270,3 +270,25 @@ private struct LabeledBody: View {
     }
   }
 }
+
+// MARK: - Previews
+
+#Preview("周期 · 我的") {
+  CyclesScreen()
+    .environment(AppState.previewOwner())
+    .frame(width: 1_040, height: 760)
+}
+
+/// The one that has already produced a bug: a teammate's cycle must render with
+/// no edit controls and no merge banner, from the same view.
+#Preview("周期 · 队友只读") {
+  CyclesScreen()
+    .environment(AppState.previewTeammate())
+    .frame(width: 1_040, height: 760)
+}
+
+#Preview("周期 · 空状态") {
+  CyclesScreen()
+    .environment(AppState.previewEmpty())
+    .frame(width: 1_040, height: 760)
+}

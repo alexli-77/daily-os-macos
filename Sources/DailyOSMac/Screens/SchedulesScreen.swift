@@ -70,3 +70,17 @@ private struct ScheduleRow: View {
     .padding(.vertical, Metrics.xs)
   }
 }
+
+// MARK: - Previews
+
+#Preview("排程") {
+  SchedulesScreen()
+    .environment(AppState.previewOwner())
+    .frame(width: 940, height: 640)
+}
+
+#Preview("排程 · 空状态") {
+  SchedulesScreen()
+    .environment(AppState.previewEmpty())
+    .frame(width: 940, height: 640)
+}

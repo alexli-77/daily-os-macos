@@ -115,3 +115,15 @@ private struct QuickCaptureField: View {
 public enum DailyOSWindow {
   public static let main = "daily-os.main"
 }
+
+// MARK: - Previews
+
+#Preview("菜单栏") {
+  CompanionMenu()
+    .environment(AppState.previewOwner())
+}
+
+#Preview("菜单栏 · 服务降级") {
+  CompanionMenu()
+    .environment(AppState.previewDegraded())
+}

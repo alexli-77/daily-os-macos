@@ -195,3 +195,23 @@ private struct TodoRow: View {
     .frame(minHeight: Metrics.hitTarget)
   }
 }
+
+// MARK: - Previews
+
+#Preview("今天") {
+  TodayScreen()
+    .environment(AppState.previewOwner())
+    .frame(width: 940, height: 720)
+}
+
+#Preview("今天 · 空状态") {
+  TodayScreen()
+    .environment(AppState.previewEmpty())
+    .frame(width: 940, height: 720)
+}
+
+#Preview("今天 · 服务降级") {
+  TodayScreen()
+    .environment(AppState.previewDegraded())
+    .frame(width: 940, height: 720)
+}

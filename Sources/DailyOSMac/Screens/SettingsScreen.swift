@@ -198,3 +198,18 @@ private struct ServicePanel: View {
     }
   }
 }
+
+// MARK: - Previews
+
+#Preview("设置 · owner") {
+  SettingsScreen()
+    .environment(AppState.previewOwner())
+    .frame(width: 940, height: 800)
+}
+
+/// A member gets an explanation, not a disabled form.
+#Preview("设置 · member") {
+  SettingsScreen()
+    .environment(AppState.previewMember())
+    .frame(width: 940, height: 800)
+}
