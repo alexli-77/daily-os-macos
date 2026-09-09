@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  package:
+    name: Build + checks
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift build
+      - name: Cross-platform checks
+        run: swift run daily-os-checks
+
+  core-ios:
+    # DailyOSCore is a dependency of daily-os-ios, so it has to keep compiling
+    # for iOS. `swift build` on a Mac never proves that.
+    name: DailyOSCore builds for iOS
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          xcodebuild build \
+            -scheme DailyOSCore \
+            -destination 'generic/platform=iOS Simulator' \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO
+
+  app:
+    name: Build the Mac app
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - run: |
+            xcodebuild build \
+              -project DailyOS.xcodeproj \
+              -scheme DailyOS \
+              -destination 'platform=macOS' \
+              CODE_SIGNING_ALLOWED=NO

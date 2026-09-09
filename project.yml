@@ -1,0 +1,54 @@
+# XcodeGen spec.
+#
+# The .xcodeproj is generated rather than committed: a project file is a merge
+# conflict generator, and this repository exists to be forked and vendored into
+# a private release repo. Run `xcodegen generate` (brew install xcodegen) and
+# open DailyOS.xcodeproj.
+#
+# If you would rather not install XcodeGen, see README §"Without XcodeGen" —
+# creating the target by hand is a three-step job.
+
+name: DailyOS
+options:
+  bundleIdPrefix: com.example.dailyos
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+packages:
+  DailyOS:
+    path: .
+
+targets:
+  DailyOS:
+    type: application
+    platform: macOS
+    sources:
+      - path: App
+    dependencies:
+      - package: DailyOS
+        product: DailyOSCore
+      - package: DailyOS
+        product: DailyOSMac
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Daily OS
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSMinimumSystemVersion: "14.0"
+        LSApplicationCategoryType: public.app-category.productivity
+        # The menu bar item is the always-available entry point, but this is not
+        # an agent app — it has a real window and belongs in the Dock while open.
+        LSUIElement: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.dailyos.mac
+        MARKETING_VERSION: "0.1.0"
+        SWIFT_VERSION: "6.0"
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_STYLE: Automatic
+        # The daily-os service runs on localhost and this app is a client of it;
+        # the sandbox's localhost restrictions would need an entitlement dance
+        # that buys nothing for a single-user local tool.
+        ENABLE_APP_SANDBOX: NO
