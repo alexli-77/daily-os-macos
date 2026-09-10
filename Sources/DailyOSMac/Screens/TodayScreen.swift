@@ -54,56 +54,146 @@ struct TodayScreen: View {
 private struct DayProgressPanel: View {
   @Environment(AppState.self) private var state
 
+  /// The donut is square and the left column is pinned to the same height, so
+  /// the panel reads as one block rather than as a chart bolted onto a stat.
+  private static let chartSide: CGFloat = 148
+
   var body: some View {
     let progress = state.dayProgress
     Panel {
-      VStack(alignment: .leading, spacing: Metrics.sm) {
-        HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
-          Text("今日进度").mutedStyle(Typo.label)
-          Spacer()
-          if state.service.state != .running {
-            StatusDot(state.service.state.label, tone: state.service.state.tone)
+      HStack(alignment: .top, spacing: Metrics.lg) {
+        VStack(alignment: .leading, spacing: Metrics.sm) {
+          HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
+            Text("今日进度").mutedStyle(Typo.label)
+            Spacer()
+            if state.service.state != .running {
+              StatusDot(state.service.state.label, tone: state.service.state.tone)
+            }
           }
-        }
 
-        HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
-          Text("\(progress.done)")
-            .font(.system(.largeTitle, design: .default).weight(.medium).monospacedDigit())
-            .foregroundStyle(progress.isComplete ? Palette.ok : Palette.ink)
-          Text("/ \(progress.target)")
-            .font(Typo.tabularBody)
-            .foregroundStyle(Palette.inkMuted)
-          Text(progress.isComplete ? "今天的计划做完了" : "已完成")
-            .mutedStyle(Typo.body)
-          Spacer(minLength: Metrics.xs)
-          if progress.remainingMinutes > 0 {
-            Text("还需 \(Fmt.minutes(progress.remainingMinutes))")
-              .font(Typo.tabularBody.weight(.medium))
-              .foregroundStyle(Palette.moss)
+          HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
+            Text("\(progress.done)")
+              .font(.system(.largeTitle, design: .default).weight(.medium).monospacedDigit())
+              .foregroundStyle(progress.isComplete ? Palette.ok : Palette.ink)
+            Text("/ \(progress.target)")
+              .font(Typo.tabularBody)
+              .foregroundStyle(Palette.inkMuted)
+            Text(progress.isComplete ? "今天的计划做完了" : "已完成")
+              .mutedStyle(Typo.body)
+            Spacer(minLength: Metrics.xs)
+            if progress.remainingMinutes > 0 {
+              Text("还需 \(Fmt.minutes(progress.remainingMinutes))")
+                .font(Typo.tabularBody.weight(.medium))
+                .foregroundStyle(Palette.moss)
+            }
           }
+
+          SegmentedProgress(items: state.plan)
+
+          // Gated on "is there a plan at all", not on "does the plan carry
+          // minutes". The old `plannedMinutes > 0` gate is why this block
+          // disappeared: with no estimates the sum is always zero and the whole
+          // feature silently stopped rendering. A missing input should look
+          // like a missing input.
+          if !state.plan.isEmpty {
+            PanelDivider()
+            TimeAllocation(items: state.plan, total: progress.plannedMinutes)
+          }
+
+          if let note = state.service.note {
+            PanelDivider()
+            Label(note, systemImage: "exclamationmark.triangle")
+              .font(Typo.caption)
+              .foregroundStyle(Palette.warn)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
+
+          Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
 
-        SegmentedProgress(items: state.plan)
-
-        // Gated on "is there a plan at all", not on "does the plan carry
-        // minutes". The old `plannedMinutes > 0` gate is why this block
-        // disappeared: the service supplies no estimates, so the sum is always
-        // zero and the whole feature silently stopped rendering. A missing
-        // input should look like a missing input.
         if !state.plan.isEmpty {
-          PanelDivider()
-          TimeAllocation(items: state.plan, total: progress.plannedMinutes)
-        }
-
-        if let note = state.service.note {
-          PanelDivider()
-          Label(note, systemImage: "exclamationmark.triangle")
-            .font(Typo.caption)
-            .foregroundStyle(Palette.warn)
-            .frame(maxWidth: .infinity, alignment: .leading)
+          TimeDonut(items: state.plan, total: progress.plannedMinutes)
+            .frame(width: Self.chartSide, height: Self.chartSide)
         }
       }
+      .frame(minHeight: state.plan.isEmpty ? 0 : Self.chartSide)
     }
+  }
+}
+
+/// The day's time split, as a ring.
+///
+/// Answers "what is eating the day", which is a comparison — and comparisons
+/// are what angles and widths are for. It sits beside 今日进度 rather than under
+/// it because the two are the same question asked twice: how much of today is
+/// done, and how much of today there is.
+///
+/// It has to survive having nothing to compare, and that is not a rare state:
+/// the planner omits `minutes` whenever it cannot judge, and any plan generated
+/// before the prompt asked for the field has none at all.
+private struct TimeDonut: View {
+  let items: [TodoItem]
+  let total: Int
+
+  private var timed: [TodoItem] { items.filter { ($0.estimatedMinutes ?? 0) > 0 } }
+
+  var body: some View {
+    if timed.isEmpty {
+      empty
+    } else {
+      DonutChart(slices: slices, lineWidth: 20) {
+        VStack(spacing: 0) {
+          Text(Fmt.minutes(total))
+            .font(Typo.tabularBody.weight(.medium))
+            .foregroundStyle(Palette.ink)
+          Text("共 \(timed.count) 项")
+            .font(Typo.caption)
+            .foregroundStyle(Palette.inkMuted)
+        }
+      }
+      .help("按估时分配今天的时间")
+    }
+  }
+
+  /// One slice per estimated item, in plan order, so a slice's colour matches
+  /// its legend row without either needing to be sorted.
+  ///
+  /// Finished items keep their slice and get faded rather than being dropped.
+  /// Removing them would shrink the ring as the day went on, which would make
+  /// the total silently mean "what is left" in a chart labelled with the day's
+  /// whole planned time.
+  private var slices: [DonutSlice] {
+    items.enumerated().compactMap { index, item in
+      guard let minutes = item.estimatedMinutes, minutes > 0 else { return nil }
+      return DonutSlice(
+        id: item.id,
+        label: "\(item.text) · \(Fmt.minutes(minutes))",
+        value: Double(minutes),
+        color: Palette.series(index),
+        isSpent: item.state != .open
+      )
+    }
+  }
+
+  private var empty: some View {
+    ZStack {
+      // A hairline outline, not a 20pt dashed stroke. Dashing a ring that thick
+      // turns it into a sunburst — the loudest thing in the panel, drawn to say
+      // that there is nothing here.
+      Circle()
+        .strokeBorder(Palette.line, style: StrokeStyle(lineWidth: 1.5, dash: [4, 5]))
+        .padding(10)
+      VStack(spacing: 2) {
+        Image(systemName: "stopwatch")
+          .font(.system(size: 15))
+          .foregroundStyle(Palette.inkMuted)
+        Text("没有估时")
+          .font(Typo.caption)
+          .foregroundStyle(Palette.inkMuted)
+      }
+    }
+    .help("这份计划没有耗时估计，点每行的估时按钮可以自己填")
   }
 }
 
@@ -126,22 +216,30 @@ private struct SegmentedProgress: View {
   }
 }
 
-/// The suggested split of the day, as one proportional bar plus a legend.
+/// The legend for the ring beside it.
 ///
-/// Proportional rather than a list of durations because the useful question is
-/// not "how long is this one" but "what is eating the day" — and that is a
-/// comparison, which is what widths are for.
+/// The proportional bar this used to draw is gone: it and the donut answered the
+/// same question, and two pictures of one number is how a panel stops being
+/// readable. What is left is the part a ring genuinely cannot do — naming the
+/// slices and giving each one its figure.
 ///
-/// It also has to survive having nothing to compare. Every item the live store
-/// produces arrives with `estimatedMinutes == nil`, so the honest states are
-/// three, not two: all estimated, some estimated, none estimated. The last one
-/// used to render as a blank space, which read as "this feature was removed"
-/// rather than as "nobody supplied the numbers".
+/// It still has to survive having nothing to compare, and the honest states are
+/// three rather than two: all estimated, some estimated, none estimated. The
+/// middle one is the trap — a chart drawn from two of five items looks like the
+/// whole day unless it says otherwise.
 private struct TimeAllocation: View {
   let items: [TodoItem]
   let total: Int
 
-  private var timed: [TodoItem] { items.filter { ($0.estimatedMinutes ?? 0) > 0 } }
+  /// Carries each item's index in the *plan*, not in the filtered list, because
+  /// that index picks the colour and the ring is coloured the same way. Filter
+  /// first and the third slice ends up the second legend colour.
+  private var timed: [(index: Int, item: TodoItem)] {
+    items.enumerated()
+      .filter { ($0.element.estimatedMinutes ?? 0) > 0 }
+      .map { (index: $0.offset, item: $0.element) }
+  }
+
   private var untimedCount: Int { items.count - timed.count }
 
   var body: some View {
@@ -157,65 +255,39 @@ private struct TimeAllocation: View {
       if timed.isEmpty {
         MissingEstimates(count: items.count)
       } else {
-        bar
         legend
         if untimedCount > 0 {
-          // Partial data is its own trap: a bar drawn from two of five items
-          // looks like the whole day unless it says otherwise.
-          Text("另有 \(untimedCount) 项没有估时，点右边的时间就能填。").mutedStyle()
+          Text("另有 \(untimedCount) 项没有估时，点行尾的估时按钮就能填。").mutedStyle()
         }
       }
     }
-    // Correcting one row's estimate is worth watching: the widths above are the
-    // answer to "does today fit", and seeing them move is the point of editing.
+    // Correcting one row's estimate is worth watching: these figures and the
+    // ring beside them are the answer to "does today fit", and seeing them move
+    // is the point of editing one.
     .animation(.snappy(duration: 0.32), value: total)
     .animation(.snappy(duration: 0.32), value: timed.count)
   }
 
-  private var bar: some View {
-    GeometryReader { geo in
-      HStack(spacing: 2) {
-        ForEach(timed) { item in
-          RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .fill(Palette.foreground(for: item.kind.tone))
-            .opacity(item.state == .done ? 0.35 : 1)
-            .frame(width: width(for: item, in: geo.size.width))
-        }
-      }
-    }
-    .frame(height: 10)
-  }
-
   private var legend: some View {
     VStack(alignment: .leading, spacing: Metrics.xxs) {
-      ForEach(timed) { item in
+      ForEach(timed, id: \.item.id) { entry in
         HStack(spacing: Metrics.xs) {
-          Circle()
-            .fill(Palette.foreground(for: item.kind.tone))
-            .opacity(item.state == .done ? 0.35 : 1)
-            .frame(width: 6, height: 6)
-          Text(item.text)
+          RoundedRectangle(cornerRadius: 2, style: .continuous)
+            .fill(Palette.series(entry.index))
+            .opacity(entry.item.state == .open ? 1 : 0.35)
+            .frame(width: 8, height: 8)
+          Text(entry.item.text)
             .font(Typo.caption)
-            .foregroundStyle(item.state == .done ? Palette.inkMuted : Palette.ink)
-            .strikethrough(item.state == .done, color: Palette.inkMuted)
+            .foregroundStyle(entry.item.state == .open ? Palette.ink : Palette.inkMuted)
+            .strikethrough(entry.item.state == .done, color: Palette.inkMuted)
             .lineLimit(1)
           Spacer(minLength: Metrics.xs)
-          Text(Fmt.minutes(item.estimatedMinutes ?? 0))
+          Text(Fmt.minutes(entry.item.estimatedMinutes ?? 0))
             .font(Typo.tabularCaption)
             .foregroundStyle(Palette.inkMuted)
         }
       }
     }
-  }
-
-  /// Floors at 12pt so a 15-minute task stays visible and clickable next to a
-  /// two-hour one; exact proportion is not worth an invisible segment.
-  private func width(for item: TodoItem, in available: CGFloat) -> CGFloat {
-    guard total > 0, available > 0 else { return 0 }
-    let gaps = CGFloat(max(timed.count - 1, 0)) * 2
-    let usable = max(available - gaps, 0)
-    let share = CGFloat(item.estimatedMinutes ?? 0) / CGFloat(total)
-    return max(usable * share, 12)
   }
 }
 
@@ -237,7 +309,7 @@ private struct MissingEstimates: View {
       Label("这 \(count) 项都没有耗时估计", systemImage: "questionmark.circle")
         .font(Typo.caption)
         .foregroundStyle(Palette.inkMuted)
-      Text("估时由 daily_plan 给出，模型判断不出来时会省略，今天之前跑的计划则一条都没有。点每行右边的「—」可以自己填。")
+      Text("估时由 daily_plan 给出，模型判断不出来时会省略，今天之前跑的计划则一条都没有。点每行的「估时」可以自己填。")
         .mutedStyle()
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -328,7 +400,12 @@ private struct PlanRow: View {
       TaskRow(
         item: item,
         actions: actions,
-        onToggleCheck: item.state == .open ? { send("complete", note: nil) } : nil,
+        // Both directions. A tick that cannot be untucked is the one action on
+        // this screen with no way back, and it is also the easiest to do by
+        // accident — the circle is the biggest target on the row.
+        onToggleCheck: item.state == .deferred ? nil : {
+          send(item.state == .done ? "reopen" : "complete", note: nil)
+        },
         selectedID: $selectedID
       ) {
         accessory
@@ -358,9 +435,9 @@ private struct PlanRow: View {
 
   /// The estimate, and the way in to changing it.
   ///
-  /// A row with no estimate still shows the chip — as a dash. The point of the
-  /// number is to make the day's total addable, and a blank that looks like
-  /// nothing gives you no reason to suspect the total is short.
+  /// A row with no estimate still shows the chip. The point of the number is to
+  /// make the day's total addable, and a blank that looks like nothing gives you
+  /// no reason to suspect the total is short.
   @ViewBuilder private var accessory: some View {
     if let due = item.due {
       Text(Fmt.time(due)).font(Typo.tabularCaption).foregroundStyle(Palette.inkMuted)
@@ -377,11 +454,24 @@ private struct PlanRow: View {
           if isEditingEstimate { isNoting = false }
         }
       } label: {
-        Text(item.estimatedMinutes.map(Fmt.minutes) ?? "—")
-          .font(Typo.tabularCaption)
-          .foregroundStyle(item.estimatedMinutes == nil ? Palette.inkMuted : Palette.moss)
-          .frame(minWidth: 34, alignment: .trailing)
-          .contentShape(Rectangle())
+        // A bare "—" is not readable as "duration, unset" — it reads as a
+        // separator, or as nothing. The stopwatch says what the control is
+        // about before you have hovered it, and the word says what is missing.
+        HStack(spacing: 3) {
+          Image(systemName: "stopwatch")
+            .font(.system(size: 11, weight: .medium))
+          Text(item.estimatedMinutes.map(Fmt.minutes) ?? "估时")
+            .font(Typo.tabularCaption)
+        }
+        .foregroundStyle(item.estimatedMinutes == nil ? Palette.inkMuted : Palette.moss)
+        .padding(.horizontal, 5)
+        .frame(height: 20)
+        .background {
+          RoundedRectangle(cornerRadius: 5, style: .continuous)
+            .fill(Palette.surfaceSunken)
+            .opacity(item.estimatedMinutes == nil ? 0 : 1)
+        }
+        .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
       .help(item.estimatedMinutes == nil ? "这条没有估时，点一下自己填" : "点一下改估时")
@@ -389,8 +479,17 @@ private struct PlanRow: View {
   }
 
   private var actions: [TaskAction] {
-    // Only an open row has anything to decide. A resolved plan row carries its
-    // pill and nothing else — the feedback ledger has no un-complete.
+    // A deferred row's circle is empty, so ticking it would mark it done rather
+    // than put it back — it gets a worded restore instead, exactly like the
+    // inbox rows do.
+    if item.state == .deferred {
+      return [
+        TaskAction(id: "reopen", label: "恢复", symbol: "arrow.uturn.backward", key: "r") {
+          send("reopen", note: nil)
+        }
+      ]
+    }
+    // A completed row needs no cluster: unticking the circle is its undo.
     guard item.state == .open else { return [] }
     return [
       TaskAction(
@@ -427,7 +526,13 @@ private struct PlanRow: View {
         note: (trimmed?.isEmpty ?? true) ? nil : trimmed
       )
       switch outcome {
-      case .ok: state.toast = event == "update" ? "已记录" : (event == "complete" ? "已完成" : "已顺延")
+      case .ok:
+        state.toast = switch event {
+        case "complete": "已完成"
+        case "defer": "已顺延"
+        case "reopen": "已恢复"
+        default: "已记录"
+        }
       case .failed(let why), .unsupported(let why): state.toast = why
       }
     }

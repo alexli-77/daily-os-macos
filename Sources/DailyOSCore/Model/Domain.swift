@@ -320,6 +320,26 @@ public struct Cycle: Sendable, Equatable, Identifiable {
     sections.contains { $0.pendingDraft != nil }
   }
 
+  /// How much of this cycle's 要务 got done, or `nil` when the cycle was never
+  /// marked up at all.
+  ///
+  /// The ratio is `done / all items` — the same one the 要务 panel's progress bar
+  /// shows, because two different completion percentages in one app is worse
+  /// than either of them being arguable. An unmarked line counts against you:
+  /// something you never came back to is something you did not finish.
+  ///
+  /// But `nil` and 0% are emphatically different, and that is what `markedCount`
+  /// gates. A cycle where nobody ticked anything is not a cycle that failed;
+  /// plotting it as zero would draw a collapse out of an absence, and on a real
+  /// vault that is most of them.
+  public var completion: CycleCompletion? {
+    guard let document = section(.priorities)?.priorities,
+          document.trackedCount > 0,
+          document.markedCount > 0
+    else { return nil }
+    return CycleCompletion(done: document.doneCount, tracked: document.trackedCount)
+  }
+
   /// `20_CYCLES/2026-08-24_8.24-9.6.md` — shown verbatim, because the file *is*
   /// the source of truth and people go and open it.
   public var relativePath: String {
@@ -327,6 +347,25 @@ public struct Cycle: Sendable, Equatable, Identifiable {
     formatter.dateFormat = "yyyy-MM-dd"
     return "20_CYCLES/\(formatter.string(from: start))_\(label).md"
   }
+}
+
+/// Completed vs marked 要务 for one cycle.
+public struct CycleCompletion: Sendable, Equatable {
+  public let done: Int
+  public let tracked: Int
+
+  public init(done: Int, tracked: Int) {
+    self.done = done
+    self.tracked = tracked
+  }
+
+  /// 0…1. `tracked` is never zero — `Cycle.completion` returns nil instead —
+  /// but the guard stays because this initialiser is public.
+  public var fraction: Double {
+    tracked > 0 ? Double(done) / Double(tracked) : 0
+  }
+
+  public var percentText: String { "\(Int((fraction * 100).rounded()))%" }
 }
 
 /// One heading in the cycle list.

@@ -151,10 +151,14 @@ public enum MockData {
       sections: [
         CycleSection(
           kind: .priorities,
+          // Emoji markers, not `- [x]`. The parser reads the trailing status
+          // glyph and nothing else, so checkbox syntax renders as an *unmarked*
+          // cycle — which meant the completion trend had one point to draw and
+          // said so, in a fixture whose whole job is to show the curve.
           body: """
-          - [x] 日历写回幂等：按天覆盖，可撤销
-          - [x] 写回前做 free/busy 冲突检测
-          - [x] 打通 adjust 回灌闭环
+          - 日历写回幂等：按天覆盖，可撤销 ✅
+          - 写回前做 free/busy 冲突检测 ✅
+          - 打通 adjust 回灌闭环 ✅
           """,
           source: .planner,
           updatedAt: daysAgo(30)
@@ -185,7 +189,7 @@ public enum MockData {
       sections: [
         CycleSection(
           kind: .priorities,
-          body: "- [x] 自助注册 / 登录 / 会话持久化\n- [ ] 团队邀请码链路",
+          body: "- 自助注册 / 登录 / 会话持久化 ✅\n- 团队邀请码链路 ❌",
           source: .planner,
           updatedAt: daysAgo(44)
         ),

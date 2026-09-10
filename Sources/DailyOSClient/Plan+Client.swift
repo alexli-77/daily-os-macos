@@ -116,7 +116,9 @@ extension DailyOSClient {
     switch event {
     case "complete": .done
     case "defer": .deferred
-    // `update` means the row was edited, not resolved — it is still open.
+    // `update` means the row was edited, not resolved — it is still open. A
+    // reopened row never reaches here: the service removes it from the map
+    // entirely, which is why undo restores *open* and not a third state.
     default: .open
     }
   }

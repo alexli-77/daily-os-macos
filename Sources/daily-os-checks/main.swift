@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import DailyOSCore
 
 // Cross-platform parity checks, runnable with `swift run daily-os-checks`.
@@ -231,11 +232,66 @@ let gapped = CycleGroup.group([older, previous])
 check(gapped.first?.kind == .latest, "with nothing around today the head group is 最近一期")
 check(gapped.first?.cycles.map(\.id) == ["previous"], "the most recently ended cycle takes the head slot")
 
+// 8. Cycle completion, which the trend line plots.
+//
+// The distinction that matters is nil vs 0%: a cycle nobody ticked has not
+// failed, and plotting it as zero would draw a collapse out of an absence.
+func cycleWithPriorities(_ id: String, _ body: String) -> Cycle {
+  var cycle = cycle(id, -14, -1)
+  cycle.sections = [CycleSection(kind: .priorities, body: body, source: .planner, updatedAt: .now)]
+  return cycle
+}
+
+check(cycle("no-sections", -14, -1).completion == nil, "a cycle with no 要务 section has no completion")
+check(cycleWithPriorities("never-marked", "- 甲\n- 乙").completion == nil,
+      "a cycle nobody ever marked is no data, not 0%")
+check(cycleWithPriorities("all-missed", "- 甲 ❌\n- 乙 ❌").completion == CycleCompletion(done: 0, tracked: 2),
+      "explicitly missed items *are* 0% — that is a fact, not an absence")
+// The denominator is every item, matching the 要务 panel's own progress bar: a
+// line you never came back to is a line you did not finish. One marker anywhere
+// is enough to make the whole cycle countable.
+check(cycleWithPriorities("mixed", "- 甲 ✅\n- 乙 ❌\n- 丙 🚧\n- 丁").completion == CycleCompletion(done: 1, tracked: 4),
+      "unmarked lines stay in the denominator once the cycle has been marked at all")
+check(CycleCompletion(done: 1, tracked: 3).percentText == "33%", "percentage rounds to whole numbers")
+check(CycleCompletion(done: 0, tracked: 0).fraction == 0, "a zero denominator must not divide")
+
 check(CycleGroup.group([]).isEmpty, "no cycles means no headings")
 check(CycleGroup.group([current]).map(\.kind) == [.current], "one cycle means one heading, not three empty ones")
 
+// 9. Donut geometry.
+//
+// The one part of a chart that can be *silently* wrong: a ring always looks
+// like a ring, so arcs that fail to span a full turn, or a small slice eaten by
+// its own separator, would never announce themselves on screen.
+func slice(_ id: String, _ value: Double) -> DonutSlice {
+  DonutSlice(id: id, label: id, value: value, color: Palette.moss)
+}
+
+let evenArcs = DonutArc.layout([slice("a", 1), slice("b", 1), slice("c", 1), slice("d", 1)])
+check(evenArcs.count == 4, "four equal slices produce four arcs")
+check(abs(evenArcs[0].startDegrees - (-90 + 1)) < 0.001, "the first slice starts at twelve o'clock plus half a gap")
+// Span from the first slice's nominal start to the last one's nominal end must
+// be a full turn, gaps included — they are cut out of slices, not inserted.
+check(abs((evenArcs[3].endDegrees + 1) - (evenArcs[0].startDegrees - 1) - 360) < 0.001,
+      "arcs span exactly one turn")
+for arc in evenArcs {
+  check(abs(arc.sweep - (90 - 2)) < 0.001, "an equal quarter sweeps 90° less one gap, got \(arc.sweep)")
+}
+
+// A tiny slice next to a huge one is the case the gap rule exists for: a fixed
+// 2° separator would leave it with nothing to draw.
+let lopsided = DonutArc.layout([slice("tiny", 1), slice("huge", 359)])
+check(lopsided.count == 2, "both slices survive")
+check(lopsided[0].sweep > 0, "a 1/360 slice still has a positive sweep, got \(lopsided[0].sweep)")
+check(lopsided[0].sweep >= 0.75, "the gap never takes more than a quarter of its own slice")
+
+check(DonutArc.layout([]).isEmpty, "no slices, no arcs")
+check(DonutArc.layout([slice("z", 0)]).isEmpty, "a zero-valued slice is not drawn")
+check(DonutArc.layout([slice("neg", -5)]).isEmpty, "a negative value cannot invert the ring")
+check(DonutArc.layout([slice("only", 42)]).count == 1, "one slice is a whole ring")
+
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

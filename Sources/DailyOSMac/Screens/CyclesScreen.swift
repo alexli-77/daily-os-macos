@@ -133,6 +133,8 @@ private struct CycleList: View {
       MemberSwitcher()
         .padding(Metrics.sm)
       Divider()
+      CycleTrend()
+      Divider()
       ScrollView {
         LazyVStack(alignment: .leading, spacing: 2, pinnedViews: .sectionHeaders) {
           ForEach(state.visibleCycleGroups) { group in
@@ -151,6 +153,92 @@ private struct CycleList: View {
         }
         .padding(Metrics.xs)
       }
+    }
+  }
+}
+
+/// 要务 completion across cycles, oldest to newest.
+///
+/// The list answers "which cycle", one at a time. This answers the question the
+/// list cannot: whether the last few have been going better or worse. That is a
+/// shape, and reading a shape out of twelve rows of dates is not something
+/// anybody does.
+///
+/// Only cycles whose 要务 carry status markers are plotted. This is not a corner
+/// case — on a real vault most cycles have some unmarked lines and a few have
+/// none at all — and drawing an unmarked cycle as 0% would invent a collapse out
+/// of an absence. The count of skipped ones is stated instead, because a gap in
+/// a trend line is exactly the kind of thing that gets read as a fact.
+private struct CycleTrend: View {
+  @Environment(AppState.self) private var state
+
+  /// The newest eight. Enough to see a direction; more than that in a 320pt
+  /// column puts the dots closer together than they are wide.
+  private static let window = 8
+
+  private var plotted: [(cycle: Cycle, completion: CycleCompletion)] {
+    state.visibleCycles
+      .compactMap { cycle in cycle.completion.map { (cycle: cycle, completion: $0) } }
+      .sorted { $0.cycle.start < $1.cycle.start }
+      .suffix(Self.window)
+      .map { $0 }
+  }
+
+  private var skipped: Int { state.visibleCycles.count - plotted.count }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Metrics.xs) {
+      HStack(spacing: Metrics.xs) {
+        Text("要务完成率").mutedStyle(Typo.label)
+        Spacer(minLength: 0)
+        if let latest = plotted.last {
+          Text(latest.completion.percentText)
+            .font(Typo.tabularCaption.weight(.medium))
+            .foregroundStyle(Palette.moss)
+        }
+      }
+
+      if plotted.count < 2 {
+        // A line through one point is a dot, and a dot is not a trend. Say
+        // which of the two reasons applies rather than drawing a flat line.
+        Text(plotted.isEmpty
+          ? "还没有标记过状态的周期。在要务里点三色圈之后，这里会画出完成率曲线。"
+          : "只有一期标记过状态，还画不出趋势。")
+          .mutedStyle()
+          .fixedSize(horizontal: false, vertical: true)
+      } else {
+        TrendLine(points: points) { point in
+          state.selectedCycleID = point.id
+        }
+        .frame(height: 48)
+
+        HStack(spacing: Metrics.xs) {
+          Text(plotted.first?.cycle.label ?? "").mutedStyle()
+          Spacer(minLength: 0)
+          Text(plotted.last?.cycle.label ?? "").mutedStyle()
+        }
+      }
+
+      // Only alongside a drawn line. With nothing plotted, "另有 12 期" reads as
+      // "in addition to the ones above" when there are none above — and the
+      // sentence beside it already said so.
+      if skipped > 0, plotted.count >= 2 {
+        Text("另有 \(skipped) 期没有状态标记，没画进来。").mutedStyle()
+          .fixedSize(horizontal: false, vertical: true)
+      }
+    }
+    .padding(Metrics.sm)
+  }
+
+  private var points: [TrendPoint] {
+    plotted.map { entry in
+      TrendPoint(
+        id: entry.cycle.id,
+        label: entry.cycle.label,
+        value: entry.completion.fraction,
+        isCurrent: entry.cycle.id == state.selectedCycle?.id,
+        detail: "\(entry.completion.done)/\(entry.completion.tracked) 完成 · \(entry.completion.percentText)"
+      )
     }
   }
 }
@@ -367,7 +455,7 @@ private struct PrioritiesView: View {
       Text("（空）").mutedStyle(Typo.body)
     } else {
       VStack(alignment: .leading, spacing: Metrics.md) {
-        if doc.trackedCount > 0 {
+        if doc.markedCount > 0 {
           HStack(spacing: Metrics.xs) {
             Text("\(doc.doneCount) / \(doc.trackedCount) 完成")
               .font(Typo.tabularCaption)
@@ -375,6 +463,15 @@ private struct PrioritiesView: View {
             ProgressTrack(fraction: Double(doc.doneCount) / Double(doc.trackedCount), tone: .ok)
               .frame(maxWidth: 160)
           }
+        } else if doc.trackedCount > 0 {
+          // Gated on markers rather than on items. An untouched cycle drew a
+          // full-width empty bar reading "0 / 13 完成", which says the work was
+          // attempted and none of it landed — while the trend beside it
+          // correctly refused to plot the same cycle as zero. One file, two
+          // stories, and the discouraging one was the lie.
+          Text("\(doc.trackedCount) 条要务，还没标记过状态")
+            .font(Typo.tabularCaption)
+            .foregroundStyle(Palette.inkMuted)
         }
 
         if !doc.loose.isEmpty {

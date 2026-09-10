@@ -149,6 +149,11 @@ func run() async -> Int32 {
     let timed = state.plan.filter { ($0.estimatedMinutes ?? 0) > 0 }.count
     return "身份 \(state.account.displayName) · 可见周期 \(state.visibleCycles.count)"
       + " · 分组 \(state.visibleCycleGroups.map { "\($0.title)\($0.cycles.count)" }.joined(separator: "/"))"
+      // How many cycles the trend line can actually plot. A curve needs two
+      // points, and on a hand-edited vault most cycles carry no status markers
+      // at all — so "the chart is empty" is a data answer, not a bug, and the
+      // only way to tell which is to count.
+      + " · 完成率可画 \(state.visibleCycles.filter { $0.completion != nil }.count)/\(state.visibleCycles.count) 期"
       + " · 选中 \(state.selectedCycle?.label ?? "—")"
       + " · 今日计划 \(planned) 条\(stale)，已处理 \(done)，\(timed) 条有估时"
       + " · 待办 \(state.openTodos.count) · OKR \(state.okrFiles.count) 个文件"

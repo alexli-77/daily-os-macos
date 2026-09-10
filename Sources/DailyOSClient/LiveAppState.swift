@@ -199,6 +199,7 @@ public final class LiveAppState: AppState {
       switch event {
       case "complete": plan[index].state = .done
       case "defer": plan[index].state = .deferred
+      case "reopen": plan[index].state = .open
       default: break
       }
     }

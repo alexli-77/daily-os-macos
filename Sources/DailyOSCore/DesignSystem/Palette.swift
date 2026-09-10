@@ -97,6 +97,32 @@ public enum Palette {
     case .danger: return danger
     }
   }
+
+  /// Categorical chart colours, in order.
+  ///
+  /// The one sanctioned exception to "one accent only". That rule exists so a
+  /// screen of controls does not read as a slot machine — but a pie whose
+  /// slices are five tints of the same green cannot be read at all without
+  /// tracing each one back to the legend, which defeats the point of drawing it.
+  /// Categorical data needs distinguishable hues.
+  ///
+  /// Constrained anyway: every entry is desaturated to sit on paper, moss leads
+  /// so the accent still owns the largest slice on a typical day, and there are
+  /// six because a chart needing a seventh is a chart that should be grouping
+  /// its tail instead.
+  public static let series: [Color] = [
+    moss,
+    Color(light: Color(hex: 0x3E7CA6), dark: Color(hex: 0x7FB4D9)),
+    Color(light: Color(hex: 0xA06413), dark: Color(hex: 0xD9A75A)),
+    Color(light: Color(hex: 0x8A5B7A), dark: Color(hex: 0xC69BB8)),
+    Color(light: Color(hex: 0x5E7A46), dark: Color(hex: 0x9FBE82)),
+    Color(light: Color(hex: 0xA85843), dark: Color(hex: 0xD99A82)),
+  ]
+
+  /// Wraps, so a seventh item is drawn rather than dropped.
+  public static func series(_ index: Int) -> Color {
+    series[((index % series.count) + series.count) % series.count]
+  }
 }
 
 /// The five semantic colours anything status-bearing is allowed to be.

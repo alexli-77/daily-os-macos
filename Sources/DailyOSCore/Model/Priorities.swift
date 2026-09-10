@@ -118,6 +118,15 @@ public struct PrioritiesDocument: Sendable, Equatable {
   public var doneCount: Int { allItems.filter { $0.status == .done }.count }
   public var trackedCount: Int { allItems.count }
 
+  /// How many items carry any status marker at all.
+  ///
+  /// The gate for "has this cycle been reviewed": `doneCount / trackedCount`
+  /// puts unmarked lines in the denominator — deliberately, since an item you
+  /// never marked is an item you did not finish — but that makes a cycle nobody
+  /// ever touched indistinguishable from one that failed completely. Anything
+  /// comparing cycles has to be able to tell those apart.
+  public var markedCount: Int { allItems.filter { $0.status != nil }.count }
+
   // MARK: Parse
 
   public init(markdown: String) {
