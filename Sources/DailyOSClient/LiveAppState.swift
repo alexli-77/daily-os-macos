@@ -85,7 +85,10 @@ public final class LiveAppState: AppState {
         return cycle
       }
       if self.selectedCycleID == nil || !self.visibleCycles.contains(where: { $0.id == self.selectedCycleID }) {
-        self.selectedCycleID = self.visibleCycles.first?.id
+        // The cycle containing today, not the newest one. Those differ whenever
+        // the next cycle has been created early, and opening the app on the one
+        // you are not in is a good way to plan into the wrong file.
+        self.selectedCycleID = (self.visibleCycles.first { $0.contains(.now) } ?? self.visibleCycles.first)?.id
       }
     }
 
@@ -195,6 +198,35 @@ public final class LiveAppState: AppState {
     do {
       try await client.recordPlanFeedback(candidateID: candidateID, rank: rank, event: event, note: note)
       return .ok(nil)
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      lastActionError = reason
+      await reload()
+      return .failed(reason)
+    }
+  }
+
+  /// Send a corrected estimate as an `update` event carrying minutes.
+  ///
+  /// Not optimistic-and-forget like the ticks: the whole point of editing a
+  /// number is that you then read it, so a silent failure would leave the bar
+  /// showing a figure the service never accepted.
+  public override func setPlanEstimate(candidateID: String, rank: Int, minutes: Int?) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    let outcome = await super.setPlanEstimate(candidateID: candidateID, rank: rank, minutes: minutes)
+    guard case .ok = outcome else { return outcome }
+    do {
+      // Zero is the wire's way of saying "no estimate": the service drops any
+      // non-positive value, so the ledger stops carrying an override and the
+      // model's own guess — or nothing — takes over again on the next read.
+      try await client.recordPlanFeedback(
+        candidateID: candidateID,
+        rank: rank,
+        event: "update",
+        note: nil,
+        minutes: minutes ?? 0
+      )
+      return .ok(minutes.map { "已改为 \(Fmt.minutes($0))" } ?? "已清掉估时")
     } catch {
       let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
       lastActionError = reason

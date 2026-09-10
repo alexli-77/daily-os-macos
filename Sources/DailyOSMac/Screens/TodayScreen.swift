@@ -10,15 +10,22 @@ import DailyOSCore
 /// something out of your head, not to read.
 struct TodayScreen: View {
   @Environment(AppState.self) private var state
+  /// One selection for the whole screen, not one per panel.
+  ///
+  /// Two panels each holding their own would let two rows sit highlighted at
+  /// once, and then "the selected row" — which is what the keyboard acts on —
+  /// stops having a single answer. Plan ids are `daily_plan` candidate ids and
+  /// inbox ids are ledger ids, so they cannot collide.
+  @State private var selectedTaskID: TodoItem.ID?
 
   var body: some View {
     ScreenScaffold("今天", subtitle: subtitle) {
       DayProgressPanel()
       QuickCapturePanel()
       TwoColumns {
-        PlanPanel()
+        PlanPanel(selectedID: $selectedTaskID)
       } trailing: {
-        TodoPanel()
+        TodoPanel(selectedID: $selectedTaskID)
       }
     }
   }
@@ -155,10 +162,14 @@ private struct TimeAllocation: View {
         if untimedCount > 0 {
           // Partial data is its own trap: a bar drawn from two of five items
           // looks like the whole day unless it says otherwise.
-          Text("另有 \(untimedCount) 项没有估时，没算进上面这条。").mutedStyle()
+          Text("另有 \(untimedCount) 项没有估时，点右边的时间就能填。").mutedStyle()
         }
       }
     }
+    // Correcting one row's estimate is worth watching: the widths above are the
+    // answer to "does today fit", and seeing them move is the point of editing.
+    .animation(.snappy(duration: 0.32), value: total)
+    .animation(.snappy(duration: 0.32), value: timed.count)
   }
 
   private var bar: some View {
@@ -210,13 +221,14 @@ private struct TimeAllocation: View {
 
 /// What the allocation block shows when nothing carries an estimate.
 ///
-/// Names the supplier rather than the symptom. `daily_plan` emits
-/// `{ rank, text, candidateId }` and the todo inbox ledger has no duration field
-/// either, so there is no number anywhere upstream — whoever reads this should
-/// end up asking the workflow for minutes, not wondering whether the Mac app
-/// dropped a panel. Inventing a plausible duration would be worse than silence:
-/// the point of the bar is to catch "four priorities is six hours" *before* the
-/// day starts, and a made-up six hours makes that check meaningless.
+/// Names what to do about it. `daily_plan` now asks for `minutes`, but the
+/// prompt tells the model to omit the field rather than guess, and every plan
+/// generated before that change has none — so an empty bar is still a state
+/// this has to explain rather than a bug.
+///
+/// Inventing a plausible duration would be worse than silence: the point of the
+/// bar is to catch "four priorities is six hours" *before* the day starts, and a
+/// made-up six hours makes that check meaningless.
 private struct MissingEstimates: View {
   let count: Int
 
@@ -225,7 +237,7 @@ private struct MissingEstimates: View {
       Label("这 \(count) 项都没有耗时估计", systemImage: "questionmark.circle")
         .font(Typo.caption)
         .foregroundStyle(Palette.inkMuted)
-      Text("估时要由 daily_plan 工作流给出，它现在只产出排序、正文和来源 id；待办账本里也没有这个字段。所以这里空着，不编一个数。")
+      Text("估时由 daily_plan 给出，模型判断不出来时会省略，今天之前跑的计划则一条都没有。点每行右边的「—」可以自己填。")
         .mutedStyle()
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -260,6 +272,7 @@ private struct QuickCapturePanel: View {
 
 private struct PlanPanel: View {
   @Environment(AppState.self) private var state
+  @Binding var selectedID: TodoItem.ID?
 
   var body: some View {
     Panel("今天的计划", subtitle: "来自当前周期的要务与日程") {
@@ -275,10 +288,10 @@ private struct PlanPanel: View {
           message: "计划由 daily_plan 工作流生成——早上的定时任务会跑，也可以在飞书里发一句「daily-os plan」。Mac 端还不能触发工作流，跑完之后这里会自己出现。"
         )
       } else {
-        VStack(spacing: 0) {
+        VStack(spacing: 2) {
           ForEach(Array(state.plan.enumerated()), id: \.element.id) { index, item in
-            if index > 0 { PanelDivider() }
-            PlanRow(item: item, rank: index + 1)
+            PlanRow(item: item, rank: index + 1, selectedID: $selectedID)
+              .transition(.taskRow)
           }
         }
       }
@@ -295,77 +308,115 @@ private struct PlanPanel: View {
 /// mapped that way deliberately, since the ledger is keyed on it and matching
 /// on rank or text would move this morning's tick onto a different row the
 /// moment the planner reorders or rewords a line.
+///
+/// The three used to be worded buttons on every row. They are now the check
+/// circle plus two icons that arrive on select or hover — see `TaskRow` for why
+/// that is not the undiscoverable hover-only pattern it resembles.
 private struct PlanRow: View {
   @Environment(AppState.self) private var state
   let item: TodoItem
   /// Position in the list, 1-based. Part of the ledger key, not decoration.
   let rank: Int
+  @Binding var selectedID: TodoItem.ID?
 
   @State private var isNoting = false
   @State private var note = ""
+  @State private var isEditingEstimate = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.xxs) {
-      HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
-        Pill(item.kind.label, tone: item.kind.tone)
-        Text(item.text)
-          .inkStyle()
-          .strikethrough(item.state == .done, color: Palette.inkMuted)
-          .foregroundStyle(item.state == .open ? Palette.ink : Palette.inkMuted)
-        Spacer(minLength: Metrics.xs)
-        if let due = item.due {
-          Text(Fmt.time(due)).font(Typo.tabularCaption).foregroundStyle(Palette.inkMuted)
-        }
-        actions
+      TaskRow(
+        item: item,
+        actions: actions,
+        onToggleCheck: item.state == .open ? { send("complete", note: nil) } : nil,
+        selectedID: $selectedID
+      ) {
+        accessory
       }
-      .frame(minHeight: Metrics.hitTarget)
 
       if isNoting {
         // The web prompts for the note in a dialog. Inline here because a modal
         // for one optional sentence is heavier than the sentence.
-        HStack(spacing: Metrics.xs) {
-          TextField("记一条更新（可留空）", text: $note)
-            .textFieldStyle(.plain)
-            .font(Typo.caption)
-            .padding(Metrics.xxs)
-            .background(Palette.surfaceSunken)
-            .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
-            .onSubmit { send("update", note: note) }
-          Button("记下") { send("update", note: note) }
-            .buttonStyle(QuietButtonStyle())
-          Button("取消") { isNoting = false; note = "" }
-            .buttonStyle(QuietButtonStyle(tone: .neutral))
+        InlineField(
+          placeholder: "记一条更新（可留空）",
+          text: $note,
+          confirm: "记下",
+          onConfirm: { send("update", note: note) },
+          onCancel: { isNoting = false; note = "" }
+        )
+        .transition(.taskRow)
+      }
+
+      if isEditingEstimate {
+        EstimateEditor(item: item, rank: rank) {
+          withAnimation(.snappy(duration: 0.2)) { isEditingEstimate = false }
         }
+        .transition(.taskRow)
       }
     }
   }
 
-  /// Always rendered, never on hover: these are the day's decisions, and a
-  /// control you have to go looking for is a control that does not get used.
-  @ViewBuilder private var actions: some View {
-    switch item.state {
-    case .done:
-      Pill("已完成", tone: .ok)
-    case .deferred:
-      Pill("已顺延", tone: .warn)
-    case .deleted:
-      // A plan row is never a tombstone — the feedback ledger has no delete —
-      // but the case has to be spelled, and silence is the honest rendering.
-      EmptyView()
-    case .open:
-      // Web order: secondary actions first, the one that closes the row last,
-      // so the same click lands in the same place in both consoles.
-      Button("更新") { isNoting.toggle() }
-        .buttonStyle(QuietButtonStyle(tone: .neutral))
-      Button("顺延") { send("defer", note: nil) }
-        .buttonStyle(QuietButtonStyle(tone: .neutral))
-      Button("完成") { send("complete", note: nil) }
-        .buttonStyle(QuietButtonStyle())
+  /// The estimate, and the way in to changing it.
+  ///
+  /// A row with no estimate still shows the chip — as a dash. The point of the
+  /// number is to make the day's total addable, and a blank that looks like
+  /// nothing gives you no reason to suspect the total is short.
+  @ViewBuilder private var accessory: some View {
+    if let due = item.due {
+      Text(Fmt.time(due)).font(Typo.tabularCaption).foregroundStyle(Palette.inkMuted)
     }
+    switch item.state {
+    case .done: Pill("已完成", tone: .ok)
+    case .deferred: Pill("已顺延", tone: .warn)
+    case .deleted, .open: EmptyView()
+    }
+    if item.state == .open {
+      Button {
+        withAnimation(.snappy(duration: 0.2)) {
+          isEditingEstimate.toggle()
+          if isEditingEstimate { isNoting = false }
+        }
+      } label: {
+        Text(item.estimatedMinutes.map(Fmt.minutes) ?? "—")
+          .font(Typo.tabularCaption)
+          .foregroundStyle(item.estimatedMinutes == nil ? Palette.inkMuted : Palette.moss)
+          .frame(minWidth: 34, alignment: .trailing)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .help(item.estimatedMinutes == nil ? "这条没有估时，点一下自己填" : "点一下改估时")
+    }
+  }
+
+  private var actions: [TaskAction] {
+    // Only an open row has anything to decide. A resolved plan row carries its
+    // pill and nothing else — the feedback ledger has no un-complete.
+    guard item.state == .open else { return [] }
+    return [
+      TaskAction(
+        id: "update",
+        label: "更新",
+        symbol: "square.and.pencil",
+        key: "e"
+      ) {
+        isNoting.toggle()
+        if isNoting { isEditingEstimate = false }
+      },
+      TaskAction(
+        id: "defer",
+        label: "顺延",
+        symbol: "clock.arrow.circlepath",
+        tone: .warn,
+        key: "d"
+      ) {
+        send("defer", note: nil)
+      },
+    ]
   }
 
   private func send(_ event: String, note: String?) {
     isNoting = false
+    isEditingEstimate = false
     let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines)
     self.note = ""
     Task {
@@ -383,32 +434,131 @@ private struct PlanRow: View {
   }
 }
 
-/// Why a row here can be short of the web's three buttons.
+/// Change one row's estimate.
 ///
+/// Presets rather than a free number field, because the useful granularity is
+/// coarse — the question the bar answers is "does today fit", and 15 versus 20
+/// minutes has never changed that answer. The prompt asks the model for the
+/// same steps, so a corrected number looks like the numbers around it.
+///
+/// 清除 is not a courtesy. Without it a mis-click turns an honest "no estimate"
+/// into a wrong one that can never be taken back, and the total silently starts
+/// lying.
+private struct EstimateEditor: View {
+  @Environment(AppState.self) private var state
+  let item: TodoItem
+  let rank: Int
+  let onDone: () -> Void
+
+  private static let presets = [15, 30, 45, 60, 90, 120]
+
+  var body: some View {
+    HStack(spacing: Metrics.xxs) {
+      Text("估时").mutedStyle(Typo.label)
+      ForEach(Self.presets, id: \.self) { minutes in
+        Button(Fmt.minutes(minutes)) { apply(minutes) }
+          .buttonStyle(EstimateChipStyle(isCurrent: item.estimatedMinutes == minutes))
+      }
+      Spacer(minLength: 0)
+      if item.estimatedMinutes != nil {
+        Button("清除") { apply(nil) }
+          .buttonStyle(QuietButtonStyle(tone: .neutral))
+      }
+      Button("收起", action: onDone)
+        .buttonStyle(QuietButtonStyle(tone: .neutral))
+    }
+    .padding(.horizontal, Metrics.xs)
+  }
+
+  private func apply(_ minutes: Int?) {
+    onDone()
+    Task {
+      let outcome = await state.setPlanEstimate(candidateID: item.id, rank: rank, minutes: minutes)
+      switch outcome {
+      case .ok(let message): state.toast = message ?? "已更新估时"
+      case .failed(let why), .unsupported(let why): state.toast = why
+      }
+    }
+  }
+}
+
+/// Small enough that six of them fit next to a label in half a window.
+/// `MossButtonStyle` is the right look and the wrong size here — its 28pt hit
+/// target and 12pt padding turn a row of presets into a toolbar.
+private struct EstimateChipStyle: ButtonStyle {
+  let isCurrent: Bool
+
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .font(Typo.tabularCaption.weight(isCurrent ? .semibold : .regular))
+      .foregroundStyle(isCurrent ? .white : Palette.ink)
+      .padding(.horizontal, Metrics.xs)
+      .frame(height: 22)
+      .background {
+        RoundedRectangle(cornerRadius: 5, style: .continuous)
+          .fill(isCurrent ? Palette.moss : Palette.surfaceSunken)
+      }
+      .opacity(configuration.isPressed ? 0.7 : 1)
+      .contentShape(Rectangle())
+  }
+}
+
+/// A one-line inline form. Escape cancels, Return confirms.
+private struct InlineField: View {
+  let placeholder: String
+  @Binding var text: String
+  let confirm: String
+  let onConfirm: () -> Void
+  let onCancel: () -> Void
+
+  @FocusState private var focused: Bool
+
+  var body: some View {
+    HStack(spacing: Metrics.xs) {
+      TextField(placeholder, text: $text)
+        .textFieldStyle(.plain)
+        .font(Typo.caption)
+        .padding(Metrics.xxs)
+        .background(Palette.surfaceSunken)
+        .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
+        .focused($focused)
+        .onSubmit(onConfirm)
+        .onExitCommand(perform: onCancel)
+      Button(confirm, action: onConfirm).buttonStyle(QuietButtonStyle())
+      Button("取消", action: onCancel).buttonStyle(QuietButtonStyle(tone: .neutral))
+    }
+    .padding(.horizontal, Metrics.xs)
+    // Opening a field and then having to click it is the kind of small tax that
+    // stops people from using the feature at all.
+    .onAppear { focused = true }
+  }
+}
+
 // MARK: - Todos
 
 private struct TodoPanel: View {
   @Environment(AppState.self) private var state
+  @Binding var selectedID: TodoItem.ID?
   @State private var showsHistory = false
 
   var body: some View {
     Panel("我的待办", subtitle: "\(state.openTodos.count) 项未完成") {
-      VStack(spacing: 0) {
+      VStack(spacing: 2) {
         if state.openTodos.isEmpty {
           EmptyState(icon: "checkmark.circle", title: "都清完了", message: "收件箱是空的。")
         } else {
-          ForEach(Array(state.openTodos.enumerated()), id: \.element.id) { index, item in
-            if index > 0 { PanelDivider() }
-            TodoRow(item: item)
+          ForEach(state.openTodos) { item in
+            TodoRow(item: item, selectedID: $selectedID)
+              .transition(.taskRow)
           }
         }
 
         if !state.doneTodos.isEmpty || !state.deferredTodos.isEmpty {
           PanelDivider()
           DisclosureGroup(isExpanded: $showsHistory) {
-            VStack(spacing: 0) {
-              ForEach(state.doneTodos) { TodoRow(item: $0) }
-              ForEach(state.deferredTodos) { TodoRow(item: $0) }
+            VStack(spacing: 2) {
+              ForEach(state.doneTodos) { TodoRow(item: $0, selectedID: $selectedID) }
+              ForEach(state.deferredTodos) { TodoRow(item: $0, selectedID: $selectedID) }
             }
           } label: {
             Text("已完成 / 已顺延 · \(state.doneTodos.count + state.deferredTodos.count)")
@@ -426,76 +576,58 @@ private struct TodoPanel: View {
 /// One inbox row.
 ///
 /// The web gives an open row Done / Defer / Delete, and a history row Restore /
-/// Delete. Three of those four are `setTodo(_:to:)` in disguise and are here;
-/// Delete is not, and `TodoDeleteNote` explains that rather than pretending.
+/// Delete. All four are here; all four are `setTodo(_:to:)`, including delete —
+/// the service's `TodoInboxStatus` has a `deleted` tombstone and `/api/state`
+/// filters those rows out, so sending the status *is* the deletion.
 ///
-/// 完成 stays on the check circle instead of becoming a worded button. It is the
-/// same action as the web's Done, it is already the affordance people reach for
-/// in a todo list, and a list where every row carries three worded buttons is
-/// harder to read than the problem being fixed.
+/// 完成 stays on the check circle rather than becoming a fourth icon. It is the
+/// affordance people already reach for in a todo list, and duplicating it in the
+/// cluster would put the same action on the row twice.
 private struct TodoRow: View {
   @Environment(AppState.self) private var state
   let item: TodoItem
+  @Binding var selectedID: TodoItem.ID?
 
   var body: some View {
-    HStack(spacing: Metrics.xxs) {
-      CheckCircle(isOn: item.state == .done) { state.toggleTodo(item.id) }
-      Text(item.text)
-        .inkStyle()
-        .strikethrough(item.state == .done, color: Palette.inkMuted)
-        .foregroundStyle(item.state == .open ? Palette.ink : Palette.inkMuted)
-      Spacer(minLength: Metrics.xs)
-      switch item.state {
-      case .open:
-        Button("顺延") { state.setTodo(item.id, to: .deferred) }
-          .buttonStyle(QuietButtonStyle(tone: .neutral))
-        DeleteTodoButton(item: item)
-      case .deferred:
-        Pill("已顺延", tone: .warn)
-        // The web's Restore. The check circle cannot stand in for it: on a
-        // deferred row the circle is empty, so tapping it marks the item done
-        // instead of putting it back in the open list.
-        Button("恢复") { state.setTodo(item.id, to: .open) }
-          .buttonStyle(QuietButtonStyle(tone: .neutral))
-        DeleteTodoButton(item: item)
-      case .done:
-        // Unticking the circle is already Restore for a done row.
-        DeleteTodoButton(item: item)
-      case .deleted:
-        // Filtered out server-side before this client sees it; the case exists
-        // only so the switch is exhaustive.
-        EmptyView()
-      }
+    TaskRow(
+      item: item,
+      actions: actions,
+      onToggleCheck: item.state == .deferred ? nil : { state.toggleTodo(item.id) },
+      selectedID: $selectedID
+    ) {
+      if item.state == .deferred { Pill("已顺延", tone: .warn) }
     }
-    .frame(minHeight: Metrics.hitTarget)
   }
-}
 
-/// Delete, for real.
-///
-/// The service's `TodoInboxStatus` already has `deleted` and `/api/state`
-/// filters those rows out of both lists, so sending the status *is* the
-/// deletion — the row simply stops coming back on the next read. That is why
-/// there is no local "hidden" flag here: a client-side tombstone would be a
-/// second source of truth about what exists.
-///
-/// Confirmed, because it is the one action on this screen with nothing behind
-/// it: done and deferred are both one click from being undone, and this is not.
-private struct DeleteTodoButton: View {
-  @Environment(AppState.self) private var state
-  let item: TodoItem
-
-  @State private var isConfirming = false
-
-  var body: some View {
-    Button("删除") { isConfirming = true }
-      .buttonStyle(QuietButtonStyle(tone: .danger))
-      .confirmationDialog("删除这条待办？", isPresented: $isConfirming, titleVisibility: .visible) {
-        Button("删除", role: .destructive) { state.setTodo(item.id, to: .deleted) }
-        Button("取消", role: .cancel) {}
-      } message: {
-        Text(item.text)
+  private var actions: [TaskAction] {
+    var actions: [TaskAction] = []
+    switch item.state {
+    case .open:
+      actions.append(
+        TaskAction(id: "defer", label: "顺延", symbol: "clock.arrow.circlepath", tone: .warn, key: "d") {
+          state.setTodo(item.id, to: .deferred)
+        }
+      )
+    case .deferred:
+      // The web's Restore. The check circle cannot stand in for it: on a
+      // deferred row the circle is empty, so ticking it would mark the item
+      // done rather than put it back in the open list — which is why this row
+      // gets no circle at all.
+      actions.append(
+        TaskAction(id: "restore", label: "恢复", symbol: "arrow.uturn.backward", key: "r") {
+          state.setTodo(item.id, to: .open)
+        }
+      )
+    case .done, .deleted:
+      // Unticking the circle is already Restore for a done row.
+      break
+    }
+    actions.append(
+      TaskAction(id: "delete", label: "删除", symbol: "trash", tone: .danger, key: .delete, role: .destructive) {
+        state.setTodo(item.id, to: .deleted)
       }
+    )
+    return actions
   }
 }
 

@@ -143,9 +143,14 @@ func run() async -> Int32 {
     let planned = state.plan.count
     let done = state.plan.filter { $0.state != .open }.count
     let stale = state.planStaleDate.map { "（来自 \($0)，今天还没跑）" } ?? ""
+    // Estimate coverage, not the estimates themselves. "3/5 有估时" is the
+    // number that tells you whether the 建议分配 bar is drawing the whole day;
+    // the individual durations are your content and stay off the terminal.
+    let timed = state.plan.filter { ($0.estimatedMinutes ?? 0) > 0 }.count
     return "身份 \(state.account.displayName) · 可见周期 \(state.visibleCycles.count)"
+      + " · 分组 \(state.visibleCycleGroups.map { "\($0.title)\($0.cycles.count)" }.joined(separator: "/"))"
       + " · 选中 \(state.selectedCycle?.label ?? "—")"
-      + " · 今日计划 \(planned) 条\(stale)，已处理 \(done)"
+      + " · 今日计划 \(planned) 条\(stale)，已处理 \(done)，\(timed) 条有估时"
       + " · 待办 \(state.openTodos.count) · OKR \(state.okrFiles.count) 个文件"
       + " · 产物 \(state.artifacts.count)（\(state.artifacts.filter { $0.path != nil }.count) 个有路径）"
       + " · 团队 \(state.teamSync?.label ?? "未知")"

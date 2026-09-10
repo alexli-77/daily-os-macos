@@ -50,6 +50,7 @@ brew install xcodegen && xcodegen generate && open DailyOS.xcodeproj
 | --- | --- |
 | `DesignGallery.swift` | 全部 token 与组件，浅色 / 深色各一版 |
 | `Screens/*.swift` | 八个屏幕，各带空状态 |
+| `TodayScreen.swift` | 额外一版「没有估时」——真实服务给的计划长这样 |
 | `CyclesScreen.swift` | 额外一版「队友只读」——这个状态出过 bug |
 | `SettingsScreen.swift` | 额外一版 member 视角 |
 | `MacRootView.swift` | 整个窗口 |
@@ -212,6 +213,8 @@ swift run daily-os-live <path-to-daily-os-feishu>
 - `xcodebuild` 通过，App 能启动，scene 层（`MenuBarExtra` / `Window` / `CommandGroup`）不崩。
 - **写入路径没有端到端验证过。** 读取全部对着真实服务跑通了（12 个周期 / 24 段 / 3 个 OKR 文件 /
   59 个 KR）。但保存段落、点三色圈、快捷捕获这些**会写你的文件**，没有你的明确许可不会去试。
+  改估时也一样：编辑器能打开、预设按钮在、删除确认弹得出来并且能取消，
+  但**「点一下 30m 之后服务端账本里真的多了一行」这件事没有验证过**。
 - **但没有人逐屏看过 macOS 版。** 已验证的是「能编、能起、不崩」，不是「布局对」。
   iOS 版是逐屏在模拟器里看过的（并因此改掉了一个日期 locale 的 bug，见 0.1.1），
   macOS 版还没享受同等待遇。上面那节的 preview 是为了让这件事变成十分钟的活，

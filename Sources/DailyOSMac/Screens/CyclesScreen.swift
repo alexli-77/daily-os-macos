@@ -134,12 +134,18 @@ private struct CycleList: View {
         .padding(Metrics.sm)
       Divider()
       ScrollView {
-        LazyVStack(alignment: .leading, spacing: 2) {
-          ForEach(state.visibleCycles) { cycle in
-            SelectableRow(isSelected: cycle.id == state.selectedCycle?.id) {
-              state.selectedCycleID = cycle.id
-            } content: {
-              CycleListRow(cycle: cycle)
+        LazyVStack(alignment: .leading, spacing: 2, pinnedViews: .sectionHeaders) {
+          ForEach(state.visibleCycleGroups) { group in
+            Section {
+              ForEach(group.cycles) { cycle in
+                SelectableRow(isSelected: cycle.id == state.selectedCycle?.id) {
+                  state.selectedCycleID = cycle.id
+                } content: {
+                  CycleListRow(cycle: cycle, isCurrent: group.kind == .current)
+                }
+              }
+            } header: {
+              CycleGroupHeader(group: group)
             }
           }
         }
@@ -149,8 +155,30 @@ private struct CycleList: View {
   }
 }
 
+/// Pinned, so scrolling twelve cycles never leaves you unsure which era you are
+/// looking at. Opaque for the same reason — a translucent header with row text
+/// sliding under it is unreadable at this type size.
+private struct CycleGroupHeader: View {
+  let group: CycleGroup
+
+  var body: some View {
+    HStack(spacing: Metrics.xs) {
+      Text(group.title).mutedStyle(Typo.label)
+      if group.cycles.count > 1 {
+        Text("\(group.cycles.count)").font(Typo.tabularCaption).foregroundStyle(Palette.inkMuted)
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(.horizontal, Metrics.xs)
+    .padding(.top, Metrics.xs)
+    .padding(.bottom, Metrics.xxs)
+    .background(Palette.surface)
+  }
+}
+
 private struct CycleListRow: View {
   let cycle: Cycle
+  var isCurrent = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.xxs) {
@@ -161,7 +189,16 @@ private struct CycleListRow: View {
           Pill("新草稿", tone: .warn)
         }
       }
-      Text("更新于 \(Fmt.stamp(cycle.updatedAt))").mutedStyle()
+      // A moss dot on the row you are inside. The heading already says 本期, but
+      // the heading scrolls and a selected row does not always sit under it.
+      HStack(spacing: Metrics.xxs) {
+        if isCurrent {
+          Circle().fill(Palette.moss).frame(width: 5, height: 5)
+          Text("进行中").font(Typo.caption).foregroundStyle(Palette.moss)
+          Text("·").mutedStyle()
+        }
+        Text("更新于 \(Fmt.stamp(cycle.updatedAt))").mutedStyle()
+      }
     }
   }
 }
@@ -194,9 +231,17 @@ private struct CycleDetail: View {
   }
 
   private var subtitle: String {
-    var parts = [cycle.mode.label, cycle.relativePath]
+    // Leads with 本期 / 往期. Opening a cycle from the list and then editing it
+    // is the whole loop of this screen, and "which one is this" has to survive
+    // the moment the list scrolls out of your attention.
+    var parts = [era, cycle.mode.label, cycle.relativePath]
     if !state.isViewingSelf { parts.append("只读") }
     return parts.joined(separator: " · ")
+  }
+
+  private var era: String {
+    if cycle.contains(.now) { return "本期" }
+    return cycle.isUpcoming() ? "计划中" : "往期"
   }
 }
 

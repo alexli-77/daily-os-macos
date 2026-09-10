@@ -10,6 +10,7 @@ public enum MockData {
   private static let now = Date()
 
   static func daysAgo(_ days: Double) -> Date { now.addingTimeInterval(-days * 86_400) }
+  static func daysFromNow(_ days: Double) -> Date { now.addingTimeInterval(days * 86_400) }
   static func minutesAgo(_ minutes: Double) -> Date { now.addingTimeInterval(-minutes * 60) }
 
   // MARK: Service & account
@@ -43,13 +44,39 @@ public enum MockData {
 
   // MARK: Cycles
 
+  /// The newest cycle spans today on purpose. It used to end two days ago,
+  /// which meant every preview rendered the *gap* case — a defensible state, but
+  /// not the one this screen is in almost all of the time, so nobody reviewing a
+  /// preview ever saw 本期.
   public static let cycles: [Cycle] = [
+    // Planned ahead, and therefore neither 本期 nor 往期. It is here so that a
+    // preview shows all three headings — the third one is easy to get wrong and
+    // impossible to notice if the fixture never produces it.
+    Cycle(
+      id: "c_0907",
+      label: "9.7-9.20",
+      mode: .biweekly,
+      start: daysFromNow(3),
+      end: daysFromNow(17),
+      ownerId: "u_demo",
+      runId: nil,
+      sections: [
+        CycleSection(
+          kind: .priorities,
+          body: "- 在这里写下一期的要务\n- 每行一条，可以标 **MIT**",
+          source: .planner,
+          updatedAt: daysAgo(1),
+          isTemplate: true
+        ),
+      ],
+      updatedAt: daysAgo(1)
+    ),
     Cycle(
       id: "c_0824",
       label: "8.24-9.6",
       mode: .biweekly,
-      start: daysAgo(16),
-      end: daysAgo(2),
+      start: daysAgo(12),
+      end: daysFromNow(2),
       ownerId: "u_demo",
       runId: "run_9f2c41",
       sections: [

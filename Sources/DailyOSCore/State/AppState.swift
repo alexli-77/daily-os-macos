@@ -89,7 +89,7 @@ open class AppState {
     agentMode = MockData.agentMode
 
     viewingMemberID = MockData.account.id
-    selectedCycleID = MockData.cycles.first?.id
+    selectedCycleID = (MockData.cycles.first { $0.contains(.now) } ?? MockData.cycles.first)?.id
     selectedRunID = MockData.runs.first?.id
     selectedArtifactID = MockData.artifacts.first?.id
     selectedThreadID = MockData.threads.first?.id
@@ -115,7 +115,19 @@ open class AppState {
     visibleCycles.first { $0.id == selectedCycleID } ?? visibleCycles.first
   }
 
-  public var currentCycle: Cycle? { cycles.first }
+  /// The cycle today actually falls inside.
+  ///
+  /// Not `cycles.first`. The list is newest-first, so "first" is the right
+  /// answer only until someone creates the next cycle a few days early or a gap
+  /// opens between two of them — both of which are normal, which is exactly
+  /// what makes the wrong answer hard to notice. Falls back to the newest so
+  /// the Today subtitle still says something during a gap.
+  public var currentCycle: Cycle? {
+    cycles.first { $0.contains(.now) } ?? cycles.first
+  }
+
+  /// The cycle list, split into 本期 / 计划中 / 往期 for whoever is being viewed.
+  public var visibleCycleGroups: [CycleGroup] { CycleGroup.group(visibleCycles) }
 
   public var openTodos: [TodoItem] { todos.filter { $0.state == .open } }
   public var doneTodos: [TodoItem] { todos.filter { $0.state == .done } }
@@ -321,6 +333,24 @@ open class AppState {
     note: String?
   ) async -> ActionOutcome {
     .unsupported("这一版没有连接到服务。")
+  }
+
+  /// Correct one plan row's time estimate.
+  ///
+  /// Separate from `planFeedback` even though it travels on the same endpoint,
+  /// because it is a different user intent: the other three resolve a row, this
+  /// one says the machine guessed wrong about the work. The shell applies it
+  /// locally so the bar redraws; a live store also records it.
+  ///
+  /// `nil` clears the estimate back to "unknown", which has to stay reachable —
+  /// otherwise a mis-tap turns an honest blank into a wrong number that can
+  /// never be taken back.
+  open func setPlanEstimate(candidateID: String, rank: Int, minutes: Int?) async -> ActionOutcome {
+    guard let index = plan.firstIndex(where: { $0.id == candidateID }) else {
+      return .failed("这条计划已经不在了。")
+    }
+    plan[index].estimatedMinutes = minutes
+    return .ok(nil)
   }
 
   open func newThread() {

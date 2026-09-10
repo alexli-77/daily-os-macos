@@ -21,6 +21,10 @@ struct TodayPlanResponse: Decodable {
     let rank: Int
     let text: String
     let candidateId: String
+    /// Absent on every plan written before the prompt asked for it, and absent
+    /// whenever the model declined to guess. Optional the whole way down so
+    /// "no estimate" stays distinguishable from "zero minutes".
+    let minutes: Int?
   }
 
   let plan: Plan?
@@ -63,9 +67,10 @@ extension DailyOSClient {
           text: todo.text,
           kind: .priority,
           state: Self.state(for: response.feedback[todo.candidateId]),
-          // The planner emits no duration. Left nil so the Today header can say
-          // the estimate is missing rather than draw a fabricated one.
-          estimatedMinutes: nil
+          // Already the user's own number when they have corrected one: the
+          // service merges the newest ledger edit over the model's guess, so
+          // this client never has to know an override mechanism exists.
+          estimatedMinutes: todo.minutes
         )
       }
 
@@ -82,21 +87,28 @@ extension DailyOSClient {
   /// (date, candidateId, rank) — it is a feedback signal for the scorer, not
   /// just a status flag, and dropping the rank would throw away the half of it
   /// that says *where in the list* the row was when it was acted on.
+  ///
+  /// `minutes` is only meaningful on `update` — the service ignores it on the
+  /// other two, because completing something says nothing about how long it
+  /// took and a duration riding along on a tick would silently rewrite the
+  /// estimate.
   public func recordPlanFeedback(
     candidateID: String,
     rank: Int,
     event: String,
-    note: String?
+    note: String?,
+    minutes: Int? = nil
   ) async throws {
     struct Request: Encodable {
       let candidateId: String
       let rank: Int
       let event: String
       let note: String?
+      let minutes: Int?
     }
     try await post(
       "/api/today/todo-feedback",
-      body: Request(candidateId: candidateID, rank: rank, event: event, note: note)
+      body: Request(candidateId: candidateID, rank: rank, event: event, note: note, minutes: minutes)
     )
   }
 

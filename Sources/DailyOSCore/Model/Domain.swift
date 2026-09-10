@@ -296,6 +296,22 @@ public struct Cycle: Sendable, Equatable, Identifiable {
   /// Whether any section of this cycle can be saved at all.
   public var isWritable: Bool { frontmatterError == nil }
 
+  /// Whether a date falls inside this cycle, compared by day.
+  ///
+  /// By day and not by instant: `end` is the last day at midnight, so a plain
+  /// `date <= end` would file the final day of a cycle under "past" for all but
+  /// its first moment — on the one day you are most likely to be looking at it.
+  public func contains(_ date: Date, calendar: Calendar = .current) -> Bool {
+    let day = calendar.startOfDay(for: date)
+    return day >= calendar.startOfDay(for: start) && day <= calendar.startOfDay(for: end)
+  }
+
+  /// Starts after today. Planning the next cycle before the current one ends is
+  /// normal, and such a cycle is emphatically not 往期.
+  public func isUpcoming(on date: Date = .now, calendar: Calendar = .current) -> Bool {
+    calendar.startOfDay(for: start) > calendar.startOfDay(for: date)
+  }
+
   public func section(_ kind: CycleSectionKind) -> CycleSection? {
     sections.first { $0.kind == kind }
   }
@@ -310,6 +326,73 @@ public struct Cycle: Sendable, Equatable, Identifiable {
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM-dd"
     return "20_CYCLES/\(formatter.string(from: start))_\(label).md"
+  }
+}
+
+/// One heading in the cycle list.
+///
+/// The list used to be one flat run of a dozen labels like "8.24-9.6", ordered
+/// newest-first and otherwise undifferentiated — which meant the single question
+/// you open this screen with, *which one am I in right now*, was answered by
+/// parsing dates in your head. Grouping answers it before you read a row.
+public struct CycleGroup: Sendable, Identifiable {
+  public enum Kind: String, Sendable {
+    /// Today falls inside it.
+    case current
+    /// Nothing contains today — a gap between cycles — so this is the one that
+    /// ended most recently. Titled differently on purpose: calling a finished
+    /// cycle 本期 is how you end up editing last fortnight's priorities.
+    case latest
+    /// Starts later. Planning ahead is normal and these are not 往期.
+    case upcoming
+    case past
+
+    public var title: String {
+      switch self {
+      case .current: "本期"
+      case .latest: "最近一期"
+      case .upcoming: "计划中"
+      case .past: "往期"
+      }
+    }
+  }
+
+  public let kind: Kind
+  public let cycles: [Cycle]
+
+  public var id: String { kind.rawValue }
+  public var title: String { kind.title }
+
+  public init(kind: Kind, cycles: [Cycle]) {
+    self.kind = kind
+    self.cycles = cycles
+  }
+
+  /// Split a list of cycles into the headings the sidebar draws.
+  ///
+  /// Sorts by `start` descending itself rather than trusting the caller's order:
+  /// the same grouping has to hold for a teammate's synced cache as for your own
+  /// directory listing, and those two arrive from different code paths.
+  ///
+  /// Empty groups are dropped, so a person with one cycle sees one heading and
+  /// not three empty ones.
+  public static func group(_ cycles: [Cycle], on date: Date = .now, calendar: Calendar = .current) -> [CycleGroup] {
+    let sorted = cycles.sorted { $0.start > $1.start }
+    let upcoming = sorted.filter { $0.isUpcoming(on: date, calendar: calendar) }
+    let rest = sorted.filter { !$0.isUpcoming(on: date, calendar: calendar) }
+    let current = rest.first { $0.contains(date, calendar: calendar) }
+
+    // With no cycle around today, the newest finished one takes the top slot —
+    // under its own heading, so the promotion is visible rather than implied.
+    let headKind: Kind = current != nil ? .current : .latest
+    let head = current ?? rest.first
+    let past = rest.filter { $0.id != head?.id }
+
+    return [
+      head.map { CycleGroup(kind: headKind, cycles: [$0]) },
+      upcoming.isEmpty ? nil : CycleGroup(kind: .upcoming, cycles: upcoming),
+      past.isEmpty ? nil : CycleGroup(kind: .past, cycles: past),
+    ].compactMap { $0 }
   }
 }
 

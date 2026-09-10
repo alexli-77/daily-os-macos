@@ -189,8 +189,53 @@ check(Fmt.minutes(45) == "45m", "sub-hour stays in minutes")
 check(Fmt.minutes(60) == "1h", "a round hour drops the minutes")
 check(Fmt.minutes(135) == "2h15m", "hours and minutes")
 
+// 7. Cycle grouping, which decides what the sidebar calls each cycle.
+//
+// Worth checking rather than eyeballing: every interesting case is a *date*
+// case, and the fixture will happily look correct on the day you write it and
+// wrong three weeks later. These pin the boundaries instead.
+func cycle(_ id: String, _ startOffset: Int, _ endOffset: Int) -> Cycle {
+  let day = 24.0 * 3600
+  return Cycle(
+    id: id,
+    label: id,
+    mode: .biweekly,
+    start: Date(timeIntervalSinceNow: Double(startOffset) * day),
+    end: Date(timeIntervalSinceNow: Double(endOffset) * day),
+    ownerId: "u",
+    runId: nil,
+    sections: [],
+    updatedAt: .now
+  )
+}
+
+let current = cycle("current", -3, 10)
+let previous = cycle("previous", -17, -4)
+let older = cycle("older", -31, -18)
+let next = cycle("next", 11, 24)
+
+let groups = CycleGroup.group([older, next, previous, current])
+check(groups.map(\.kind) == [.current, .upcoming, .past], "expected 本期 / 计划中 / 往期, got \(groups.map(\.title))")
+check(groups.first?.cycles.map(\.id) == ["current"], "the cycle containing today is 本期")
+check(groups.last?.cycles.map(\.id) == ["previous", "older"], "往期 is newest first, got \(groups.last?.cycles.map(\.id) ?? [])")
+
+// The last day of a cycle still counts as inside it — the day you are most
+// likely to be looking at it is the day a midnight-vs-instant comparison would
+// file it under 往期.
+check(cycle("today-is-last-day", -13, 0).contains(.now), "the final day is still inside the cycle")
+check(cycle("today-is-first-day", 0, 13).contains(.now), "the first day is inside the cycle")
+check(!cycle("today-is-first-day", 0, 13).isUpcoming(), "a cycle starting today has already started")
+
+// A gap between cycles must not promote a finished one to 本期.
+let gapped = CycleGroup.group([older, previous])
+check(gapped.first?.kind == .latest, "with nothing around today the head group is 最近一期")
+check(gapped.first?.cycles.map(\.id) == ["previous"], "the most recently ended cycle takes the head slot")
+
+check(CycleGroup.group([]).isEmpty, "no cycles means no headings")
+check(CycleGroup.group([current]).map(\.kind) == [.current], "one cycle means one heading, not three empty ones")
+
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")
