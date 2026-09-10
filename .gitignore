@@ -12,3 +12,6 @@ xcuserdata/
 *.xcworkspace/xcuserdata/
 DerivedData/
 *.xcuserstate
+
+# Packaged builds — scripts/package.sh
+dist/

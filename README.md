@@ -96,14 +96,26 @@ npm run build && launchctl kickstart -k gui/$(id -u)/com.daily-os-feishu.agent
 
 ### 装到另一台 Mac 上（不需要 Apple 开发者账号）
 
-从源码构建出来的 `.app` 双击就能开，不需要签名、不需要公证、不需要那 $99：
+**没有安装包，也不会有。** macOS 的 App 就是一个目录：整个产品就是 `Daily OS.app`，
+「安装」＝拖进 `/Applications`。
 
 ```bash
-xcodegen generate
-xcodebuild build -project DailyOS.xcodeproj -scheme DailyOS \
-  -destination 'platform=macOS' -derivedDataPath .build/dd CODE_SIGNING_ALLOWED=NO
-open .build/dd/Build/Products/Debug/DailyOS.app
+./scripts/package.sh
 ```
+
+产出在 `dist/`：`Daily OS.app` 和 `DailyOS-<版本>.zip`（约 2.5 MB）。
+
+**对方那台机器还要有 daily-os 服务在跑。** 这个 App 只是它的客户端——没有服务，
+启动后停在「选择仓库目录」那一屏，什么都读不到。这一条比签名重要得多。
+
+脚本里有两处不是随手写的：
+
+- **通用二进制**（arm64 + x86_64）。Xcode 默认只构建你正在用的这台机器的架构，
+  一个 arm64-only 的包给到 Intel Mac 上会报「应用程序不能打开」——这句话完全没提架构，
+  对方只会去查权限。
+- **显式 ad-hoc 签名**。单架构构建时链接器会自动打一个，**通用构建不会**，
+  而 **arm64 可执行文件没有签名就根本跑不起来**。少这一行，「为了兼容 Intel 而改成通用」
+  的结果是在 Apple Silicon 上直接挂掉——正好砸了它本来要服务的那批机器。
 
 能这样跑，是因为 **Gatekeeper 拦的是 `com.apple.quarantine` 这个扩展属性，而它是下载器打上去的，不是 app 自带的。** 本地构建的产物没有这个标记，所以不经过 Gatekeeper。
 

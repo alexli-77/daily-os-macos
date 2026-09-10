@@ -48,6 +48,13 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.dailyos.mac
         MARKETING_VERSION: "0.1.0"
         SWIFT_VERSION: "6.0"
+        # Universal, so one copy runs on both Apple Silicon and Intel. Xcode's
+        # default builds only the machine you are sitting at, and an arm64-only
+        # bundle handed to an Intel Mac fails with "应用程序不能打开" — a message
+        # that says nothing about architecture and sends the recipient looking
+        # for a permissions problem.
+        ARCHS: "$(ARCHS_STANDARD)"
+        ONLY_ACTIVE_ARCH: NO
         ENABLE_HARDENED_RUNTIME: YES
         CODE_SIGN_STYLE: Automatic
         # The daily-os service runs on localhost and this app is a client of it;
