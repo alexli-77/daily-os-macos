@@ -109,13 +109,14 @@ struct TaskRow<Accessory: View>: View {
     .onHover { hovering in
       withAnimation(.easeOut(duration: 0.14)) { isHovering = hovering }
     }
-    // Focus is what makes the keys work, and selection is what makes focus
-    // visible. Kept in sync both directions so clicking and tabbing land in the
-    // same state rather than in two competing highlights.
+    // Focus is what makes the keys work; selecting a row takes it. Deliberately
+    // one-way. Driving selection *from* focus as well meant that on launch
+    // SwiftUI's own first-responder assignment highlighted the first row —
+    // usually a finished one, so the app opened showing a selected row with
+    // nothing you could do to it.
     .focusable()
     .focusEffectDisabled()
     .focused($isFocused)
-    .onChange(of: isFocused) { _, focused in if focused { selectedID = item.id } }
     .onChange(of: isSelected) { _, selected in if selected { isFocused = true } }
     // ⏎ belongs to the circle, not to an action, which is why no action is
     // allowed to claim it: in a list of things to finish, the default key has

@@ -186,6 +186,19 @@ open class AppState {
     toast = state == .done ? "已完成" : (state == .deferred ? "已顺延" : "已恢复")
   }
 
+  /// Rewrite one inbox row's text.
+  ///
+  /// A capture is one sentence typed in a hurry, so this is the second most
+  /// likely thing to want after ticking one off — and until now the only way to
+  /// fix a typo was to delete the row and retype it, which loses its id and
+  /// therefore everything the scorer had learned about it.
+  open func renameTodo(_ id: TodoItem.ID, to text: String) {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty, let index = todos.firstIndex(where: { $0.id == id }) else { return }
+    todos[index].text = trimmed
+    toast = "已改好"
+  }
+
   open func toggleTodo(_ id: TodoItem.ID) {
     guard let item = todos.first(where: { $0.id == id }) else { return }
     setTodo(id, to: item.state == .done ? .open : .done)

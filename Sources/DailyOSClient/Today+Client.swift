@@ -100,7 +100,11 @@ struct CaptureRequest: Encodable {
 /// undo a rename that landed between the fetch and the tap.
 struct TodoInboxUpdateRequest: Encodable {
   let id: String
-  let status: String
+  /// Both are optional on the service side and it applies whichever it is
+  /// given, so a rename must not carry a status and vice versa — sending both
+  /// would make every edit also reassert a state the user did not touch.
+  var status: String?
+  var text: String?
 }
 
 // MARK: - Mapping
@@ -198,6 +202,16 @@ extension DailyOSClient {
     case .deleted: "deleted"
     }
     try await post("/api/todo-inbox", body: TodoInboxUpdateRequest(id: id, status: status))
+  }
+
+  /// Rewrite one inbox row's text.
+  ///
+  /// Deliberately not routed through `/api/capture` like a new todo is. Capture
+  /// runs the sentence through the service's command grammar, so re-saving a
+  /// row that starts with "提醒我" would turn it into a reminder — an edit must
+  /// change the words and nothing else.
+  public func renameTodo(id: String, text: String) async throws {
+    try await post("/api/todo-inbox", body: TodoInboxUpdateRequest(id: id, text: text))
   }
 
   private var statePath: String { "/api/state" }

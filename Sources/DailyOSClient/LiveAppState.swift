@@ -178,6 +178,13 @@ public final class LiveAppState: AppState {
     write("更新待办") { try await $0.setTodo(id: id, to: state) }
   }
 
+  public override func renameTodo(_ id: TodoItem.ID, to text: String) {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return }
+    super.renameTodo(id, to: trimmed)
+    write("改待办") { try await $0.renameTodo(id: id, text: trimmed) }
+  }
+
   public override func planFeedback(
     candidateID: String,
     rank: Int,

@@ -588,14 +588,33 @@ private struct TodoRow: View {
   let item: TodoItem
   @Binding var selectedID: TodoItem.ID?
 
+  @State private var isRenaming = false
+  @State private var draft = ""
+
   var body: some View {
-    TaskRow(
-      item: item,
-      actions: actions,
-      onToggleCheck: item.state == .deferred ? nil : { state.toggleTodo(item.id) },
-      selectedID: $selectedID
-    ) {
-      if item.state == .deferred { Pill("已顺延", tone: .warn) }
+    VStack(alignment: .leading, spacing: Metrics.xxs) {
+      TaskRow(
+        item: item,
+        actions: actions,
+        onToggleCheck: item.state == .deferred ? nil : { state.toggleTodo(item.id) },
+        selectedID: $selectedID
+      ) {
+        if item.state == .deferred { Pill("已顺延", tone: .warn) }
+      }
+
+      if isRenaming {
+        InlineField(
+          placeholder: "改成…",
+          text: $draft,
+          confirm: "保存",
+          onConfirm: {
+            state.renameTodo(item.id, to: draft)
+            withAnimation(.snappy(duration: 0.2)) { isRenaming = false }
+          },
+          onCancel: { withAnimation(.snappy(duration: 0.2)) { isRenaming = false } }
+        )
+        .transition(.taskRow)
+      }
     }
   }
 
@@ -603,6 +622,15 @@ private struct TodoRow: View {
     var actions: [TaskAction] = []
     switch item.state {
     case .open:
+      // A capture is one sentence typed in a hurry. Before this, fixing a typo
+      // meant deleting the row and retyping it — which throws away its id, and
+      // with it everything the scorer had learned about the thing.
+      actions.append(
+        TaskAction(id: "rename", label: "修改", symbol: "square.and.pencil", key: "e") {
+          draft = item.text
+          isRenaming.toggle()
+        }
+      )
       actions.append(
         TaskAction(id: "defer", label: "顺延", symbol: "clock.arrow.circlepath", tone: .warn, key: "d") {
           state.setTodo(item.id, to: .deferred)
