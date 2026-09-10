@@ -1,7 +1,12 @@
-#if DEBUG
 import Foundation
 
 /// Fixtures for previews.
+///
+/// Not behind `#if DEBUG`. `#Preview` blocks compile in release builds too, so
+/// guarding the fixtures but not their callers breaks the release build and
+/// only the release build — which is the worst place to find out. `MockData`
+/// and `DesignGallery` already ship for the same reason: this is a design
+/// system repository, and the sample data is part of what it publishes.
 ///
 /// The interesting states of this app are not "has data" and "has no data" —
 /// they are *whose* data, and *what you are allowed to do to it*. A cycle you
@@ -62,4 +67,3 @@ extension AppState {
     return state
   }
 }
-#endif

@@ -67,6 +67,23 @@ Fixture 在 `AppState+Preview.swift`：`previewOwner` / `previewTeammate` / `pre
 2. 删掉模板的 `ContentView.swift` 和 `DailyOSApp.swift`，把本仓库的 `App/DailyOSApp.swift` 加入 target
 3. File → Add Package Dependencies → Add Local → 选仓库根目录 → 勾上 `DailyOSCore` 和 `DailyOSMac`
 
+### 装到自己机器上日常用
+
+```bash
+xcodegen generate
+xcodebuild build -project DailyOS.xcodeproj -scheme DailyOS -configuration Release \
+  -destination 'platform=macOS' -derivedDataPath .build/release CODE_SIGNING_ALLOWED=NO
+rm -rf "/Applications/Daily OS.app"
+cp -R .build/release/Build/Products/Release/DailyOS.app "/Applications/Daily OS.app"
+open "/Applications/Daily OS.app"
+```
+
+用 Release 而不是 Debug：日常用的东西不该带调试开销。**先跑一次 Release 构建再改代码**——
+`#Preview` 块在 Release 下照样编译，所以只在 Debug 存在的符号会让 Release 构建挂掉，而 Debug 永远发现不了。
+
+前提是 daily-os 服务在跑。它在 launchd 下（`com.daily-os-feishu.agent`）就会开机自启；
+`npm run service:install` 装它，`launchctl list | grep daily-os` 查它。
+
 ### 装到另一台 Mac 上（不需要 Apple 开发者账号）
 
 从源码构建出来的 `.app` 双击就能开，不需要签名、不需要公证、不需要那 $99：
