@@ -38,6 +38,7 @@ let package = Package(
     // Manual, local-only: points the real client at a real service and reports
     // whether the decoders survive real files. Never runs in CI — it needs a
     // service and a person's own data, which is exactly what CI does not have.
+    .executableTarget(name: "daily-os-icon", dependencies: ["DailyOSCore"]),
     .executableTarget(name: "daily-os-live", dependencies: ["DailyOSCore", "DailyOSClient"]),
   ]
 )

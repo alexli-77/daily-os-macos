@@ -54,7 +54,10 @@ struct DailyOSApp: App {
   }
 
   private func connect() async {
-    await connection.probe()
+    // `bringUp`, not `probe`: it starts the launch agent when the service is
+    // simply not up yet, which at login is the common case rather than the
+    // exceptional one.
+    await connection.bringUp()
     guard connection.state.isConnected else { return }
     if state == nil { state = LiveAppState(connection: connection) }
     await state?.reload()

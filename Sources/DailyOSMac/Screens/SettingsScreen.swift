@@ -699,21 +699,35 @@ private struct ServicePanel: View {
         PanelDivider()
         // No "已运行" row: the service reports no start time anywhere, and the
         // old screen filled that gap with a zero that read as "刚刚启动".
+        // The service still has no restart *endpoint* — asking a process to
+        // restart itself over its own HTTP server never had a good answer. But
+        // launchd does, and this app can talk to launchd, so the paragraph that
+        // used to hand over a terminal command is now two buttons.
         VStack(alignment: .leading, spacing: Metrics.xs) {
-          Text("重启").mutedStyle(Typo.body)
-          Text("服务没有重启接口——/api/action 只有注册和注销 launchd 任务两个动作。要重启，在终端里跑：")
+          Text("控制").mutedStyle(Typo.body)
+          Text(snapshot.service.installed
+            ? "由 launchd 管理：开机自启，崩了会自动拉起。Daily OS 启动时会检查它，没在跑就顺手启动。"
+            : "还没装成后台任务。在服务目录里执行 `npm run service:install` 之后，这里才能控制它，而且它才会开机自启。")
             .mutedStyle()
             .fixedSize(horizontal: false, vertical: true)
-          HStack(spacing: Metrics.xs) {
-            Text(snapshot.service.restartCommand(repoRoot: snapshot.repoRootPath))
-              .font(Typo.monoBody)
-              .foregroundStyle(Palette.ink)
-              .textSelection(.enabled)
-              .fixedSize(horizontal: false, vertical: true)
-            Button("复制") {
-              store.copy(snapshot.service.restartCommand(repoRoot: snapshot.repoRootPath), what: "命令")
+          if snapshot.service.installed {
+            HStack(spacing: Metrics.xs) {
+              Button("重启服务") { Task { await store.restartService() } }
+                .buttonStyle(QuietButtonStyle())
+              Button("停止服务") { store.confirmStopService() }
+                .buttonStyle(QuietButtonStyle(tone: .danger))
+              Spacer(minLength: 0)
+              Text(snapshot.service.restartCommand(repoRoot: snapshot.repoRootPath))
+                .font(Typo.mono)
+                .foregroundStyle(Palette.inkMuted)
+                .textSelection(.enabled)
+                .lineLimit(1)
             }
-            .buttonStyle(QuietButtonStyle())
+            // Rebuilding the service is the step people forget, and the symptom
+            // — a restart that changes nothing — looks like the restart failing.
+            Text("改过服务端代码的话，先在服务目录跑 npm run build 再重启：launchd 跑的是 dist/，不是源码。")
+              .mutedStyle()
+              .fixedSize(horizontal: false, vertical: true)
           }
         }
         .padding(.top, Metrics.xs)
@@ -1150,6 +1164,51 @@ private final class SettingsStore {
       // The value is not echoed into the message — an error string ends up in
       // the UI and, if the user copies it, somewhere else too.
       banner = Banner(ok: false, text: "写入 \(key) 失败：\(message(from: error))")
+    }
+  }
+
+  // MARK: Service control
+
+  /// Restart through launchd, then wait for the service to answer again.
+  ///
+  /// Reloads afterwards rather than reporting success on `launchctl`'s exit
+  /// code: kickstart returning 0 means launchd accepted the request, not that
+  /// node came back up. The panel above is the only thing that can tell you
+  /// which, and it is one read away.
+  func restartService() async {
+    isBusy = true
+    defer { isBusy = false }
+    do {
+      try await ServiceSupervisor.restart()
+      banner = Banner(ok: true, text: "已请求重启，正在等它回来…")
+      for _ in 0..<12 {
+        try? await Task.sleep(for: .milliseconds(700))
+        await load()
+        if loadError == nil { banner = Banner(ok: true, text: "服务已重启。"); return }
+      }
+      banner = Banner(ok: false, text: "重启后服务还没回来。看看日志。")
+    } catch {
+      banner = Banner(ok: false, text: message(from: error))
+    }
+  }
+
+  func confirmStopService() {
+    pending = PendingAction(
+      title: "停止服务？",
+      // Says what stops, not just what the button does. "Stop the service" and
+      // "stop the morning briefing from arriving" are the same sentence, and
+      // only one of them is what someone actually means to do.
+      message: "早报、复盘这些定时任务都会停，飞书那边也收不到消息了。下次登录时它会自己起来，也可以在这里手动启动。",
+      confirmTitle: "停止",
+      isDestructive: true
+    ) { [weak self] in
+      do {
+        try await ServiceSupervisor.stop()
+        self?.banner = Banner(ok: true, text: "服务已停止。")
+      } catch {
+        self?.banner = Banner(ok: false, text: error.localizedDescription)
+      }
+      await self?.load()
     }
   }
 

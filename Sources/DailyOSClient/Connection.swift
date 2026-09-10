@@ -90,6 +90,63 @@ public final class ServiceConnection {
     state = .connecting
   }
 
+  /// What the app is doing right now, for the setup screen to say out loud.
+  public private(set) var activity = ""
+
+  /// Get to a working connection, starting the service if that is what is
+  /// missing.
+  ///
+  /// The old launch path was a single `probe()`. One probe is wrong in the most
+  /// ordinary situation there is: at login, launchd starts the login items and
+  /// the agent at roughly the same moment, so the app frequently asks before
+  /// the service has finished binding its port — and then shows "服务没在跑" for
+  /// a service that was two seconds away, with no retry and no way forward
+  /// except a button the user has to know to press.
+  ///
+  /// So: probe, and if that fails, start the agent and keep asking for a while.
+  public func bringUp() async {
+    guard client != nil else {
+      state = .unconfigured
+      return
+    }
+
+    activity = "正在连接服务…"
+    await probe()
+    if state.isConnected { activity = ""; return }
+
+    guard ServiceSupervisor.isInstalled else {
+      // Nothing to start. The service is being run by hand, so the honest
+      // report is the probe's own reason plus what would fix it for good.
+      activity = ""
+      if case .failed(let reason) = state {
+        state = .failed(reason: "\(reason)\n\n这台机器没有把服务装成开机自启的后台任务。在服务目录里执行 `npm run service:install`，之后 Daily OS 会自己把它拉起来。")
+      }
+      return
+    }
+
+    activity = "服务没有响应，正在启动…"
+    do {
+      try await ServiceSupervisor.start()
+    } catch {
+      state = .failed(reason: "启动服务失败：\(error.localizedDescription)")
+      activity = ""
+      return
+    }
+
+    // Node has to boot, read config and bind a port; a fixed sleep would either
+    // be too short on a cold cache or waste time on a warm one, so this asks
+    // repeatedly and stops the moment it works.
+    for attempt in 1...16 {
+      try? await Task.sleep(for: .milliseconds(700))
+      activity = "等服务就绪…（\(attempt * 7 / 10)s）"
+      await probe()
+      if state.isConnected { activity = ""; return }
+    }
+
+    activity = ""
+    state = .failed(reason: "服务已经启动，但十几秒后仍然没有响应。看看它的日志：logs/launchd.err.log。")
+  }
+
   /// Confirm the service answers. Cheap on purpose — the point is to fail fast
   /// with a specific reason, not to fetch anything.
   ///

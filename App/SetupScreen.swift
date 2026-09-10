@@ -24,9 +24,10 @@ struct SetupScreen: View {
     VStack(spacing: Metrics.md) {
       Spacer()
 
-      Image(systemName: "circle.hexagongrid")
-        .font(.system(size: 40, weight: .light))
-        .foregroundStyle(Palette.moss)
+      // The mark carries the state, so the screen is not a static wall with a
+      // sentence that changes. Waiting looks like waiting.
+      DailyOSMark(motion: markMotion)
+        .frame(width: 76, height: 76)
       Text("Daily OS").inkStyle(Typo.display)
 
       switch connection.state {
@@ -34,8 +35,10 @@ struct SetupScreen: View {
         message("找不到这台电脑上的 daily-os 服务。它是一个文件夹——里面装着服务的代码和数据，通常叫 daily-os-feishu。")
         message("找到它，点下面的按钮选中它就行。App 需要知道的只有这一件事，不用输密码，也不用填任何密钥。", tone: .neutral)
       case .connecting:
-        ProgressView().controlSize(.small)
-        message("正在连接…")
+        // No ProgressView beside the mark: two things spinning at once is one
+        // too many, and the mark is the better of the two at saying which of
+        // the app's own steps is in flight.
+        message(connection.activity.isEmpty ? "正在连接…" : connection.activity)
       case .failed(let reason):
         message(reason, tone: .danger)
       case .connected:
@@ -46,7 +49,10 @@ struct SetupScreen: View {
         Button(connection.repoRoot == nil ? "选择服务文件夹…" : "换一个文件夹…") { pickRepo() }
           .buttonStyle(MossButtonStyle(prominent: connection.repoRoot == nil))
         if connection.repoRoot != nil {
-          Button("重试") { Task { await connection.probe() } }
+          // 重试 now means "try, and start the service if that is what is
+          // wrong" — the same thing launching does. A retry button that only
+          // repeats the failing step is a button that repeats the failure.
+          Button("重试") { Task { await connection.bringUp() } }
             .buttonStyle(MossButtonStyle(prominent: false))
         }
       }
@@ -73,6 +79,14 @@ struct SetupScreen: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .padding(Metrics.xl)
     .background(Palette.paper)
+  }
+
+  private var markMotion: DailyOSMark.Motion {
+    switch connection.state {
+    case .connecting: .searching
+    case .connected: .settled
+    case .unconfigured, .failed: .still
+    }
   }
 
   private func message(_ text: String, tone: Tone = .neutral) -> some View {

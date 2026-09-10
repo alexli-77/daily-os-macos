@@ -33,7 +33,11 @@ extension Color {
   }
 
   /// `#RRGGBB`, the form the design tokens are written in.
-  init(hex: UInt32) {
+  ///
+  /// Public so the icon generator can draw brand artwork in the same notation
+  /// the tokens are written in. Not an invitation to spell colours inline in a
+  /// screen — everything a view draws should come from `Palette`.
+  public init(hex: UInt32) {
     self.init(
       .sRGB,
       red: Double((hex >> 16) & 0xFF) / 255,
