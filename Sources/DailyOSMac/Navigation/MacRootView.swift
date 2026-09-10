@@ -56,16 +56,6 @@ private struct Sidebar: View {
         if section == .cycles, state.pendingDraftCount > 0 {
           Pill("\(state.pendingDraftCount)", tone: .warn)
         }
-        // A screen still on the fixture says so here rather than looking like
-        // your data. The demo content is plausible enough to be mistaken for
-        // real, and that mistake is only found by acting on it.
-        if !state.wiredSections.contains(section) {
-          Spacer(minLength: 0)
-          Text("演示")
-            .font(Typo.label)
-            .foregroundStyle(Palette.inkMuted)
-            .help("这一屏还没接后端，显示的是示例数据")
-        }
       }
     } icon: {
       Image(systemName: section.icon)
@@ -82,12 +72,19 @@ private struct SidebarFooter: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.xs) {
       Divider()
+      // Name and status share one line, matching the web console. Stacked, the
+      // footer was two lines tall for two short strings and read as two
+      // separate facts rather than one line about this account.
       HStack(spacing: Metrics.xs) {
-        PixelAvatar(seed: state.account.avatarSeed, size: 22)
-        VStack(alignment: .leading, spacing: 0) {
-          Text(state.account.displayName).inkStyle(Typo.caption)
-          StatusDot(state.service.state.label, tone: state.service.state.tone, pulsing: state.service.state == .running)
-        }
+        PixelAvatar(seed: state.account.avatarSeed, size: 20)
+        Text(state.account.displayName)
+          .inkStyle(Typo.caption)
+          .lineLimit(1)
+        StatusDot(
+          state.service.state.label,
+          tone: state.service.state.tone,
+          pulsing: state.service.state == .running
+        )
         Spacer(minLength: 0)
         Button {
           state.section = .settings

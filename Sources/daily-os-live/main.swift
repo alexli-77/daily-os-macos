@@ -118,6 +118,37 @@ func run() async -> Int32 {
     return line
   }
 
+  // Go through the store, not just the client.
+  //
+  // The first version of this tool called `DailyOSClient` directly and reported
+  // everything healthy while the app showed an empty cycles screen: the store
+  // was resolving `isViewingSelf` against fixture identity and rendering the
+  // (empty) teammate list. A check that skips the layer the UI actually reads
+  // cannot see that class of bug at all.
+  await step("经由 LiveAppState") {
+    let connection = ServiceConnection(repoRoot: root)
+    let state = LiveAppState(connection: connection)
+    await state.reload()
+
+    guard connection.state.isConnected else {
+      throw ClientError.service(message: "store 没能连上：\(connection.state.label)")
+    }
+    var problems: [String] = []
+    if !state.isViewingSelf { problems.append("isViewingSelf 为 false —— 界面会显示空的队友视图") }
+    if state.visibleCycles.isEmpty { problems.append("visibleCycles 为空 —— 周期页会是空的") }
+    if state.selectedCycle == nil { problems.append("没有选中的周期") }
+    if let error = state.lastError { problems.append(error) }
+    if !problems.isEmpty { throw ClientError.service(message: problems.joined(separator: "；")) }
+
+    let planned = state.plan.count
+    let done = state.plan.filter { $0.state != .open }.count
+    let stale = state.planStaleDate.map { "（来自 \($0)，今天还没跑）" } ?? ""
+    return "身份 \(state.account.displayName) · 可见周期 \(state.visibleCycles.count)"
+      + " · 选中 \(state.selectedCycle?.label ?? "—")"
+      + " · 今日计划 \(planned) 条\(stale)，已处理 \(done)"
+      + " · 待办 \(state.openTodos.count) · OKR \(state.okrFiles.count) 个文件"
+  }
+
   print(failures == 0 ? "\n全部通过。" : "\n\(failures) 项失败。")
   return failures == 0 ? 0 : 1
 }

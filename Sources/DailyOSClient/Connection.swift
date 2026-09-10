@@ -77,12 +77,19 @@ public final class ServiceConnection {
 
   /// Confirm the service answers. Cheap on purpose — the point is to fail fast
   /// with a specific reason, not to fetch anything.
+  ///
+  /// An already-connected connection is *not* moved back to `.connecting` while
+  /// it re-checks. It was, and the window is keyed on `isConnected`: every
+  /// refresh dropped the whole app back to the setup screen for one frame and
+  /// then returned. From the outside that reads as the app crashing and
+  /// recovering. A re-check that finds trouble still reports it — this only
+  /// stops the optimistic state from flickering on the way there.
   public func probe() async {
     guard let client else {
       state = .unconfigured
       return
     }
-    state = .connecting
+    if !state.isConnected { state = .connecting }
     do {
       let endpoint = try await client.currentEndpoint()
       _ = try await client.serviceStatus()

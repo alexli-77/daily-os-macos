@@ -45,6 +45,16 @@ open class AppState {
   public var composerText: String = ""
   public var quickCaptureText: String = ""
 
+  /// Set when the newest plan is not today's — today's has not run yet.
+  ///
+  /// Surfaced rather than hidden: yesterday's plan is still the most recent
+  /// plan, and quietly presenting it as today's is how someone works a day
+  /// behind without noticing.
+  public var planStaleDate: String?
+  /// False when no `daily_plan` has ever run, which wants a different empty
+  /// state from "ran and produced nothing".
+  public var hasPlan = true
+
   // Transient
   public var toast: String?
 
@@ -279,6 +289,79 @@ open class AppState {
     cycles[cycleIndex].sections[sectionIndex].updatedAt = .now
     cycles[cycleIndex].sections[sectionIndex].isTemplate = false
     cycles[cycleIndex].updatedAt = .now
+  }
+
+  // MARK: Service actions
+  //
+  // Declared here with local-only defaults so the screens in `DailyOSMac` can
+  // call them: that target depends on `DailyOSCore` and deliberately not on the
+  // networking layer, which keeps the design system free of transport. A live
+  // store overrides each one. Anything the service genuinely cannot do returns
+  // a failure the screen is expected to show rather than swallow.
+
+  /// The last failure from a service action, for a screen to show inline.
+  public var lastActionError: String?
+
+  public enum ActionOutcome: Sendable, Equatable {
+    case ok(String?)
+    case failed(String)
+    /// The service has no such capability. The screen must say so rather than
+    /// pretend the button worked.
+    case unsupported(String)
+  }
+
+  /// Read the service log tail. `nil` means the read failed; the reason is in
+  /// `lastActionError`, which the screen shows.
+  open func serviceLogs() async -> [String]? {
+    lastActionError = "没有连接到服务。"
+    return nil
+  }
+
+  /// Restart the background service.
+  open func restartService() async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  /// Whether an env secret is configured, and optionally its value.
+  ///
+  /// `nil` means the question could not be answered — which is different from
+  /// "not configured" and must not be rendered as it.
+  open func envSecret(key: String, reveal: Bool) async -> (configured: Bool, value: String?)? {
+    lastActionError = "没有连接到服务。"
+    return nil
+  }
+
+  /// Persist the provider / model choice.
+  open func saveModel(provider: String, model: String) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  /// Install or update a skill by id.
+  open func installSkill(id: String) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+  open func updateSkill(id: String) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  /// Team actions. `action` is the service's own verb; the screen passes what
+  /// the service documents rather than a translated word.
+  open func teamAction(_ action: String, payload: [String: String]) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  /// Record feedback against one plan row: `complete` / `defer` / `update`.
+  ///
+  /// `rank` is part of the ledger key, not decoration — the feedback exists to
+  /// tell the scorer how a ranked list performed, and an event without the rank
+  /// it was acted on at is half a signal.
+  open func planFeedback(
+    candidateID: String,
+    rank: Int,
+    event: String,
+    note: String?
+  ) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
   }
 
   open func newThread() {

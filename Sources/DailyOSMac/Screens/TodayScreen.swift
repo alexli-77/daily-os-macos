@@ -78,7 +78,12 @@ private struct DayProgressPanel: View {
 
         SegmentedProgress(items: state.plan)
 
-        if progress.plannedMinutes > 0 {
+        // Gated on "is there a plan at all", not on "does the plan carry
+        // minutes". The old `plannedMinutes > 0` gate is why this block
+        // disappeared: the service supplies no estimates, so the sum is always
+        // zero and the whole feature silently stopped rendering. A missing
+        // input should look like a missing input.
+        if !state.plan.isEmpty {
           PanelDivider()
           TimeAllocation(items: state.plan, total: progress.plannedMinutes)
         }
@@ -119,49 +124,74 @@ private struct SegmentedProgress: View {
 /// Proportional rather than a list of durations because the useful question is
 /// not "how long is this one" but "what is eating the day" — and that is a
 /// comparison, which is what widths are for.
+///
+/// It also has to survive having nothing to compare. Every item the live store
+/// produces arrives with `estimatedMinutes == nil`, so the honest states are
+/// three, not two: all estimated, some estimated, none estimated. The last one
+/// used to render as a blank space, which read as "this feature was removed"
+/// rather than as "nobody supplied the numbers".
 private struct TimeAllocation: View {
   let items: [TodoItem]
   let total: Int
 
   private var timed: [TodoItem] { items.filter { ($0.estimatedMinutes ?? 0) > 0 } }
+  private var untimedCount: Int { items.count - timed.count }
 
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.xs) {
       HStack {
         Text("建议分配").mutedStyle(Typo.label)
         Spacer()
-        Text("共 \(Fmt.minutes(total))").font(Typo.tabularCaption).foregroundStyle(Palette.inkMuted)
-      }
-
-      GeometryReader { geo in
-        HStack(spacing: 2) {
-          ForEach(timed) { item in
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-              .fill(Palette.foreground(for: item.kind.tone))
-              .opacity(item.state == .done ? 0.35 : 1)
-              .frame(width: width(for: item, in: geo.size.width))
-          }
+        if total > 0 {
+          Text("共 \(Fmt.minutes(total))").font(Typo.tabularCaption).foregroundStyle(Palette.inkMuted)
         }
       }
-      .frame(height: 10)
 
-      VStack(alignment: .leading, spacing: Metrics.xxs) {
+      if timed.isEmpty {
+        MissingEstimates(count: items.count)
+      } else {
+        bar
+        legend
+        if untimedCount > 0 {
+          // Partial data is its own trap: a bar drawn from two of five items
+          // looks like the whole day unless it says otherwise.
+          Text("另有 \(untimedCount) 项没有估时，没算进上面这条。").mutedStyle()
+        }
+      }
+    }
+  }
+
+  private var bar: some View {
+    GeometryReader { geo in
+      HStack(spacing: 2) {
         ForEach(timed) { item in
-          HStack(spacing: Metrics.xs) {
-            Circle()
-              .fill(Palette.foreground(for: item.kind.tone))
-              .opacity(item.state == .done ? 0.35 : 1)
-              .frame(width: 6, height: 6)
-            Text(item.text)
-              .font(Typo.caption)
-              .foregroundStyle(item.state == .done ? Palette.inkMuted : Palette.ink)
-              .strikethrough(item.state == .done, color: Palette.inkMuted)
-              .lineLimit(1)
-            Spacer(minLength: Metrics.xs)
-            Text(Fmt.minutes(item.estimatedMinutes ?? 0))
-              .font(Typo.tabularCaption)
-              .foregroundStyle(Palette.inkMuted)
-          }
+          RoundedRectangle(cornerRadius: 3, style: .continuous)
+            .fill(Palette.foreground(for: item.kind.tone))
+            .opacity(item.state == .done ? 0.35 : 1)
+            .frame(width: width(for: item, in: geo.size.width))
+        }
+      }
+    }
+    .frame(height: 10)
+  }
+
+  private var legend: some View {
+    VStack(alignment: .leading, spacing: Metrics.xxs) {
+      ForEach(timed) { item in
+        HStack(spacing: Metrics.xs) {
+          Circle()
+            .fill(Palette.foreground(for: item.kind.tone))
+            .opacity(item.state == .done ? 0.35 : 1)
+            .frame(width: 6, height: 6)
+          Text(item.text)
+            .font(Typo.caption)
+            .foregroundStyle(item.state == .done ? Palette.inkMuted : Palette.ink)
+            .strikethrough(item.state == .done, color: Palette.inkMuted)
+            .lineLimit(1)
+          Spacer(minLength: Metrics.xs)
+          Text(Fmt.minutes(item.estimatedMinutes ?? 0))
+            .font(Typo.tabularCaption)
+            .foregroundStyle(Palette.inkMuted)
         }
       }
     }
@@ -175,6 +205,30 @@ private struct TimeAllocation: View {
     let usable = max(available - gaps, 0)
     let share = CGFloat(item.estimatedMinutes ?? 0) / CGFloat(total)
     return max(usable * share, 12)
+  }
+}
+
+/// What the allocation block shows when nothing carries an estimate.
+///
+/// Names the supplier rather than the symptom. `daily_plan` emits
+/// `{ rank, text, candidateId }` and the todo inbox ledger has no duration field
+/// either, so there is no number anywhere upstream — whoever reads this should
+/// end up asking the workflow for minutes, not wondering whether the Mac app
+/// dropped a panel. Inventing a plausible duration would be worse than silence:
+/// the point of the bar is to catch "four priorities is six hours" *before* the
+/// day starts, and a made-up six hours makes that check meaningless.
+private struct MissingEstimates: View {
+  let count: Int
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Metrics.xxs) {
+      Label("这 \(count) 项都没有耗时估计", systemImage: "questionmark.circle")
+        .font(Typo.caption)
+        .foregroundStyle(Palette.inkMuted)
+      Text("估时要由 daily_plan 工作流给出，它现在只产出排序、正文和来源 id；待办账本里也没有这个字段。所以这里空着，不编一个数。")
+        .mutedStyle()
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
 
@@ -210,46 +264,123 @@ private struct PlanPanel: View {
   var body: some View {
     Panel("今天的计划", subtitle: "来自当前周期的要务与日程") {
       if state.plan.isEmpty {
+        // No action button: nothing in this client can start a workflow, and a
+        // "跑一次简报" that does nothing is the complaint this screen exists to
+        // fix. The message carries the two places the plan can actually come
+        // from instead. The panel header lost its 重跑 button for the same
+        // reason — it was wired to an empty closure.
         EmptyState(
           icon: "tray",
           title: "今天还没有计划",
-          message: "跑一次「每日简报」，或者到周期页把这一期的要务排进来。",
-          actionTitle: "跑一次简报",
-          action: {}
+          message: "计划由 daily_plan 工作流生成——早上的定时任务会跑，也可以在飞书里发一句「daily-os plan」。Mac 端还不能触发工作流，跑完之后这里会自己出现。"
         )
       } else {
         VStack(spacing: 0) {
           ForEach(Array(state.plan.enumerated()), id: \.element.id) { index, item in
             if index > 0 { PanelDivider() }
-            PlanRow(item: item)
+            PlanRow(item: item, rank: index + 1)
           }
         }
       }
-    } actions: {
-      Button("重跑") {}.buttonStyle(QuietButtonStyle())
     }
   }
+
 }
 
+/// One planned item, with all three of the web's actions.
+///
+/// The web console gives a plan row 更新 / 延期 / 完成, all three POSTing
+/// `/api/today/todo-feedback` keyed by the `daily_plan` `candidateId`. All
+/// three work here, because `TodoItem.id` on a plan row *is* the candidate id —
+/// mapped that way deliberately, since the ledger is keyed on it and matching
+/// on rank or text would move this morning's tick onto a different row the
+/// moment the planner reorders or rewords a line.
 private struct PlanRow: View {
+  @Environment(AppState.self) private var state
   let item: TodoItem
+  /// Position in the list, 1-based. Part of the ledger key, not decoration.
+  let rank: Int
+
+  @State private var isNoting = false
+  @State private var note = ""
 
   var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
-      Pill(item.kind.label, tone: item.kind.tone)
-      Text(item.text).inkStyle()
-      Spacer(minLength: Metrics.xs)
-      if let due = item.due {
-        Text(Fmt.time(due)).font(Typo.tabularCaption).foregroundStyle(Palette.inkMuted)
+    VStack(alignment: .leading, spacing: Metrics.xxs) {
+      HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
+        Pill(item.kind.label, tone: item.kind.tone)
+        Text(item.text)
+          .inkStyle()
+          .strikethrough(item.state == .done, color: Palette.inkMuted)
+          .foregroundStyle(item.state == .open ? Palette.ink : Palette.inkMuted)
+        Spacer(minLength: Metrics.xs)
+        if let due = item.due {
+          Text(Fmt.time(due)).font(Typo.tabularCaption).foregroundStyle(Palette.inkMuted)
+        }
+        actions
       }
-      if let ref = item.sourceRef {
-        Text(ref).font(Typo.mono).foregroundStyle(Palette.inkMuted)
+      .frame(minHeight: Metrics.hitTarget)
+
+      if isNoting {
+        // The web prompts for the note in a dialog. Inline here because a modal
+        // for one optional sentence is heavier than the sentence.
+        HStack(spacing: Metrics.xs) {
+          TextField("记一条更新（可留空）", text: $note)
+            .textFieldStyle(.plain)
+            .font(Typo.caption)
+            .padding(Metrics.xxs)
+            .background(Palette.surfaceSunken)
+            .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
+            .onSubmit { send("update", note: note) }
+          Button("记下") { send("update", note: note) }
+            .buttonStyle(QuietButtonStyle())
+          Button("取消") { isNoting = false; note = "" }
+            .buttonStyle(QuietButtonStyle(tone: .neutral))
+        }
       }
     }
-    .frame(minHeight: Metrics.hitTarget)
+  }
+
+  /// Always rendered, never on hover: these are the day's decisions, and a
+  /// control you have to go looking for is a control that does not get used.
+  @ViewBuilder private var actions: some View {
+    switch item.state {
+    case .done:
+      Pill("已完成", tone: .ok)
+    case .deferred:
+      Pill("已顺延", tone: .warn)
+    case .open:
+      // Web order: secondary actions first, the one that closes the row last,
+      // so the same click lands in the same place in both consoles.
+      Button("更新") { isNoting.toggle() }
+        .buttonStyle(QuietButtonStyle(tone: .neutral))
+      Button("顺延") { send("defer", note: nil) }
+        .buttonStyle(QuietButtonStyle(tone: .neutral))
+      Button("完成") { send("complete", note: nil) }
+        .buttonStyle(QuietButtonStyle())
+    }
+  }
+
+  private func send(_ event: String, note: String?) {
+    isNoting = false
+    let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.note = ""
+    Task {
+      let outcome = await state.planFeedback(
+        candidateID: item.id,
+        rank: rank,
+        event: event,
+        note: (trimmed?.isEmpty ?? true) ? nil : trimmed
+      )
+      switch outcome {
+      case .ok: state.toast = event == "update" ? "已记录" : (event == "complete" ? "已完成" : "已顺延")
+      case .failed(let why), .unsupported(let why): state.toast = why
+      }
+    }
   }
 }
 
+/// Why a row here can be short of the web's three buttons.
+///
 // MARK: - Todos
 
 private struct TodoPanel: View {
@@ -282,11 +413,23 @@ private struct TodoPanel: View {
           .tint(Palette.inkMuted)
           .padding(.top, Metrics.xs)
         }
+
+        TodoDeleteNote()
       }
     }
   }
 }
 
+/// One inbox row.
+///
+/// The web gives an open row Done / Defer / Delete, and a history row Restore /
+/// Delete. Three of those four are `setTodo(_:to:)` in disguise and are here;
+/// Delete is not, and `TodoDeleteNote` explains that rather than pretending.
+///
+/// 完成 stays on the check circle instead of becoming a worded button. It is the
+/// same action as the web's Done, it is already the affordance people reach for
+/// in a todo list, and a list where every row carries three worded buttons is
+/// harder to read than the problem being fixed.
 private struct TodoRow: View {
   @Environment(AppState.self) private var state
   let item: TodoItem
@@ -299,14 +442,41 @@ private struct TodoRow: View {
         .strikethrough(item.state == .done, color: Palette.inkMuted)
         .foregroundStyle(item.state == .open ? Palette.ink : Palette.inkMuted)
       Spacer(minLength: Metrics.xs)
-      if item.state == .deferred {
-        Pill("已顺延", tone: .warn)
-      } else if item.state == .open {
+      switch item.state {
+      case .open:
         Button("顺延") { state.setTodo(item.id, to: .deferred) }
           .buttonStyle(QuietButtonStyle(tone: .neutral))
+      case .deferred:
+        Pill("已顺延", tone: .warn)
+        // The web's Restore. The check circle cannot stand in for it: on a
+        // deferred row the circle is empty, so tapping it marks the item done
+        // instead of putting it back in the open list.
+        Button("恢复") { state.setTodo(item.id, to: .open) }
+          .buttonStyle(QuietButtonStyle(tone: .neutral))
+      case .done:
+        // Unticking the circle is already Restore for a done row.
+        EmptyView()
       }
     }
     .frame(minHeight: Metrics.hitTarget)
+  }
+}
+
+/// Delete is real on the service and unreachable from here; say which.
+///
+/// `TodoInboxStatus` is `open | done | deferred | deleted` — a delete is a
+/// tombstone status on the ledger row, not a removal, and `/api/state` filters
+/// those out before this client ever sees them. But `TodoState` has three cases
+/// and the client's `setTodo` can only spell those three, so `deleted` cannot be
+/// sent from this app at all. Wiring 删除 to `.deferred` would be the worst of
+/// both worlds: the item survives, reappears under 已顺延, and the ledger records
+/// a decision the user never made.
+private struct TodoDeleteNote: View {
+  var body: some View {
+    Text("删除不在这里：服务端把「已删除」记成待办的第四种状态，Mac 端还没接这个写入。要删就去网页控制台，或者在飞书里发一句「删除 todo …」。")
+      .mutedStyle()
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.top, Metrics.sm)
   }
 }
 
@@ -328,4 +498,27 @@ private struct TodoRow: View {
   TodayScreen()
     .environment(AppState.previewDegraded())
     .frame(width: 940, height: 720)
+}
+
+/// The shape a real daily-os hands this screen.
+///
+/// One preview for two of the fixture's lies at once, because in the live store
+/// they are the same state: `LiveAppState` fills `plan` from the open todo
+/// inbox — which is why these plan rows have working 完成 / 顺延 while the
+/// fixture's own `p1…p4` do not — and the service supplies no per-item minutes,
+/// so 建议分配 has nothing to draw and has to say so instead of vanishing.
+#Preview("今天 · 没有估时") {
+  TodayScreen()
+    .environment(previewWithoutEstimates())
+    .frame(width: 940, height: 720)
+}
+
+@MainActor private func previewWithoutEstimates() -> AppState {
+  let state = AppState.previewOwner()
+  state.plan = state.openTodos.map { item in
+    var item = item
+    item.estimatedMinutes = nil
+    return item
+  }
+  return state
 }

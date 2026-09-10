@@ -38,7 +38,7 @@ public final class LiveAppState: AppState {
     isLoading = true
     defer { isLoading = false }
 
-    await connection.probe()
+    if !connection.state.isConnected { await connection.probe() }
     guard connection.state.isConnected else { return }
 
     // Each read is independent and a failure in one must not blank the others:
@@ -47,12 +47,41 @@ public final class LiveAppState: AppState {
       let result = try await client.cycles()
       self.cycles = result.mine
       self.partnerCycles = result.teammates
-      if !result.members.isEmpty {
+      if let me = result.members.first(where: \.isSelf) {
         self.members = result.members
-        if let me = result.members.first(where: \.isSelf) {
-          self.account.displayName = me.displayName.isEmpty ? self.account.displayName : me.displayName
-          self.viewingMemberID = me.id
-        }
+        // `account.id` has to move with `viewingMemberID`, because
+        // `isViewingSelf` compares the two. Setting only the latter left the
+        // app permanently in "looking at a teammate" mode against an empty
+        // teammate list — every cycle decoded correctly and the screen showed
+        // "还没有周期". The client-level check never caught it: it called
+        // `cycles()` directly and never went through the store.
+        self.account = Account(
+          id: me.id,
+          displayName: me.displayName.isEmpty ? self.account.displayName : me.displayName,
+          email: self.account.email,
+          role: .owner,
+          avatarSeed: me.avatarSeed.isEmpty ? self.account.avatarSeed : me.avatarSeed
+        )
+        self.viewingMemberID = me.id
+      } else {
+        // Sync is off, so the service reports no members and no `team.self`.
+        // Everything on disk is still yours; say so with one member rather than
+        // leaving the identity pointing at fixture data.
+        self.members = [
+          TeamMember(
+            id: self.account.id,
+            displayName: self.account.displayName,
+            avatarSeed: self.account.avatarSeed,
+            isSelf: true,
+            lastSyncedAt: nil
+          )
+        ]
+        self.viewingMemberID = self.account.id
+      }
+      self.cycles = self.cycles.map { cycle in
+        var cycle = cycle
+        cycle.ownerId = self.account.id
+        return cycle
       }
       if self.selectedCycleID == nil || !self.visibleCycles.contains(where: { $0.id == self.selectedCycleID }) {
         self.selectedCycleID = self.visibleCycles.first?.id
@@ -62,10 +91,16 @@ public final class LiveAppState: AppState {
     await load("待办") {
       let inbox = try await client.todoInbox()
       self.todos = inbox.open + inbox.recent
-      // The service has no notion of "today's plan" as a separate list; the
-      // open inbox is the closest honest thing, so Today shows that rather than
-      // inventing a plan the planner never produced.
-      self.plan = inbox.open
+    }
+
+    await load("今日计划") {
+      // The plan and the inbox are different lists. Showing the inbox here was
+      // wrong in a way that looked right: plausible rows, but not the ones the
+      // web shows and not the ones the planner decided.
+      let plan = try await client.todayPlan()
+      self.plan = plan.items
+      self.planStaleDate = plan.staleDate
+      self.hasPlan = plan.hasPlan
     }
 
     await load("OKR") {
@@ -106,19 +141,51 @@ public final class LiveAppState: AppState {
     write("标记") { try await $0.saveCycleSection(cycleID: cycleID, kind: .priorities, body: body) }
   }
 
+  /// Capture is the one write that is *not* optimistic.
+  ///
+  /// The service parses the text with its own command grammar — "提醒我 …"
+  /// becomes a reminder, not a todo named "提醒我 …" — so the row it creates is
+  /// not the row this app would have guessed. Inserting a local copy and then
+  /// reloading produced two rows, one real and one wrong, which is exactly what
+  /// happened. Send it, then take what comes back.
   public override func capture(_ text: String) {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return }
-    super.capture(text)
-    // Deliberately not pre-parsed. The service runs its own command grammar on
-    // this string, so "提醒我 …" works from the Mac app for free — parsing it
-    // here would only be a second, worse copy of that grammar.
+    quickCaptureText = ""
     write("记录", reloadAfter: true) { try await $0.capture(trimmed) }
   }
 
   public override func setTodo(_ id: TodoItem.ID, to state: TodoState) {
     super.setTodo(id, to: state)
     write("更新待办") { try await $0.setTodo(id: id, to: state) }
+  }
+
+  public override func planFeedback(
+    candidateID: String,
+    rank: Int,
+    event: String,
+    note: String?
+  ) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    // Optimistic, like the other writes: a plan row is ticked far more often
+    // than the network fails, and waiting on a local round trip to redraw a
+    // checkbox makes it feel like a form submission.
+    if let index = plan.firstIndex(where: { $0.id == candidateID }) {
+      switch event {
+      case "complete": plan[index].state = .done
+      case "defer": plan[index].state = .deferred
+      default: break
+      }
+    }
+    do {
+      try await client.recordPlanFeedback(candidateID: candidateID, rank: rank, event: event, note: note)
+      return .ok(nil)
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      lastActionError = reason
+      await reload()
+      return .failed(reason)
+    }
   }
 
   /// Fire a write, and put the truth back if it fails.
