@@ -85,6 +85,15 @@ open "/Applications/Daily OS.app"
 前提是 daily-os 服务在跑。它在 launchd 下（`com.daily-os-feishu.agent`）就会开机自启；
 `npm run service:install` 装它，`launchctl list | grep daily-os` 查它。
 
+**改了服务端之后，光重启没用。** launchd 跑的是 `dist/index.js`，不是源码：
+
+```bash
+npm run build && launchctl kickstart -k gui/$(id -u)/com.daily-os-feishu.agent
+```
+
+漏掉 `npm run build` 的失败方式最难查——服务正常在跑、日志干净、`git log` 显示改动就在
+当前分支上，只是**跑的不是它**。切分支同理。
+
 ### 装到另一台 Mac 上（不需要 Apple 开发者账号）
 
 从源码构建出来的 `.app` 双击就能开，不需要签名、不需要公证、不需要那 $99：
