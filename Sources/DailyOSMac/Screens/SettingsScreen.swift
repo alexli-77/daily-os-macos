@@ -414,38 +414,104 @@ private struct SourcesPanel: View {
   let store: SettingsStore
   let snapshot: SettingsSnapshot
 
+  /// Which row has its inline form open. One at a time — two open forms in a
+  /// six-row list is two places to type and no indication which one is live.
+  @State private var openFormID: String?
+  @State private var repositoryDraft = ""
+
   var body: some View {
     Panel("数据源", subtitle: "证据从这些地方来，结论回到你的文件里") {
       VStack(spacing: 0) {
         ForEach(Array(snapshot.sources.enumerated()), id: \.element.id) { index, source in
           if index > 0 { PanelDivider() }
-          HStack(alignment: .top, spacing: Metrics.sm) {
-            Image(systemName: source.icon)
-              .foregroundStyle(Palette.foreground(for: source.status.tone))
-              .frame(width: 20)
-            VStack(alignment: .leading, spacing: 2) {
-              Text(source.name).inkStyle()
-              Text(source.detail)
-                .mutedStyle()
-                .fixedSize(horizontal: false, vertical: true)
+          VStack(alignment: .leading, spacing: Metrics.xxs) {
+            HStack(alignment: .top, spacing: Metrics.sm) {
+              Image(systemName: source.icon)
+                .foregroundStyle(Palette.foreground(for: source.status.tone))
+                .frame(width: 20)
+              VStack(alignment: .leading, spacing: 2) {
+                Text(source.name).inkStyle()
+                Text(source.detail)
+                  .mutedStyle()
+                  .fixedSize(horizontal: false, vertical: true)
+              }
+              Spacer(minLength: Metrics.xs)
+              if let fix = source.fix {
+                Button(fix.label) { activate(fix, on: source) }
+                  .buttonStyle(QuietButtonStyle())
+                  .disabled(store.isBusy)
+              }
+              Pill(source.status.label, tone: source.status.tone)
             }
-            Spacer(minLength: Metrics.xs)
-            Pill(source.status.label, tone: source.status.tone)
+            .frame(minHeight: Metrics.hitTarget)
+
+            if openFormID == source.id, source.fix == .addGitHubRepository {
+              repositoryForm
+            }
           }
-          .frame(minHeight: Metrics.hitTarget)
           .padding(.vertical, Metrics.xxs)
         }
         PanelDivider()
-        Text("数据源在 \(snapshot.configPath) 和 \(snapshot.envPath) 里配置。服务没有「连接这个数据源」的接口，所以这里只报状态，不假装能替你接上。")
+        // The old sentence here said the service had no "connect this source"
+        // endpoint and that this panel would not pretend otherwise. It has a
+        // config writer, an env writer and a dozen named actions; what it lacks
+        // is one *generic* connect call. Reading that as "nothing is possible"
+        // sent people to edit YAML for things that were one request away.
+        Text("能在这里做的都做了。剩下的在 \(snapshot.configPath) 和 \(snapshot.envPath) 里——密钥本身请你自己填，这个 App 不替你输入凭据。")
           .mutedStyle()
           .fixedSize(horizontal: false, vertical: true)
           .padding(.top, Metrics.xs)
       }
     } actions: {
+      Button("打开配置文件") { reveal(snapshot.configPath) }
+        .buttonStyle(QuietButtonStyle(tone: .neutral))
       Button("重新检查") { Task { await store.load() } }
         .buttonStyle(QuietButtonStyle())
         .disabled(store.isBusy)
     }
+  }
+
+  private var repositoryForm: some View {
+    HStack(spacing: Metrics.xs) {
+      TextField("owner/repo", text: $repositoryDraft)
+        .textFieldStyle(.plain)
+        .font(Typo.mono)
+        .padding(Metrics.xxs)
+        .background(Palette.surfaceSunken)
+        .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
+        .onSubmit(submitRepository)
+      Button("添加", action: submitRepository)
+        .buttonStyle(QuietButtonStyle())
+        .disabled(store.isBusy || repositoryDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+      Button("取消") { openFormID = nil; repositoryDraft = "" }
+        .buttonStyle(QuietButtonStyle(tone: .neutral))
+    }
+    .padding(.leading, 20 + Metrics.sm)
+  }
+
+  private func activate(_ fix: SourceFix, on source: SourceRow) {
+    if fix.isInline {
+      withAnimation(.snappy(duration: 0.2)) {
+        openFormID = openFormID == source.id ? nil : source.id
+      }
+      repositoryDraft = ""
+    } else {
+      store.apply(fix)
+    }
+  }
+
+  private func submitRepository() {
+    let slug = repositoryDraft
+    openFormID = nil
+    repositoryDraft = ""
+    Task { await store.addGitHubRepository(slug) }
+  }
+
+  /// Selects the file rather than opening it: config.yaml opens in whatever
+  /// owns `.yaml`, which on a lot of Macs is nothing useful, and a file that
+  /// silently fails to open reads as a broken button.
+  private func reveal(_ path: String) {
+    NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)])
   }
 }
 
@@ -1087,6 +1153,105 @@ private final class SettingsStore {
     }
   }
 
+  // MARK: Source fixes
+
+  func apply(_ fix: SourceFix) {
+    switch fix {
+    case .enable(let path, let what):
+      Task { await enableSource(path: path, what: what) }
+    case .chooseVaultFolder:
+      Task { await chooseVaultFolder() }
+    case .action(let name, _, let what):
+      Task { await write(what, path: "/api/action", body: ["action": name]) }
+    case .addGitHubRepository:
+      break  // The panel opens a field; `addGitHubRepository` runs on submit.
+    }
+  }
+
+  /// Switch one source on, leaving the rest of the file byte-identical.
+  ///
+  /// Re-reads the config rather than reusing the snapshot for the same reason
+  /// `saveLLM` does: the whole tree goes back on every save, so a stale copy
+  /// would silently revert anything changed since this screen loaded.
+  private func enableSource(path: [String], what: String) async {
+    isBusy = true
+    defer { isBusy = false }
+    do {
+      let state = try await ServiceLink.get("/api/state")
+      let patched = state["config"].setting(path + ["enabled"], to: .bool(true))
+      try await ServiceLink.post("/api/config", body: .object(["config": patched]))
+      // Deliberately not "已连接". Switching a source on only lets the checks
+      // run; whether it works is what the pill will say a second from now.
+      banner = Banner(ok: true, text: "已启用 \(what)。下面的状态是刚重新检查过的结果。")
+      await load()
+    } catch {
+      banner = Banner(ok: false, text: "启用 \(what) 失败：\(message(from: error))")
+    }
+  }
+
+  /// Point the local vault at a folder and switch it on, in one write.
+  ///
+  /// Uses this app's own `NSOpenPanel` rather than the service's
+  /// `choose_vault_folder` action. That action exists and works — it shells out
+  /// to `osascript choose folder` — but the dialog would belong to the node
+  /// process: it can open behind this window, and it is a strange thing to hand
+  /// a background daemon when the app asking is a native one on the same Mac.
+  ///
+  /// All three keys move together. A path with `enabled` still false, or
+  /// `enabled` with the old `provider: remote`, are half-configured states
+  /// nobody asked for and both of them read as "it didn't work".
+  private func chooseVaultFolder() async {
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = false
+    panel.allowsMultipleSelection = false
+    panel.prompt = "选择"
+    panel.message = "选择 vault 知识库文件夹"
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+
+    isBusy = true
+    defer { isBusy = false }
+    do {
+      let state = try await ServiceLink.get("/api/state")
+      let patched = state["config"]
+        .setting(["sources", "vault", "enabled"], to: .bool(true))
+        .setting(["sources", "vault", "provider"], to: .string("local"))
+        .setting(["sources", "vault", "local_path"], to: .string(url.path(percentEncoded: false)))
+      try await ServiceLink.post("/api/config", body: .object(["config": patched]))
+      banner = Banner(ok: true, text: "本地 Vault 已指向 \(url.lastPathComponent)。")
+      await load()
+    } catch {
+      banner = Banner(ok: false, text: "设置 Vault 失败：\(message(from: error))")
+    }
+  }
+
+  /// Append one `owner/repo`.
+  ///
+  /// Appends rather than replaces, and reads the list back off the service
+  /// first: this screen shows a count, not the repositories themselves, so it
+  /// has no business deciding what the whole list should be.
+  func addGitHubRepository(_ slug: String) async {
+    let trimmed = slug.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return }
+    isBusy = true
+    defer { isBusy = false }
+    do {
+      let state = try await ServiceLink.get("/api/state")
+      var repositories = state["config"]["sources"]["github"]["repositories"].array
+      guard !repositories.contains(where: { $0.string == trimmed }) else {
+        banner = Banner(ok: true, text: "\(trimmed) 已经在列表里了。")
+        return
+      }
+      repositories.append(.string(trimmed))
+      let patched = state["config"].setting(["sources", "github", "repositories"], to: .array(repositories))
+      try await ServiceLink.post("/api/config", body: .object(["config": patched]))
+      banner = Banner(ok: true, text: "已添加 \(trimmed)，现在共 \(repositories.count) 个仓库。")
+      await load()
+    } catch {
+      banner = Banner(ok: false, text: "添加仓库失败：\(message(from: error))")
+    }
+  }
+
   /// The shape every simple write shares: post, report in the service's own
   /// words, reload.
   private func write(
@@ -1184,6 +1349,46 @@ private struct SourceRow: Identifiable {
   let icon: String
   let status: SourceStatusKind
   let detail: String
+  /// The one thing this app can actually do about this row, if anything.
+  var fix: SourceFix?
+}
+
+/// What a source row offers when it is not connected.
+///
+/// The panel used to say the service had no "connect this source" endpoint. That
+/// was true of a *generic* one and wrong about everything specific: there is a
+/// config writer, an env writer, and a dozen named actions including
+/// `calendar_test`, `discover_linear_token` and `discover_github_token`. Reading
+/// the absence of one endpoint as the absence of all of them left the panel
+/// telling people to go and edit YAML for things it could have done in a click.
+///
+/// The rule that survives is narrower and still holds: **a row only gets a
+/// button when there is a real call behind it.** Anything this app cannot do is
+/// still an honest sentence plus a way to open the file.
+private enum SourceFix: Equatable {
+  /// Flip `<path>.enabled` to true. For a source that is fully configured and
+  /// merely switched off, this is the entire distance to 已连接.
+  case enable(path: [String], what: String)
+  /// Pick a folder, then point local vault at it and switch it on — one write,
+  /// because a path without `enabled` and an `enabled` without a path are both
+  /// half-configured states nobody asked for.
+  case chooseVaultFolder
+  /// Ask the service to run a named action and report back in its own words.
+  case action(name: String, label: String, what: String)
+  /// Append one `owner/repo` to `sources.github.repositories`.
+  case addGitHubRepository
+
+  var label: String {
+    switch self {
+    case .enable(_, let what): "启用 \(what)"
+    case .chooseVaultFolder: "选择文件夹…"
+    case .action(_, let label, _): label
+    case .addGitHubRepository: "添加仓库…"
+    }
+  }
+
+  /// Whether picking it opens an inline form rather than acting immediately.
+  var isInline: Bool { self == .addGitHubRepository }
 }
 
 /// What the chosen provider needs, and whether this app can supply it. Three
@@ -1446,10 +1651,17 @@ private extension SettingsSnapshot {
     // rather than 未配置, with the service's own sentence explaining the fallback.
     let linear = config["sources"]["linear"]
     if !linear["enabled"].bool {
-      rows.append(SourceRow(id: "linear", name: "Linear", icon: "square.stack.3d.up", status: .notConfigured, detail: "config.yaml 里 sources.linear.enabled=false"))
+      rows.append(SourceRow(id: "linear", name: "Linear", icon: "square.stack.3d.up", status: .notConfigured, detail: "config.yaml 里 sources.linear.enabled=false", fix: .enable(path: ["sources", "linear"], what: "Linear")))
     } else if let row = check("LINEAR_API_KEY") {
       let scope = [linear["workspace"].string, linear["assignee"].string].filter { !$0.isEmpty }.joined(separator: " · ")
-      rows.append(SourceRow(id: "linear", name: "Linear", icon: "square.stack.3d.up", status: row.status, detail: row.detail.isEmpty ? "LINEAR_API_KEY 已配置\(scope.isEmpty ? "" : "；\(scope)")" : row.text))
+      rows.append(SourceRow(
+        id: "linear", name: "Linear", icon: "square.stack.3d.up", status: row.status,
+        detail: row.detail.isEmpty ? "LINEAR_API_KEY 已配置\(scope.isEmpty ? "" : "；\(scope)")" : row.text,
+        // Only when the key is actually missing. `discover_linear_token` reads
+        // the key out of a local Linear install; offering it beside a working
+        // key would be a button whose success changes nothing.
+        fix: row.status == .connected ? nil : .action(name: "discover_linear_token", label: "自动查找密钥", what: "查找 Linear 密钥")
+      ))
     } else {
       rows.append(SourceRow(id: "linear", name: "Linear", icon: "square.stack.3d.up", status: .unknown, detail: "已启用，但服务的自检里没有 LINEAR_API_KEY 这一项。"))
     }
@@ -1459,19 +1671,24 @@ private extension SettingsSnapshot {
     if config["calendar"]["enabled"].bool {
       rows.append(SourceRow(
         id: "calendar", name: "日历", icon: "calendar", status: .unknown,
-        detail: "calendar.enabled=true，引擎 mode=\(config["calendar"]["engine"]["mode"].string)；服务的自检里没有日历检查项，接没接通要跑一次 calendar_test 才知道。"
+        detail: "calendar.enabled=true，引擎 mode=\(config["calendar"]["engine"]["mode"].string)；服务的自检里没有日历检查项，接没接通要跑一次 calendar_test 才知道。",
+        // The sentence named the thing to run and then made you go and run it
+        // somewhere else. This is that sentence with a button on it.
+        fix: .action(name: "calendar_test", label: "测试连接", what: "测试日历")
       ))
     } else {
-      rows.append(SourceRow(id: "calendar", name: "日历", icon: "calendar", status: .notConfigured, detail: "config.yaml 里 calendar.enabled=false"))
+      rows.append(SourceRow(id: "calendar", name: "日历", icon: "calendar", status: .notConfigured, detail: "config.yaml 里 calendar.enabled=false", fix: .enable(path: ["calendar"], what: "日历")))
     }
 
     // Vault, local or remote — two different sets of checks behind one row.
     let vault = config["sources"]["vault"]
     if !vault["enabled"].bool {
-      rows.append(SourceRow(id: "vault", name: "本地 Vault", icon: "folder", status: .notConfigured, detail: "config.yaml 里 sources.vault.enabled=false"))
+      rows.append(SourceRow(id: "vault", name: "本地 Vault", icon: "folder", status: .notConfigured, detail: "config.yaml 里 sources.vault.enabled=false", fix: .chooseVaultFolder))
     } else if vault["provider"].string == "local" {
       if let row = check("vault.local_path") {
-        rows.append(SourceRow(id: "vault", name: "本地 Vault", icon: "folder", status: row.status, detail: row.text))
+        // A local vault in trouble is almost always a path that moved, so the
+        // fix is the same control as the one that set it.
+        rows.append(SourceRow(id: "vault", name: "本地 Vault", icon: "folder", status: row.status, detail: row.text, fix: row.status == .connected ? nil : .chooseVaultFolder))
       } else {
         rows.append(SourceRow(id: "vault", name: "本地 Vault", icon: "folder", status: .unknown, detail: "已启用，但服务的自检里没有 vault.local_path。"))
       }
@@ -1493,13 +1710,17 @@ private extension SettingsSnapshot {
 
     let github = config["sources"]["github"]
     if !github["enabled"].bool {
-      rows.append(SourceRow(id: "github", name: "GitHub", icon: "chevron.left.forwardslash.chevron.right", status: .notConfigured, detail: "config.yaml 里 sources.github.enabled=false"))
+      rows.append(SourceRow(id: "github", name: "GitHub", icon: "chevron.left.forwardslash.chevron.right", status: .notConfigured, detail: "config.yaml 里 sources.github.enabled=false", fix: .enable(path: ["sources", "github"], what: "GitHub")))
     } else if let row = check("GITHUB_TOKEN") {
       let repos = github["repositories"].array.count
       rows.append(SourceRow(
         id: "github", name: "GitHub", icon: "chevron.left.forwardslash.chevron.right",
         status: row.status,
-        detail: row.ok ? "GITHUB_TOKEN 已配置；\(repos == 0 ? "没有配置仓库" : "\(repos) 个仓库")" : row.text
+        detail: row.ok ? "GITHUB_TOKEN 已配置；\(repos == 0 ? "没有配置仓库" : "\(repos) 个仓库")" : row.text,
+        // A configured token with no repositories collects nothing, which is
+        // why the pill can say 已连接 while the source is doing no work at all.
+        fix: !row.ok ? .action(name: "discover_github_token", label: "自动查找令牌", what: "查找 GitHub 令牌")
+          : (repos == 0 ? .addGitHubRepository : nil)
       ))
     } else {
       rows.append(SourceRow(id: "github", name: "GitHub", icon: "chevron.left.forwardslash.chevron.right", status: .unknown, detail: "已启用，但服务的自检里没有 GITHUB_TOKEN 这一项。"))
@@ -1533,9 +1754,9 @@ private extension SettingsSnapshot {
     if !inbound && !outbound {
       rows.append(SourceRow(id: "im", name: "IM 机器人（飞书）", icon: "bubble.left.and.bubble.right", status: .notConfigured, detail: "interaction.feishu 和 output.feishu 都是关的"))
     } else if related.isEmpty {
-      rows.append(SourceRow(id: "im", name: "IM 机器人（飞书）", icon: "bubble.left.and.bubble.right", status: .unknown, detail: "已启用，但服务的自检里没有任何飞书相关的检查项。"))
+      rows.append(SourceRow(id: "im", name: "IM 机器人（飞书）", icon: "bubble.left.and.bubble.right", status: .unknown, detail: "已启用，但服务的自检里没有任何飞书相关的检查项。", fix: .action(name: "discover_feishu_setup", label: "自动查找配置", what: "查找飞书配置")))
     } else if let bad = related.first(where: { !$0.ok }) ?? related.first(where: { $0.level == "warning" }) {
-      rows.append(SourceRow(id: "im", name: "IM 机器人（飞书）", icon: "bubble.left.and.bubble.right", status: .trouble, detail: "\(bad.name)：\(bad.text)"))
+      rows.append(SourceRow(id: "im", name: "IM 机器人（飞书）", icon: "bubble.left.and.bubble.right", status: .trouble, detail: "\(bad.name)：\(bad.text)", fix: .action(name: "feishu_test", label: "测试发送", what: "测试飞书")))
     } else {
       let direction = [inbound ? "接收" : nil, outbound ? "发送" : nil].compactMap { $0 }.joined(separator: " + ")
       rows.append(SourceRow(id: "im", name: "IM 机器人（飞书）", icon: "bubble.left.and.bubble.right", status: .connected, detail: "\(direction)；\(related.count) 项自检全部通过"))
