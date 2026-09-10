@@ -147,6 +147,8 @@ func run() async -> Int32 {
       + " · 选中 \(state.selectedCycle?.label ?? "—")"
       + " · 今日计划 \(planned) 条\(stale)，已处理 \(done)"
       + " · 待办 \(state.openTodos.count) · OKR \(state.okrFiles.count) 个文件"
+      + " · 产物 \(state.artifacts.count)（\(state.artifacts.filter { $0.path != nil }.count) 个有路径）"
+      + " · 团队 \(state.teamSync?.label ?? "未知")"
   }
 
   print(failures == 0 ? "\n全部通过。" : "\n\(failures) 项失败。")

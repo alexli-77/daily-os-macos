@@ -28,7 +28,7 @@ public final class LiveAppState: AppState {
     super.init()
     // Only these three read live data. The rest keep the fixture and are marked
     // in the sidebar — see `wiredSections`.
-    wiredSections = [.today, .cycles, .okr, .settings]
+    wiredSections = [.today, .cycles, .okr, .artifacts, .settings]
   }
 
   // MARK: - Loading
@@ -109,6 +109,13 @@ public final class LiveAppState: AppState {
       self.plan = plan.items
       self.planStaleDate = plan.staleDate
       self.hasPlan = plan.hasPlan
+    }
+
+    await load("产物") {
+      self.artifacts = try await client.artifacts()
+      if self.selectedArtifactID == nil || !self.artifacts.contains(where: { $0.id == self.selectedArtifactID }) {
+        self.selectedArtifactID = self.artifacts.first?.id
+      }
     }
 
     await load("OKR") {

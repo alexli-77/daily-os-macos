@@ -365,7 +365,7 @@ public enum MockData {
     Artifact(
       id: "a3",
       name: "token-usage-30d.csv",
-      type: .csv,
+      type: .text,
       byteSize: 8_204,
       createdAt: minutesAgo(600),
       runId: nil,

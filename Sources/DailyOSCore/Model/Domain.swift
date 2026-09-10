@@ -609,39 +609,56 @@ public struct WorkflowRun: Sendable, Equatable, Identifiable {
 
 // MARK: - Artifacts
 
+/// Mirrors the service's own `ArtifactType` exactly.
+///
+/// It did not, and the gap was not cosmetic: the service emits `log`, `text`
+/// and `binary`, none of which existed here, so every such row was renamed to
+/// whichever case happened to be nearest. On a real index that was six of seven
+/// rows — logs labelled Markdown, binaries labelled PDF. A type that quietly
+/// renames the user's files is worse than one that says "其他".
 public enum ArtifactType: String, Sendable {
   case markdown
+  case text
   case json
+  case log
   case image
-  case csv
   case pdf
+  case binary
+  /// Anything a future service version adds. Named rather than mapped onto a
+  /// neighbour, for the reason above.
+  case unknown
 
   public var icon: String {
     switch self {
     case .markdown: "doc.text"
+    case .text: "doc.plaintext"
     case .json: "curlybraces"
+    case .log: "list.bullet.rectangle"
     case .image: "photo"
-    case .csv: "tablecells"
     case .pdf: "doc.richtext"
+    case .binary: "shippingbox"
+    case .unknown: "questionmark.square.dashed"
     }
   }
 
-  public var isPreviewable: Bool {
-    switch self {
-    case .markdown, .json, .csv, .image: true
-    case .pdf: false
-    }
-  }
-
-  /// Format names stay as they are written everywhere else; only the one that
-  /// is a common noun rather than a format gets translated.
   public var label: String {
     switch self {
     case .markdown: "Markdown"
+    case .text: "文本"
     case .json: "JSON"
+    case .log: "日志"
     case .image: "图片"
-    case .csv: "CSV"
     case .pdf: "PDF"
+    case .binary: "二进制"
+    case .unknown: "其他"
+    }
+  }
+
+  /// The service's own `PREVIEWABLE` set.
+  public var isPreviewable: Bool {
+    switch self {
+    case .markdown, .text, .json, .log: true
+    case .image, .pdf, .binary, .unknown: false
     }
   }
 }
@@ -654,6 +671,13 @@ public struct Artifact: Sendable, Equatable, Identifiable {
   public var createdAt: Date
   public var runId: String?
   public var preview: String?
+  /// Where the file actually is.
+  ///
+  /// The point of this screen is to hand a file back to the user, so the path
+  /// belongs on the record rather than in a side table the view has to fetch
+  /// for itself. Without it the screen had to open its own connection to the
+  /// service to answer "which file is this row".
+  public var path: URL?
 
   public init(
     id: String,
@@ -662,7 +686,8 @@ public struct Artifact: Sendable, Equatable, Identifiable {
     byteSize: Int,
     createdAt: Date,
     runId: String?,
-    preview: String?
+    preview: String?,
+    path: URL? = nil
   ) {
     self.id = id
     self.name = name
@@ -671,6 +696,7 @@ public struct Artifact: Sendable, Equatable, Identifiable {
     self.createdAt = createdAt
     self.runId = runId
     self.preview = preview
+    self.path = path
   }
 }
 
