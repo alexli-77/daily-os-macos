@@ -102,7 +102,14 @@ extension ClientError: LocalizedError {
 /// only to check the flag before the real decode runs.
 struct Envelope: Decodable {
   let ok: Bool
-  let error: String?
+  private let error: String?
+  /// Some endpoints spell the failure `message` instead — the skills module
+  /// does (`src/skills/update.ts`). Reading only `error` swallowed the real
+  /// reason ("工作区有未提交的改动…") and replaced it with a shrug, which is
+  /// exactly the case where the service's own wording is the useful part.
+  private let message: String?
+
+  var reason: String? { error ?? message }
 }
 
 // MARK: - Client
@@ -164,6 +171,19 @@ public actor DailyOSClient {
 
   // MARK: Internals
 
+  /// Join a base and a `path?query` string.
+  ///
+  /// Not `URL.appending(path:)`: that percent-escapes the `?`, so
+  /// `/api/env-secret?key=…` was requested as `…%3Fkey=…` and answered 404.
+  /// Nothing in the app noticed, because the only endpoints with a query
+  /// string arrived later than the transport did.
+  static func url(base: URL, path: String) -> URL? {
+    let parts = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+    var components = URLComponents(url: base.appending(path: String(parts[0])), resolvingAgainstBaseURL: false)
+    if parts.count == 2, !parts[1].isEmpty { components?.percentEncodedQuery = String(parts[1]) }
+    return components?.url
+  }
+
   private func send<T: Decodable>(
     path: String,
     method: String,
@@ -194,7 +214,10 @@ public actor DailyOSClient {
       }
     }
     let endpoint = try currentEndpoint()
-    var request = URLRequest(url: endpoint.url.appending(path: path))
+    guard let url = Self.url(base: endpoint.url, path: path) else {
+      throw ClientError.http(status: 0, path: path)
+    }
+    var request = URLRequest(url: url)
     request.httpMethod = method
     request.setValue("Bearer \(endpoint.token)", forHTTPHeaderField: "Authorization")
     request.timeoutInterval = 30
@@ -221,7 +244,7 @@ public actor DailyOSClient {
     // 200 with `{ ok: false, error }`, and the service's message is more useful
     // than "expected Cycle, found nothing".
     if let envelope = try? JSONDecoder().decode(Envelope.self, from: data), !envelope.ok {
-      throw ClientError.service(message: envelope.error ?? "服务返回了失败但没说原因。")
+      throw ClientError.service(message: envelope.reason ?? "服务返回了失败但没说原因。")
     }
     guard (200..<300).contains(status) else {
       throw ClientError.http(status: status, path: path)
