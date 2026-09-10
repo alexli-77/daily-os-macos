@@ -45,6 +45,19 @@ func run() async -> Int32 {
     }
   }
 
+  // What the first-run screen would do on a machine with no saved answer. Worth
+  // reporting because it is the one piece of setup nobody watches: when it
+  // works, the screen it belongs to never appears, so a regression here is
+  // invisible until it lands on somebody else's Mac.
+  await step("自动定位服务") {
+    guard let found = RepoRoot.discover() else {
+      throw ClientError.service(message: "没自动找到服务目录——新机器上会停在「选择服务文件夹」那一屏。")
+    }
+    let source = found == RepoRoot.discoverViaLaunchAgent() ? "launchd 配置" : "目录扫描"
+    let matches = found.path(percentEncoded: false) == root.path(percentEncoded: false)
+    return "\(source) · \(found.path(percentEncoded: false))\(matches ? "" : "（和本次指定的目录不同）")"
+  }
+
   await step("发现服务") {
     let endpoint = try await client.currentEndpoint()
     return "\(endpoint.url.absoluteString)，令牌 \(endpoint.token.count) 字符"

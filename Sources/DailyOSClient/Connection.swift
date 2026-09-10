@@ -54,11 +54,25 @@ public final class ServiceConnection {
   public private(set) var repoRoot: URL?
   public private(set) var client: DailyOSClient?
 
+  /// True when the folder was found rather than chosen, so the setup screen can
+  /// say so. A path that appears on its own with no explanation is unsettling in
+  /// a way that costs more trust than the picker it replaced.
+  public private(set) var wasDiscovered = false
+
+  /// Falls back to `RepoRoot.discover()` — the launch agent knows where the
+  /// service lives, so on a machine where it is installed there is nothing to
+  /// ask. Asking anyway is how the first screen ended up demanding a word
+  /// ("仓库") from the one person most likely not to have set any of it up.
   public init(repoRoot: URL? = RepoRoot.stored()) {
-    self.repoRoot = repoRoot
-    self.state = repoRoot == nil ? .unconfigured : .connecting
-    if let repoRoot {
-      self.client = DailyOSClient(repoRoot: repoRoot)
+    let resolved = repoRoot ?? RepoRoot.discover()
+    self.wasDiscovered = repoRoot == nil && resolved != nil
+    self.repoRoot = resolved
+    self.state = resolved == nil ? .unconfigured : .connecting
+    if let resolved {
+      // Remembered immediately, so a discovery that works once is not repeated
+      // on every launch — and so moving the folder later still means one picker.
+      RepoRoot.store(resolved)
+      self.client = DailyOSClient(repoRoot: resolved)
     }
   }
 
@@ -66,9 +80,10 @@ public final class ServiceConnection {
   /// letting it fail later as a confusing decode error.
   public func use(repoRoot url: URL) {
     guard RepoRoot.looksValid(url) else {
-      state = .failed(reason: "这个目录看起来不是 daily-os 服务仓库（缺 package.json 或 src/ui）。")
+      state = .failed(reason: "这个文件夹里没有 daily-os 服务（找不到 package.json 和 src/ui）。选服务代码所在的那个文件夹，不是它里面的某一层。")
       return
     }
+    wasDiscovered = false
     RepoRoot.store(url)
     repoRoot = url
     client = DailyOSClient(repoRoot: url)

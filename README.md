@@ -208,7 +208,15 @@ swift run daily-os-checks
 - 令牌每次服务重启重新生成，client 在 401 时**重读文件重试一次**——那是正常路径不是错误
 - 不发 `Origin` 头。服务把无 Origin 的请求当作非浏览器客户端并跳过 CSRF 检查
 
-唯一需要告诉 app 的是**服务仓库在哪**，首次启动会让你选目录。
+唯一需要告诉 app 的是**服务装在哪个文件夹**，而通常它自己就能找到：
+
+1. `~/Library/LaunchAgents/com.daily-os-feishu.agent.plist` 里的 `WorkingDirectory`——
+   这是 `npm run service:install` 写进去的路径，**不是猜的**
+2. 找不到 plist（服务是手动跑的）才退化成扫描 `~/code`、`~/Developer`、`~/Documents` 这几个常见位置，
+   深度 4 层、有访问上限，优先挑已经跑过的那个（有 `data/runtime/ui.json`）
+
+两条都没结果，才会出现「选择服务文件夹」那一屏。**这一屏是给别人看的**——
+装在队友机器上时，站在电脑前的那个人多半不是搭服务的人，所以那里不能出现「仓库」这种词。
 
 ```bash
 swift run daily-os-live <path-to-daily-os-feishu>

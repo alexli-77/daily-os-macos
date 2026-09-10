@@ -76,5 +76,6 @@ echo "版本：$VERSION"
 echo "App： $(pwd)/$OUT/$APP_NAME"
 echo "Zip： $(pwd)/$ZIP"
 echo
-echo "对方还需要 daily-os 服务在他自己那台机器上跑起来——这个 App 只是它的客户端，"
-echo "首次启动会让他选服务仓库目录。"
+echo "对方还需要 daily-os 服务在他自己那台机器上跑起来——这个 App 只是它的客户端。"
+echo "服务如果是用 npm run service:install 装的（launchd），App 会自己找到它，什么都不用问；"
+echo "只有手动跑服务、没装 launchd 的情况，才会停在「选择服务文件夹」那一屏。"
