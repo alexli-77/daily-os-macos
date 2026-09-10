@@ -12,7 +12,7 @@ import DailyOSCore
 struct ChatScreen: View {
   var body: some View {
     HStack(spacing: 0) {
-      ListColumn(width: 260) { ThreadList() }
+      ResizableListColumn(id: "chat", defaultWidth: 260) { ThreadList() }
       Conversation().frame(maxWidth: .infinity)
     }
     .background(Palette.paper)

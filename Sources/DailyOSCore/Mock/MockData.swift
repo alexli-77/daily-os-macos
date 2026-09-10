@@ -29,6 +29,13 @@ public enum MockData {
     avatarSeed: "kq7d2f1m"
   )
 
+  public static let teamSync = TeamSyncState(
+    status: "ready",
+    reason: "",
+    syncedAt: minutesAgo(1),
+    lastError: ""
+  )
+
   public static let members: [TeamMember] = [
     TeamMember(id: "u_demo", displayName: "demo", avatarSeed: "kq7d2f1m", isSelf: true, lastSyncedAt: minutesAgo(1)),
     TeamMember(id: "u_partner", displayName: "partner", avatarSeed: "z4h8bn02", isSelf: false, lastSyncedAt: minutesAgo(23)),

@@ -348,6 +348,10 @@ private struct PlanRow: View {
       Pill("已完成", tone: .ok)
     case .deferred:
       Pill("已顺延", tone: .warn)
+    case .deleted:
+      // A plan row is never a tombstone — the feedback ledger has no delete —
+      // but the case has to be spelled, and silence is the honest rendering.
+      EmptyView()
     case .open:
       // Web order: secondary actions first, the one that closes the row last,
       // so the same click lands in the same place in both consoles.
@@ -414,7 +418,6 @@ private struct TodoPanel: View {
           .padding(.top, Metrics.xs)
         }
 
-        TodoDeleteNote()
       }
     }
   }
@@ -446,6 +449,7 @@ private struct TodoRow: View {
       case .open:
         Button("顺延") { state.setTodo(item.id, to: .deferred) }
           .buttonStyle(QuietButtonStyle(tone: .neutral))
+        DeleteTodoButton(item: item)
       case .deferred:
         Pill("已顺延", tone: .warn)
         // The web's Restore. The check circle cannot stand in for it: on a
@@ -453,8 +457,13 @@ private struct TodoRow: View {
         // instead of putting it back in the open list.
         Button("恢复") { state.setTodo(item.id, to: .open) }
           .buttonStyle(QuietButtonStyle(tone: .neutral))
+        DeleteTodoButton(item: item)
       case .done:
         // Unticking the circle is already Restore for a done row.
+        DeleteTodoButton(item: item)
+      case .deleted:
+        // Filtered out server-side before this client sees it; the case exists
+        // only so the switch is exhaustive.
         EmptyView()
       }
     }
@@ -462,21 +471,31 @@ private struct TodoRow: View {
   }
 }
 
-/// Delete is real on the service and unreachable from here; say which.
+/// Delete, for real.
 ///
-/// `TodoInboxStatus` is `open | done | deferred | deleted` — a delete is a
-/// tombstone status on the ledger row, not a removal, and `/api/state` filters
-/// those out before this client ever sees them. But `TodoState` has three cases
-/// and the client's `setTodo` can only spell those three, so `deleted` cannot be
-/// sent from this app at all. Wiring 删除 to `.deferred` would be the worst of
-/// both worlds: the item survives, reappears under 已顺延, and the ledger records
-/// a decision the user never made.
-private struct TodoDeleteNote: View {
+/// The service's `TodoInboxStatus` already has `deleted` and `/api/state`
+/// filters those rows out of both lists, so sending the status *is* the
+/// deletion — the row simply stops coming back on the next read. That is why
+/// there is no local "hidden" flag here: a client-side tombstone would be a
+/// second source of truth about what exists.
+///
+/// Confirmed, because it is the one action on this screen with nothing behind
+/// it: done and deferred are both one click from being undone, and this is not.
+private struct DeleteTodoButton: View {
+  @Environment(AppState.self) private var state
+  let item: TodoItem
+
+  @State private var isConfirming = false
+
   var body: some View {
-    Text("删除不在这里：服务端把「已删除」记成待办的第四种状态，Mac 端还没接这个写入。要删就去网页控制台，或者在飞书里发一句「删除 todo …」。")
-      .mutedStyle()
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.top, Metrics.sm)
+    Button("删除") { isConfirming = true }
+      .buttonStyle(QuietButtonStyle(tone: .danger))
+      .confirmationDialog("删除这条待办？", isPresented: $isConfirming, titleVisibility: .visible) {
+        Button("删除", role: .destructive) { state.setTodo(item.id, to: .deleted) }
+        Button("取消", role: .cancel) {}
+      } message: {
+        Text(item.text)
+      }
   }
 }
 

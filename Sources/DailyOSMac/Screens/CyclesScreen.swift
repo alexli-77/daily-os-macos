@@ -15,7 +15,7 @@ struct CyclesScreen: View {
 
   var body: some View {
     HStack(spacing: 0) {
-      ListColumn {
+      ResizableListColumn(id: "cycles") {
         CycleList()
       }
       Group {
@@ -47,16 +47,34 @@ struct CyclesScreen: View {
 private struct MemberSwitcher: View {
   @Environment(AppState.self) private var state
 
+  /// Everyone but me. Zero of these is the common case and is not an error.
+  private var teammates: [TeamMember] { state.members.filter { !$0.isSelf } }
+
   var body: some View {
     @Bindable var state = state
     VStack(alignment: .leading, spacing: Metrics.xs) {
-      Picker("查看", selection: $state.viewingMemberID) {
-        ForEach(state.members) { member in
-          Text(member.isSelf ? "我" : member.displayName).tag(member.id)
+      HStack(spacing: Metrics.xs) {
+        Text("团队").mutedStyle(Typo.label)
+        Spacer(minLength: 0)
+        if let sync = state.teamSync {
+          StatusDot(sync.label, tone: sync.tone)
         }
       }
-      .pickerStyle(.segmented)
-      .labelsHidden()
+
+      if teammates.isEmpty {
+        // The web shows this area even with nobody in it, and so does this.
+        // A team panel that disappears when the team is empty makes "sync is
+        // off" and "nobody has joined" look like the same nothing.
+        Text(emptyMessage).mutedStyle()
+      } else {
+        Picker("查看", selection: $state.viewingMemberID) {
+          ForEach(state.members) { member in
+            Text(member.isSelf ? "我" : member.displayName).tag(member.id)
+          }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+      }
 
       if !state.isViewingSelf, let member = state.viewingMember {
         HStack(spacing: Metrics.xxs) {
@@ -67,6 +85,39 @@ private struct MemberSwitcher: View {
           }
         }
         .mutedStyle()
+      } else if let sync = state.teamSync {
+        SyncFootnote(sync: sync)
+      }
+    }
+  }
+
+  private var emptyMessage: String {
+    guard let sync = state.teamSync else { return "还没有队友的周期可以看。" }
+    if !sync.isReady {
+      return sync.reason.isEmpty ? "同步未开启，只能看自己的周期。" : sync.reason
+    }
+    return "还没有队友的周期可以看。等对方加入并同步之后会出现在这里。"
+  }
+}
+
+/// When the last sync ran, and what went wrong if something did.
+///
+/// Freshness is the whole value of a read-only teammate view: a cycle synced
+/// three days ago is not what they are working on now, and a view that does not
+/// say so invites you to act on it as though it were.
+private struct SyncFootnote: View {
+  let sync: TeamSyncState
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 2) {
+      if let synced = sync.syncedAt {
+        Text("同步于 \(Fmt.stamp(synced))").mutedStyle()
+      }
+      if !sync.lastError.isEmpty {
+        Text(sync.lastError)
+          .font(Typo.caption)
+          .foregroundStyle(Palette.danger)
+          .fixedSize(horizontal: false, vertical: true)
       }
     }
   }

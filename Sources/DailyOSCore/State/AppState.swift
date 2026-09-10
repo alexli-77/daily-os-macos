@@ -21,6 +21,7 @@ open class AppState {
   public var service: ServiceStatus
   public var account: Account
   public var members: [TeamMember]
+  public var teamSync: TeamSyncState?
   public var cycles: [Cycle]
   public var partnerCycles: [Cycle]
   public var plan: [TodoItem]
@@ -74,6 +75,7 @@ open class AppState {
     service = MockData.service
     account = MockData.account
     members = MockData.members
+    teamSync = MockData.teamSync
     cycles = MockData.cycles
     partnerCycles = MockData.partnerCycles
     plan = MockData.plan

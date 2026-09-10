@@ -237,7 +237,7 @@ extension DailyOSClient {
   /// `team.members[].cycles`, read from the local sync cache; that array is
   /// empty until team sync is configured, which is the common case, so an empty
   /// `teammates` is the normal answer rather than a failure.
-  public func cycles() async throws -> (mine: [Cycle], teammates: [Cycle], members: [TeamMember]) {
+  public func cycles() async throws -> (mine: [Cycle], teammates: [Cycle], members: [TeamMember], sync: TeamSyncState) {
     let state: CyclesStateDTO = try await get("/api/cycles/state", as: CyclesStateDTO.self)
     let team = state.team
     let selfId = team?.signedIn?.userId ?? ""
@@ -272,7 +272,17 @@ extension DailyOSClient {
       )
     }
 
-    return (mine, teammates, members)
+    return (
+      mine,
+      teammates,
+      members,
+      TeamSyncState(
+        status: team?.status ?? "disabled",
+        reason: team?.reason ?? "",
+        syncedAt: syncedAt,
+        lastError: team?.lastError ?? ""
+      )
+    )
   }
 
   /// Write one section of one of *your* cycles.

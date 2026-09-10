@@ -86,6 +86,43 @@ public struct Account: Sendable, Equatable, Identifiable {
   }
 }
 
+/// How team sync is doing, as the service reports it.
+///
+/// Kept as its own value rather than folded into the member list, because
+/// "no teammates" and "sync is off" look identical in a list of zero and mean
+/// completely different things — one is waiting for someone to join, the other
+/// is a switch nobody turned on.
+public struct TeamSyncState: Sendable, Equatable {
+  /// The service's own word: `ready`, `disabled`, and so on.
+  public let status: String
+  /// Why, when the status is not `ready`.
+  public let reason: String
+  public let syncedAt: Date?
+  public let lastError: String
+
+  public init(status: String, reason: String, syncedAt: Date?, lastError: String) {
+    self.status = status
+    self.reason = reason
+    self.syncedAt = syncedAt
+    self.lastError = lastError
+  }
+
+  public var isReady: Bool { status == "ready" }
+
+  public var label: String {
+    switch status {
+    case "ready": "同步已开启"
+    case "disabled": "同步未开启"
+    default: status
+    }
+  }
+
+  public var tone: Tone {
+    if !lastError.isEmpty { return .danger }
+    return isReady ? .ok : .neutral
+  }
+}
+
 public struct TeamMember: Sendable, Equatable, Identifiable {
   public let id: String
   public var displayName: String
@@ -304,6 +341,13 @@ public enum TodoState: String, Sendable {
   case open
   case done
   case deferred
+  /// A tombstone, matching the service's own `TodoInboxStatus`.
+  ///
+  /// The row is not removed from the ledger — `/api/state` filters it out of
+  /// both lists, so it simply stops coming back. That is why the client needs
+  /// no local "hidden" flag: sending the status *is* the deletion, and the next
+  /// read no longer contains it.
+  case deleted
 }
 
 public struct TodoItem: Sendable, Equatable, Identifiable {

@@ -47,6 +47,7 @@ public final class LiveAppState: AppState {
       let result = try await client.cycles()
       self.cycles = result.mine
       self.partnerCycles = result.teammates
+      self.teamSync = result.sync
       if let me = result.members.first(where: \.isSelf) {
         self.members = result.members
         // `account.id` has to move with `viewingMemberID`, because
@@ -90,7 +91,14 @@ public final class LiveAppState: AppState {
 
     await load("待办") {
       let inbox = try await client.todoInbox()
-      self.todos = inbox.open + inbox.recent
+      // `recent` is *all* non-deleted rows, not just the closed ones, so it
+      // already contains everything in `open`. Concatenating the two showed
+      // every unfinished todo twice — which is what "随手记一条，出现两条"
+      // actually was, and it had nothing to do with the capture write.
+      // Union rather than `recent` alone: `recent` is capped at 40, and an open
+      // row older than that would otherwise vanish.
+      var seen = Set<TodoItem.ID>()
+      self.todos = (inbox.open + inbox.recent).filter { seen.insert($0.id).inserted }
     }
 
     await load("今日计划") {

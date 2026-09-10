@@ -195,6 +195,7 @@ extension DailyOSClient {
     case .open: "open"
     case .done: "done"
     case .deferred: "deferred"
+    case .deleted: "deleted"
     }
     try await post("/api/todo-inbox", body: TodoInboxUpdateRequest(id: id, status: status))
   }
