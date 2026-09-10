@@ -21,6 +21,13 @@ public enum ConnectionState: Sendable, Equatable {
     return false
   }
 
+  /// Still looking. The only state that gets a full-window wall, because it is
+  /// the only one where waiting is the correct thing for the user to do.
+  public var isConnecting: Bool {
+    if case .connecting = self { return true }
+    return false
+  }
+
   public var label: String {
     switch self {
     case .unconfigured: "未连接"
@@ -145,6 +152,16 @@ public final class ServiceConnection {
 
     activity = ""
     state = .failed(reason: "服务已经启动，但十几秒后仍然没有响应。看看它的日志：logs/launchd.err.log。")
+  }
+
+  /// Re-read the stored folder and reconnect, after Settings changed it.
+  public func adoptStoredRoot() async {
+    guard let stored = RepoRoot.stored(), stored != repoRoot else { return }
+    wasDiscovered = false
+    repoRoot = stored
+    client = DailyOSClient(repoRoot: stored)
+    state = .connecting
+    await bringUp()
   }
 
   /// Confirm the service answers. Cheap on purpose — the point is to fail fast

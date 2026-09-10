@@ -33,8 +33,48 @@ public final class LiveAppState: AppState {
 
   // MARK: - Loading
 
+  /// Empty every collection.
+  ///
+  /// Called when there is no service to read from. `AppState.init` seeds the
+  /// fixture so the first frame is populated rather than blank, which is right
+  /// while connecting and dangerous once you can reach the app *without* being
+  /// connected: demo cycles and demo todos are plausible enough to be mistaken
+  /// for your own, and the mistake is only discovered after you act on one.
+  /// Every screen's empty state is the honest rendering of "no service".
+  public func clearForDisconnected() {
+    cycles = []
+    partnerCycles = []
+    plan = []
+    todos = []
+    okrFiles = []
+    runs = []
+    artifacts = []
+    schedules = []
+    threads = []
+    sources = []
+    members = []
+    teamSync = nil
+    hasPlan = false
+    planStaleDate = nil
+    selectedCycleID = nil
+    selectedRunID = nil
+    selectedArtifactID = nil
+    selectedThreadID = nil
+    service = ServiceStatus(state: .stopped, endpoint: "", uptime: .zero, note: nil)
+    // The fixture's identity leaks too. Without this the sidebar footer sat
+    // there reading "demo" next to a stopped service — a name nobody has, on
+    // the one line of the window that is supposed to say who you are.
+    account = Account(id: "", displayName: "未连接", email: "", role: .owner, avatarSeed: "")
+    viewingMemberID = ""
+    // Nothing is wired, so no screen claims to be showing real data.
+    wiredSections = []
+  }
+
   public func reload() async {
-    guard let client else { return }
+    guard let client else {
+      clearForDisconnected()
+      return
+    }
     isLoading = true
     defer { isLoading = false }
 

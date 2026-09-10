@@ -75,6 +75,18 @@ struct SettingsScreen: View {
           Text("这一屏的每一项都来自本机的 daily-os 服务。在服务能应答之前，这里不显示任何默认值——写死的示例配置比空白更容易被当成真的。")
             .mutedStyle()
             .fixedSize(horizontal: false, vertical: true)
+
+          PanelDivider()
+
+          Text("Daily OS 会自己找服务：先读 launchd 里登记的路径，再翻常见的代码目录，最后问 Spotlight。三条都没找到，才需要你出手。")
+            .mutedStyle()
+            .fixedSize(horizontal: false, vertical: true)
+          HStack(spacing: Metrics.xs) {
+            Button("重新查找") { Task { await store.rediscoverService() } }
+              .buttonStyle(MossButtonStyle())
+            Button("手动指定文件夹…") { Task { await store.pickServiceFolder() } }
+              .buttonStyle(MossButtonStyle(prominent: false))
+          }
         }
       } actions: {
         Button("重试") { Task { await store.load() } }.buttonStyle(QuietButtonStyle())
@@ -177,6 +189,7 @@ private struct IdentityPanel: View {
     let url = URL(filePath: snapshot.repoRootPath)
     NSWorkspace.shared.activateFileViewerSelecting([url])
   }
+
 }
 
 // MARK: - Provider
@@ -674,6 +687,20 @@ private struct ServicePanel: View {
   let store: SettingsStore
   let snapshot: SettingsSnapshot
 
+  /// Spells out what each driver actually means for whether the morning plan
+  /// arrives. "auto" is the honest default and also the least informative word
+  /// on the screen, so it says what it resolved to.
+  private var schedulerExplanation: String {
+    switch snapshot.schedulerDriver {
+    case "launchd":
+      "由 launchd 按时唤醒。Mac 睡着时错过的任务，醒来会补跑。"
+    case "loop":
+      "服务进程自己计时。只在服务一直开着时有效——Mac 睡一觉，错过的就是错过了。"
+    default:
+      "在 macOS 上自动选 launchd，其他环境用进程内循环。没有特别理由就用这个。"
+    }
+  }
+
   var body: some View {
     Panel("服务") {
       VStack(alignment: .leading, spacing: 0) {
@@ -704,35 +731,61 @@ private struct ServicePanel: View {
         // launchd does, and this app can talk to launchd, so the paragraph that
         // used to hand over a terminal command is now two buttons.
         VStack(alignment: .leading, spacing: Metrics.xs) {
-          Text("控制").mutedStyle(Typo.body)
+          Text("开机自启").mutedStyle(Typo.body)
           Text(snapshot.service.installed
-            ? "由 launchd 管理：开机自启，崩了会自动拉起。Daily OS 启动时会检查它，没在跑就顺手启动。"
-            : "还没装成后台任务。在服务目录里执行 `npm run service:install` 之后，这里才能控制它，而且它才会开机自启。")
+            ? "已经装成后台任务：开机自启，崩了自动拉起，早报和复盘这些定时任务才会按时跑。Daily OS 启动时会检查它，没在跑就顺手启动。"
+            : "还没装成后台任务。现在服务只在你手动开着的时候活着——**定时任务不会跑**，早报不会自己来。")
             .mutedStyle()
             .fixedSize(horizontal: false, vertical: true)
-          if snapshot.service.installed {
-            HStack(spacing: Metrics.xs) {
+
+          HStack(spacing: Metrics.xs) {
+            if snapshot.service.installed {
               Button("重启服务") { Task { await store.restartService() } }
                 .buttonStyle(QuietButtonStyle())
               Button("停止服务") { store.confirmStopService() }
+                .buttonStyle(QuietButtonStyle(tone: .neutral))
+              Button("取消开机自启") { store.confirmUninstallAgent() }
                 .buttonStyle(QuietButtonStyle(tone: .danger))
-              Spacer(minLength: 0)
-              Text(snapshot.service.restartCommand(repoRoot: snapshot.repoRootPath))
-                .font(Typo.mono)
-                .foregroundStyle(Palette.inkMuted)
-                .textSelection(.enabled)
-                .lineLimit(1)
+            } else {
+              Button("装成后台任务") { Task { await store.installAgent() } }
+                .buttonStyle(MossButtonStyle())
             }
+            Spacer(minLength: 0)
+          }
+
+          if snapshot.service.installed {
             // Rebuilding the service is the step people forget, and the symptom
             // — a restart that changes nothing — looks like the restart failing.
             Text("改过服务端代码的话，先在服务目录跑 npm run build 再重启：launchd 跑的是 dist/，不是源码。")
               .mutedStyle()
               .fixedSize(horizontal: false, vertical: true)
           }
+
+          PanelDivider()
+
+          Text("定时任务").mutedStyle(Typo.body)
+          Picker("", selection: Binding(
+            get: { snapshot.schedulerDriver },
+            set: { store.selectSchedulerDriver($0) }
+          )) {
+            Text("自动").tag("auto")
+            Text("交给 launchd").tag("launchd")
+            Text("服务自己循环").tag("loop")
+          }
+          .pickerStyle(.segmented)
+          .labelsHidden()
+          .frame(maxWidth: 320)
+          .disabled(store.isBusy)
+          Text(schedulerExplanation)
+            .mutedStyle()
+            .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.top, Metrics.xs)
       }
     } actions: {
+      Button("打开 Web 控制台") { store.openWebConsole() }
+        .buttonStyle(QuietButtonStyle(tone: .neutral))
+        .disabled(store.isBusy)
       Button("查看日志") { Task { await store.showLogs() } }
         .buttonStyle(QuietButtonStyle())
         .disabled(store.isBusy)
@@ -1192,6 +1245,120 @@ private final class SettingsStore {
     }
   }
 
+  // MARK: Finding the service
+
+  /// Run the search again, by hand.
+  ///
+  /// Useful after installing the launch agent or starting the service for the
+  /// first time — both of which create exactly the evidence discovery looks for.
+  func rediscoverService() async {
+    isBusy = true
+    defer { isBusy = false }
+    guard let found = RepoRoot.discover() else {
+      banner = Banner(ok: false, text: "还是没找到。服务如果从来没启动过，就还没有可找的痕迹——先在它的目录里跑一次 npm run ui。")
+      return
+    }
+    adopt(found, how: "找到了")
+    await load()
+  }
+
+  /// The escape hatch that used to be the app's front door.
+  ///
+  /// Everything about finding the service is automatic — the launch agent, the
+  /// common folders, Spotlight. This is for the case none of them cover: two
+  /// checkouts, an external disk, a folder Spotlight has not indexed. Rare, and
+  /// rare is exactly what belongs in Settings rather than in front of everyone.
+  func pickServiceFolder() async {
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = false
+    panel.allowsMultipleSelection = false
+    panel.prompt = "选择"
+    panel.message = "选中 daily-os 服务所在的文件夹（里面能看到 package.json 和 src 这两项）"
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    guard RepoRoot.looksValid(url) else {
+      banner = Banner(ok: false, text: "这个文件夹里没有 daily-os 服务（找不到 package.json 和 src）。选服务代码所在的那一层。")
+      return
+    }
+    adopt(url, how: "已指向")
+    await load()
+  }
+
+  /// Remember the path and tell the rest of the app.
+  ///
+  /// The notification exists because this screen and the app's
+  /// `ServiceConnection` cannot see each other — `DailyOSMac` has no dependency
+  /// edge to `DailyOSClient`. Writing the preference alone would fix this
+  /// screen's own requests and leave the window still showing "未连接", which is
+  /// the kind of half-applied change that reads as the button not working.
+  private func adopt(_ url: URL, how: String) {
+    RepoRoot.store(url)
+    NotificationCenter.default.post(name: .dailyOSRepoRootChanged, object: nil)
+    banner = Banner(ok: true, text: "\(how)：\(url.lastPathComponent)")
+  }
+
+  /// Register the launch agent, through the service's own installer.
+  ///
+  /// `/api/action service_install` rather than writing the plist from here: the
+  /// service knows its own node path, its own working directory and its own
+  /// argument list, and a second copy of that knowledge in this app would be
+  /// wrong the first time any of them changed.
+  func installAgent() async {
+    await write("装成后台任务", path: "/api/action", body: ["action": "service_install"])
+  }
+
+  func confirmUninstallAgent() {
+    pending = PendingAction(
+      title: "取消开机自启？",
+      message: "服务会从 launchd 注销：不再开机自启，崩了也不会自动拉起，早报和复盘这些定时任务都不会再按时跑。本地文件和配置都不动，随时可以再装回来。",
+      confirmTitle: "取消自启",
+      isDestructive: true
+    ) { [weak self] in
+      await self?.write("取消开机自启", path: "/api/action", body: ["action": "service_uninstall"])
+    }
+  }
+
+  /// Which scheduler drives the timed workflows.
+  func selectSchedulerDriver(_ driver: String) {
+    guard driver != snapshot?.schedulerDriver else { return }
+    Task {
+      isBusy = true
+      defer { isBusy = false }
+      do {
+        let state = try await ServiceLink.get("/api/state")
+        let patched = state["config"].setting(["scheduler", "driver"], to: .string(driver))
+        try await ServiceLink.post("/api/config", body: .object(["config": patched]))
+        // The scheduler is chosen at service start, so the file changing is not
+        // the change taking effect. Saying "已保存" here and stopping would be
+        // the kind of half-truth that has someone waiting for a 7am briefing
+        // that was never rescheduled.
+        banner = Banner(ok: true, text: "已保存。重启服务之后生效。")
+        await load()
+      } catch {
+        banner = Banner(ok: false, text: "保存失败：\(message(from: error))")
+      }
+    }
+  }
+
+  /// Open the browser console, already signed in.
+  ///
+  /// `?token=` is the service's own mechanism — `resolveAuthContext` accepts the
+  /// runtime token from the query string and `npm run ui:open` uses exactly this
+  /// — so the alternative is presenting a login form for an account many people
+  /// running this have never created.
+  ///
+  /// The cost is real and worth knowing: the token lands in browser history. It
+  /// is a localhost URL, the service refuses non-local hostnames, and the token
+  /// is regenerated on every service start, so the window is small — but it is
+  /// not zero.
+  func openWebConsole() {
+    guard let endpoint = try? ServiceLink.endpointForConsole() else {
+      banner = Banner(ok: false, text: "读不到服务地址，先确认服务在跑。")
+      return
+    }
+    NSWorkspace.shared.open(endpoint)
+  }
+
   func confirmStopService() {
     pending = PendingAction(
       title: "停止服务？",
@@ -1356,6 +1523,8 @@ private struct SettingsSnapshot {
   var skillRepo: SkillRepoRow
   var team: TeamRow
   var service: ServiceRow
+  /// `auto` / `launchd` / `loop` — which scheduler runs the timed workflows.
+  var schedulerDriver: String
 }
 
 private struct DoctorRow {
@@ -1696,6 +1865,10 @@ private extension SettingsSnapshot {
       installed: node["service"]["installed"].bool,
       registered: node["service"]["registered"].bool
     )
+    // The schema's own default, so an older config with no `scheduler` block
+    // shows the same answer the service would use rather than an empty segment.
+    let driver = config["scheduler"]["driver"].string
+    schedulerDriver = driver.isEmpty ? "auto" : driver
     sources = SettingsSnapshot.sources(config: config, team: team, doctor: doctor)
   }
 
@@ -2004,6 +2177,17 @@ private enum ServiceLink {
       throw Failure("读不懂 ui.json。服务可能正在启动，或者这个目录不是 daily-os 仓库。")
     }
     return (url, node["token"].string)
+  }
+
+  /// The console URL with the runtime token attached. See
+  /// `SettingsStore.openWebConsole` for why the token rides in the query string
+  /// and what that costs.
+  static func endpointForConsole() throws -> URL {
+    let endpoint = try endpoint()
+    var components = URLComponents(url: endpoint.url, resolvingAgainstBaseURL: false)
+    components?.queryItems = [URLQueryItem(name: "token", value: endpoint.token)]
+    guard let url = components?.url else { throw Failure("拼不出控制台地址。") }
+    return url
   }
 
   static func get(_ path: String) async throws -> JSONNode {

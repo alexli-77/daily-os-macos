@@ -24,13 +24,32 @@ struct DailyOSApp: App {
   var body: some Scene {
     Window("Daily OS", id: DailyOSWindow.main) {
       Group {
-        if let state, connection.state.isConnected {
+        // The wall is now only for the moment we are still looking. Failing to
+        // find the service used to drop you onto a folder picker as the very
+        // first thing the app ever showed you — a question about a word
+        // ("仓库") and a folder that most people opening this have no reason to
+        // know. You get into the app instead, with an unmissable banner and the
+        // picker in Settings where a fix belongs.
+        //
+        // Safe only because `clearForDisconnected` empties the fixture first: an
+        // app full of plausible demo cycles would be a worse lie than the wall.
+        if connection.state.isConnecting {
+          SetupScreen(connection: connection)
+        } else if let state {
           RootView(state: state)
         } else {
           SetupScreen(connection: connection)
         }
       }
       .task(id: connection.repoRoot) { await connect() }
+      // Settings can change the folder, and it lives in a module that cannot
+      // reach this connection. See `Notification.Name.dailyOSRepoRootChanged`.
+      .onReceive(NotificationCenter.default.publisher(for: .dailyOSRepoRootChanged)) { _ in
+        Task {
+          await connection.adoptStoredRoot()
+          await connect()
+        }
+      }
     }
     .defaultSize(width: 1_080, height: 720)
     .commands {
@@ -58,9 +77,15 @@ struct DailyOSApp: App {
     // simply not up yet, which at login is the common case rather than the
     // exceptional one.
     await connection.bringUp()
-    guard connection.state.isConnected else { return }
+    // The store is created either way now. Without a connection it holds
+    // nothing — which is what lets the app open to its own empty screens
+    // instead of to a folder picker.
     if state == nil { state = LiveAppState(connection: connection) }
-    await state?.reload()
+    if connection.state.isConnected {
+      await state?.reload()
+    } else {
+      state?.clearForDisconnected()
+    }
   }
 }
 
