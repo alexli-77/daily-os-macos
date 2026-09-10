@@ -118,6 +118,10 @@ struct TaskRow<Accessory: View>: View {
     .focusEffectDisabled()
     .focused($isFocused)
     .onChange(of: isSelected) { _, selected in if selected { isFocused = true } }
+    // The store has spoken, so the local stand-in is no longer needed. Without
+    // this the check would be driven by a flag that outlives the click it
+    // belongs to.
+    .onChange(of: item.state) { _, _ in isCompleting = false }
     // ⏎ belongs to the circle, not to an action, which is why no action is
     // allowed to claim it: in a list of things to finish, the default key has
     // exactly one meaning.
@@ -224,15 +228,24 @@ struct TaskRow<Accessory: View>: View {
   }
 
   /// Fill the check, hold, then let the row go.
+  ///
+  /// `isCompleting` only bridges the gap between the click and the store
+  /// agreeing. It has to be given back, and the earlier version never did —
+  /// which latched the flag on for the life of the row: the circle stayed
+  /// filled through an un-tick, and the `guard` below then swallowed every
+  /// later click. Complete, restore, and the third press did nothing at all.
   private func complete(_ perform: @escaping () -> Void) {
     guard !isCompleting else { return }
     withAnimation(.spring(response: 0.3, dampingFraction: 0.62)) { isCompleting = true }
     Task {
       try? await Task.sleep(for: .milliseconds(320))
       withAnimation(.snappy(duration: 0.26)) { perform() }
-      // Not reset: by now this row either carries `state == .done` or has left
-      // the list. Clearing it would flash the row back to unticked in the frame
-      // before the store catches up.
+      // A backstop for the case `onChange` cannot see: a write that fails, or a
+      // store that refuses, leaves `item.state` exactly where it was, so there
+      // is no change to observe — and without this the row would stay ticked
+      // and inert. Long enough that the optimistic update wins the race.
+      try? await Task.sleep(for: .milliseconds(500))
+      isCompleting = false
     }
   }
 

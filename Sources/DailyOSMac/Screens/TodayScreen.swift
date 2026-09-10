@@ -200,19 +200,96 @@ private struct TimeDonut: View {
 /// One segment per planned item, so the bar reads as "three things, one done"
 /// rather than as a continuous percentage. A day is countable; pretending it is
 /// continuous hides that the last 20% is one whole task.
+///
+/// Three rules on top of that, all of which exist so the bar is a *progress*
+/// bar rather than a row of tiles:
+///
+/// 1. **Finished work goes left.** Progress in a plan you keep reordering is
+///    unreadable if the done segments are scattered through it — the eye reads
+///    a bar left to right and wants the boundary between "behind me" and "ahead
+///    of me" to be one edge, not five.
+/// 2. **Width follows the estimate.** Equal cells say four things are left when
+///    three of them are ten minutes and the fourth is the afternoon.
+/// 3. **An item with no estimate is drawn as one**, not hidden and not given a
+///    fabricated duration — see `Segment.isEstimated`.
 private struct SegmentedProgress: View {
   let items: [TodoItem]
 
   var body: some View {
-    HStack(spacing: 3) {
-      ForEach(items) { item in
-        Capsule()
-          .fill(item.state == .done ? Palette.ok : Palette.surfaceSunken)
-          .frame(height: 6)
+    let segments = PlanSegment.layout(items)
+    // Only meaningful when the bar is *mixed*. A dash marks a width that is a
+    // stand-in sitting next to widths that are measurements — without it the
+    // bar presents a guess with the same authority as the real numbers beside
+    // it. When nothing is estimated, equal cells are not a guess, they are the
+    // honest rendering of knowing nothing, and dashing every one of them is
+    // just five dashed boxes saying what the caption below already says.
+    let isMixed = segments.contains(where: \.isEstimated) && segments.contains { !$0.isEstimated }
+    GeometryReader { geo in
+      HStack(spacing: 3) {
+        ForEach(segments) { segment in
+          RoundedRectangle(cornerRadius: 3, style: .continuous)
+            .fill(fill(for: segment.state))
+            .overlay {
+              RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .strokeBorder(
+                  border(for: segment),
+                  style: StrokeStyle(
+                    lineWidth: Metrics.hairline,
+                    dash: isMixed && !segment.isEstimated ? [3, 2] : []
+                  )
+                )
+            }
+            .frame(width: width(for: segment, in: segments, available: geo.size.width))
+            .help(tooltip(for: segment))
+        }
       }
     }
+    .frame(height: 8)
+    // Finishing something makes its segment change colour and slide to the
+    // left edge. That movement *is* the progress, so it gets to be seen.
+    .animation(.snappy(duration: 0.4), value: segments.map(\.id))
+    .animation(.snappy(duration: 0.4), value: segments.map(\.weight))
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(Text("已完成 \(items.filter { $0.state == .done }.count) 项，共 \(items.count) 项"))
+  }
+
+  private func fill(for state: TodoState) -> Color {
+    switch state {
+    case .done: Palette.ok
+    case .deferred: Palette.softBackground(for: .warn)
+    case .open, .deleted: Palette.surfaceSunken
+    }
+  }
+
+  /// The outline carries the shape when the fill is nearly the panel colour —
+  /// a pale grey block on a white panel has no edges without it.
+  private func border(for segment: PlanSegment) -> Color {
+    switch segment.state {
+    case .done: .clear
+    case .deferred: Palette.warn.opacity(0.4)
+    case .open, .deleted: Palette.line
+    }
+  }
+
+  /// Floors at 10pt so a fifteen-minute task next to a three-hour one is still
+  /// a visible, hoverable segment. Exact proportion is not worth a segment you
+  /// cannot see or point at.
+  private func width(for segment: PlanSegment, in segments: [PlanSegment], available: CGFloat) -> CGFloat {
+    let total = segments.reduce(0) { $0 + $1.weight }
+    guard total > 0, available > 0 else { return 0 }
+    let gaps = CGFloat(max(segments.count - 1, 0)) * 3
+    let usable = max(available - gaps, 0)
+    return max(usable * CGFloat(segment.weight / total), 10)
+  }
+
+  private func tooltip(for segment: PlanSegment) -> String {
+    let status = switch segment.state {
+    case .done: "已完成"
+    case .deferred: "已顺延"
+    case .open, .deleted: "未完成"
+    }
+    let time = segment.minutes.map(Fmt.minutes) ?? "没有估时"
+    return "\(segment.text)\n\(status) · \(time)"
   }
 }
 

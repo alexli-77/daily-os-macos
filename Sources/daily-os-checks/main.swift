@@ -290,8 +290,48 @@ check(DonutArc.layout([slice("z", 0)]).isEmpty, "a zero-valued slice is not draw
 check(DonutArc.layout([slice("neg", -5)]).isEmpty, "a negative value cannot invert the ring")
 check(DonutArc.layout([slice("only", 42)]).count == 1, "one slice is a whole ring")
 
+// 10. Progress-bar segments.
+//
+// Both rules here are invisible when wrong: a bar of coloured rectangles always
+// looks like a bar of coloured rectangles, so cells in the wrong order, or a
+// guessed width presented with the same authority as a measured one, would
+// never announce themselves.
+func todo(_ id: String, _ state: TodoState, _ minutes: Int? = nil) -> TodoItem {
+  TodoItem(id: id, text: id, kind: .priority, state: state, estimatedMinutes: minutes)
+}
+
+let mixed = PlanSegment.layout([
+  todo("open-a", .open, 30),
+  todo("done-a", .done, 60),
+  todo("deferred", .deferred, 15),
+  todo("open-b", .open),
+  todo("done-b", .done, 45),
+])
+check(mixed.map(\.id) == ["done-a", "done-b", "open-a", "open-b", "deferred"],
+      "done left, then open, then deferred — got \(mixed.map(\.id))")
+
+// Plan order has to survive inside each group, or finishing one task would
+// reshuffle the ones around it.
+let ordered = PlanSegment.layout([todo("c", .open), todo("a", .done), todo("d", .open), todo("b", .done)])
+check(ordered.map(\.id) == ["a", "b", "c", "d"], "plan order holds within a group, got \(ordered.map(\.id))")
+
+// Median, not mean: one outlier must not stretch every unknown cell.
+let widths = PlanSegment.layout([todo("x", .open, 15), todo("y", .open, 30), todo("z", .open, 240), todo("none", .open)])
+check(widths.first(where: { $0.id == "none" })?.weight == 30,
+      "an unestimated item borrows the median, got \(String(describing: widths.first { $0.id == "none" }?.weight))")
+check(widths.first(where: { $0.id == "z" })?.weight == 240, "an estimated item keeps its own minutes")
+check(widths.first(where: { $0.id == "none" })?.isEstimated == false, "a borrowed width is not an estimate")
+check(widths.first(where: { $0.id == "x" })?.isEstimated == true, "a real estimate reports itself as one")
+
+// Knowing nothing about duration means equal cells, not zero-width ones.
+let untimed = PlanSegment.layout([todo("a", .open), todo("b", .open), todo("c", .done)])
+check(Set(untimed.map(\.weight)) == [1], "with no estimates anywhere every cell is equal")
+check(untimed.allSatisfy { $0.weight > 0 }, "no cell may be zero-width")
+
+check(PlanSegment.layout([]).isEmpty, "an empty plan has no segments")
+
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")
