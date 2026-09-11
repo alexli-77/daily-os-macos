@@ -231,7 +231,11 @@ public enum ServiceInstaller {
     else { return }
 
     note("从 \(legacy.path(percentEncoded: false)) 迁移原有数据")
-    for item in ["data", "config", ".env"] {
+    // memory-vault holds OKR, cycles, commitments and decision rules. It is not
+    // under data/, and the service resolves it relative to its working directory
+    // (the managed dir), so leaving it behind silently emptied every one of them
+    // after a checkout → package upgrade. See daily-os-macos #3.
+    for item in ["data", "config", ".env", "memory-vault"] {
       let source = legacy.appending(path: item)
       guard fm.fileExists(atPath: source.path(percentEncoded: false)) else { continue }
       do {
