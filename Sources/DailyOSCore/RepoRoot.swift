@@ -75,7 +75,15 @@ public enum RepoRoot {
   /// file is the thing this app needs and its presence also proves the service
   /// has run there. A folder called `daily-os-feishu` that was cloned and never
   /// started is not an answer.
+  ///
+  /// macOS only, and the `#if` is load-bearing: `Process` does not exist on
+  /// iOS, and `DailyOSCore` is a dependency of the iOS app. Without it this
+  /// file compiles on the Mac in front of you and fails the moment anything
+  /// builds it for a phone — which is exactly how it reached `main` and stayed
+  /// broken for eight commits. On iOS there is no local service to find, so
+  /// answering nil is not a stub, it is the truth.
   private static func fromSpotlight() -> URL? {
+    #if os(macOS)
     let process = Process()
     process.executableURL = URL(filePath: "/usr/bin/mdfind")
     process.arguments = ["-name", "ui.json", "-onlyin", URL.homeDirectory.path()]
@@ -98,6 +106,9 @@ public enum RepoRoot {
       if looksValid(root) { return root }
     }
     return nil
+    #else
+    return nil
+    #endif
   }
 
   /// Directory URLs from `contentsOfDirectory` carry a trailing slash, which is

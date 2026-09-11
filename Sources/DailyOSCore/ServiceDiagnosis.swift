@@ -13,7 +13,7 @@ import Foundation
 ///
 /// Everything here is a local filesystem read. Nothing asks the network, which
 /// is the point — the network is the thing that already failed.
-public enum ServiceDiagnosis: Equatable {
+public enum ServiceDiagnosis: Equatable, Sendable {
   /// Nothing found anywhere. Most likely the service was never installed on
   /// this machine.
   case notFound

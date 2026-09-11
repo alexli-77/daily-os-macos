@@ -10,7 +10,12 @@ import Foundation
 /// schema strips keys it does not recognise, so a client changing `llm.model`
 /// has to hand every other key back untouched — a typed mirror would delete
 /// anything this app had not been taught about, permanently.
-enum JSONNode: Codable, Equatable {
+/// `Sendable` because it crosses an actor boundary on every request: the
+/// transport decodes off the main actor and hands the tree to a `@MainActor`
+/// store. It is values all the way down, so the conformance costs nothing —
+/// but without it the compiler is right to object, and the objection only
+/// appeared on CI, whose Swift is older than the one on this desk.
+enum JSONNode: Codable, Equatable, Sendable {
   case null
   case bool(Bool)
   case number(Double)
