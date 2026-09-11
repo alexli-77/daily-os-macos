@@ -45,6 +45,10 @@ public final class LiveAppState: AppState {
     cycles = []
     partnerCycles = []
     plan = []
+    // The run may well still be going — it belongs to launchd, not to this
+    // window — but nothing here can see it any more, and a "正在跑" note over a
+    // disconnected screen is a claim this app has no way to check.
+    planRunStartedAt = nil
     todos = []
     okrFiles = []
     runs = []
@@ -406,6 +410,7 @@ public final class LiveAppState: AppState {
     guard let client else { return .failed("没有连接到服务。") }
     do {
       try await client.rerunWorkflow("daily_plan")
+      planRunStartedAt = .now
       watchForPlan()
       return .ok("已让 daily_plan 跑起来了，跑完会发一条飞书")
     } catch {
@@ -422,19 +427,36 @@ public final class LiveAppState: AppState {
   /// until it is relaunched — which is the "按了没反应" that the old empty
   /// state was at least honest about. Polling is the shape the service leaves:
   /// it offers no completion event to subscribe to. So it is bounded at ten
-  /// minutes, spaced far enough apart to be free on a local service, and stops
-  /// the moment a plan dated today exists.
+  /// minutes and spaced far enough apart to be free on a local service.
+  ///
+  /// It stops when the plan **changes**, not when a plan dated today exists.
+  /// The old condition was already true before a 重新生成 ever started — there
+  /// was a plan, it was today's, it was not empty — so the watcher declared
+  /// victory on its first poll and the "正在跑" note vanished thirty seconds
+  /// into a run that had ten minutes left. Comparing against what was on screen
+  /// when the button was pressed is the only version of this question that a
+  /// regenerate can answer.
   private func watchForPlan() {
     planWatcher?.cancel()
+    let before = planFingerprint
     planWatcher = Task { [weak self] in
       for _ in 0..<20 {
         try? await Task.sleep(for: .seconds(30))
         guard !Task.isCancelled, let self else { return }
         await self.reload()
-        if self.hasPlan, self.planStaleDate == nil, !self.plan.isEmpty { return }
+        if self.planFingerprint != before {
+          self.planRunStartedAt = nil
+          return
+        }
       }
+      // Ten minutes with nothing new. The run may have failed, or may still be
+      // going; either way this stops claiming to know. Clearing the note is
+      // what returns 重新生成 to the user rather than leaving them locked out
+      // of the one button that could try again.
+      self?.planRunStartedAt = nil
     }
   }
+
 
   // MARK: - Cycles
 

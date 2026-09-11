@@ -438,6 +438,32 @@ check(planOrder(["a", "b", "c", "d"], move: "a", before: 3) == ["b", "c", "a", "
 check(planOrder(["a", "b", "c"], move: "c", before: 99) == ["a", "b", "c"], "越界的目标要被夹住而不是崩")
 check(planOrder(["a", "b", "c"], move: "zzz", before: 0) == ["a", "b", "c"], "不认识的 id 不动列表")
 
+// 11h. 「计划跑完了吗」问的必须是「计划变了吗」
+//
+// The watcher that ends the "正在生成" note used to ask whether a plan dated
+// today existed — which is already true before 重新生成 is pressed, so the note
+// died thirty seconds into a ten-minute run. The fingerprint is the replacement,
+// and the case it has to get right is the common one: `daily_plan` rebuilds
+// candidates from the same Linear issues, so a rerun usually returns the same
+// ids with different wording.
+@MainActor
+func fingerprint(_ rows: [(String, String, Int?)], hasPlan: Bool = true, stale: String? = nil) -> String {
+  let state = AppState.previewOwner()
+  state.hasPlan = hasPlan
+  state.planStaleDate = stale
+  state.plan = rows.map { TodoItem(id: $0.0, text: $0.1, kind: .priority, estimatedMinutes: $0.2) }
+  return state.planFingerprint
+}
+let sameRows: [(String, String, Int?)] = [("a", "写 PR", 45), ("b", "看论文", 30)]
+check(fingerprint(sameRows) == fingerprint(sameRows), "同一份计划指纹必须稳定，否则第一次轮询就误报「变了」")
+check(fingerprint(sameRows) != fingerprint([("a", "写 PR 并合掉", 45), ("b", "看论文", 30)]),
+      "id 没变、文案变了，也必须算新计划——这正是重新生成最常见的结果")
+check(fingerprint(sameRows) != fingerprint([("a", "写 PR", 90), ("b", "看论文", 30)]),
+      "只改了估时也算变了")
+check(fingerprint(sameRows) != fingerprint([("a", "写 PR", 45)]), "少一条算变了")
+check(fingerprint([]) != fingerprint([], hasPlan: false), "从没跑过和跑出空计划是两回事")
+check(fingerprint(sameRows) != fingerprint(sameRows, stale: "9月10日"), "昨天的计划和今天的不是同一份")
+
 // MARK: - What this harness cannot cover
 //
 // Written down rather than left implicit, because a green run is read as "the
@@ -466,7 +492,7 @@ check(planOrder(["a", "b", "c"], move: "zzz", before: 0) == ["a", "b", "c"], "�
 // build Release, install, and drive the app.
 
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 回归集")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 回归集")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

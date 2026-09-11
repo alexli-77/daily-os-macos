@@ -431,14 +431,11 @@ private struct PlanPanel: View {
   @Environment(AppState.self) private var state
   @Binding var selectedID: TodoItem.ID?
 
-  /// Guards the button against a second press while the POST is in flight. It
-  /// is deliberately *not* a "running" flag — the run outlives this view and
-  /// there is nothing here that would know when it ended.
+  /// Guards against a second press while the POST itself is in flight — a
+  /// matter of milliseconds. The *run* outliving this view is tracked by
+  /// `state.planRunStartedAt`, which is in the store precisely because this
+  /// kind of flag does not survive leaving the screen.
   @State private var isStarting = false
-  /// When this screen last started a run, or nil. Cleared as soon as a new plan
-  /// lands, because at that point the note is describing something that has
-  /// already happened.
-  @State private var startedAt: Date?
 
   /// Where the dragged row would land. Lives here rather than on the rows,
   /// because an insertion line is a statement about the gap *between* two rows
@@ -461,7 +458,7 @@ private struct PlanPanel: View {
       badgeTone: badge?.tone ?? .neutral
     ) {
       VStack(alignment: .leading, spacing: Metrics.sm) {
-        if let startedAt { StartedNote(at: startedAt) }
+        if let startedAt = state.planRunStartedAt { StartedNote(at: startedAt) }
 
         if state.plan.isEmpty {
           // The action is the point of this empty state. It used to say the Mac
@@ -474,12 +471,18 @@ private struct PlanPanel: View {
           // This run spends model budget and sends the user a Feishu message —
           // finding that out afterwards, from your phone buzzing, is the kind
           // of surprise that makes a button untrustworthy.
+          // While a run is in flight the note above already says so, and the
+          // button is withheld rather than shown-and-disabled: a run started
+          // from here and then repeated by a second press costs model budget
+          // twice and sends two Feishu messages.
           EmptyState(
             icon: "tray",
-            title: "今天还没有计划",
-            message: "计划由 daily_plan 工作流生成——早上的定时任务会跑，在飞书里发一句「daily-os plan」也会跑。也可以现在就在这里跑一次：会花模型额度，跑完还会往飞书发一条。",
-            actionTitle: "生成计划",
-            action: generate
+            title: isRunning ? "计划正在生成" : "今天还没有计划",
+            message: isRunning
+              ? "daily_plan 在后台跑，通常一两分钟。跑完计划会自己出现在这里，飞书也会收到一条。"
+              : "计划由 daily_plan 工作流生成——早上的定时任务会跑，在飞书里发一句「daily-os plan」也会跑。也可以现在就在这里跑一次：会花模型额度，跑完还会往飞书发一条。",
+            actionTitle: isRunning ? nil : "生成计划",
+            action: isRunning ? nil : (generate as () -> Void)
           )
         } else {
           VStack(spacing: 2) {
@@ -524,20 +527,27 @@ private struct PlanPanel: View {
       // the same action twice on one screen, and the empty state's version is
       // the one carrying the explanation.
       if !state.plan.isEmpty {
-        Button("重新生成", action: generate)
+        Button(isRunning ? "正在生成…" : "重新生成", action: generate)
           .buttonStyle(QuietButtonStyle())
-          .disabled(isStarting)
-          .help("再跑一次 daily_plan：会花模型额度，跑完还会往飞书发一条。")
+          .disabled(isStarting || isRunning)
+          // Disabled while one is already going, which it was not before: the
+          // guard was a `@State` flag, so leaving the screen and coming back
+          // re-armed a button that spends model budget and sends a Feishu
+          // message every time it is pressed.
+          .help(isRunning
+            ? "已经有一次 daily_plan 在跑了，跑完计划会自己出现。"
+            : "再跑一次 daily_plan：会花模型额度，跑完还会往飞书发一条。")
       }
     }
     .onChange(of: state.plan.map(\.id)) {
-      startedAt = nil
       // Backstop for the insertion line. `dropExited` clears it in every normal
       // path; this covers a reload landing mid-drag, where the row the line was
       // measured against may no longer exist.
       dropIndex = nil
     }
   }
+
+  private var isRunning: Bool { state.planRunStartedAt != nil }
 
   private var subtitle: String {
     state.plan.isEmpty
@@ -590,14 +600,16 @@ private struct PlanPanel: View {
   /// measuring the wrong thing — it would finish in milliseconds while the
   /// workflow it claimed to represent ran for another two minutes.
   private func generate() {
-    guard !isStarting else { return }
+    guard !isStarting, !isRunning else { return }
     isStarting = true
     Task {
+      // `state.planRunStartedAt` is set by the store on success, not here: the
+      // note has to outlive this view, and a view that sets it would also be a
+      // view that owns it.
       let outcome = await state.generatePlan()
       isStarting = false
       switch outcome {
       case .ok(let message):
-        startedAt = .now
         state.toast = message ?? "已让 daily_plan 跑起来了"
       case .failed(let why), .unsupported(let why):
         state.toast = why

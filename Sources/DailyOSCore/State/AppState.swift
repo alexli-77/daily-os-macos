@@ -56,6 +56,39 @@ open class AppState {
   /// state from "ran and produced nothing".
   public var hasPlan = true
 
+  /// When this app started a `daily_plan` run that has not produced a plan yet.
+  ///
+  /// **In the store rather than in the panel**, and that is the whole point of
+  /// it. It lived in `PlanPanel.@State`, which SwiftUI throws away the moment
+  /// the screen is left — so pressing 生成计划, glancing at 周期, and coming
+  /// back showed a screen with no plan and no sign that anything had been
+  /// started. The run takes minutes; leaving the screen inside those minutes is
+  /// not an edge case, it is what anybody would do while waiting.
+  ///
+  /// Also what stops the run being started twice. Each press spends model
+  /// budget and sends a Feishu message, and before this the guard against a
+  /// double press was a `@State` flag that navigation reset too.
+  ///
+  /// Still only in memory: quitting the app forgets it, which is honest — the
+  /// poll watching for the result dies with the process as well.
+  public var planRunStartedAt: Date?
+
+  /// Enough of the plan to tell a new one from the one that was already there.
+  ///
+  /// The question a rerun poses is "has the plan *changed*", and the obvious
+  /// cheaper question — "is there a plan dated today" — is already answered yes
+  /// before 重新生成 is even pressed. Asking it that way ended the run's
+  /// progress note thirty seconds into a ten-minute run.
+  ///
+  /// Not just the ids: `daily_plan` builds its candidates from the same Linear
+  /// issues most mornings, so a rerun very often returns the same five ids with
+  /// different wording and different estimates. Ids alone would call that no
+  /// change at all.
+  public var planFingerprint: String {
+    let rows = plan.map { "\($0.id)|\($0.text)|\($0.estimatedMinutes ?? -1)" }.joined(separator: "\n")
+    return "\(hasPlan)|\(planStaleDate ?? "-")|\(rows)"
+  }
+
   // Transient
   public var toast: String?
 
