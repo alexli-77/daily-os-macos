@@ -68,6 +68,19 @@ Fixture 在 `AppState+Preview.swift`：`previewOwner` / `previewTeammate` / `pre
 2. 删掉模板的 `ContentView.swift` 和 `DailyOSApp.swift`，把本仓库的 `App/DailyOSApp.swift` 加入 target
 3. File → Add Package Dependencies → Add Local → 选仓库根目录 → 勾上 `DailyOSCore` 和 `DailyOSMac`
 
+### 装的是不是最新的
+
+```bash
+./scripts/check-installed.sh
+```
+
+一行答案。它比对 `/Applications` 里那份的版本戳和仓库 HEAD，并且会单独点出三种
+「看起来对、其实不能信」的情况：**打包时工作区是脏的**（commit 号和包里的代码对不上，
+这比没有 commit 号更误导人）、**没有版本戳**（不是用 `package.sh` 打的）、
+**本地领先远端**。
+
+App 里也能看：设置 → 服务 → 「App 版本」。
+
 ### 装到自己机器上日常用
 
 ```bash
