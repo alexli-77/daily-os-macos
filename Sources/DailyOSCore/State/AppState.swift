@@ -366,6 +366,51 @@ open class AppState {
     return .ok(nil)
   }
 
+  // MARK: Seams added for the parallel build
+  //
+  // Declared here, in one place, before the work was split across agents. Each
+  // is the shell's default — refuse, and say so — and each is overridden in
+  // `LiveAppState`. They live in the class body rather than in per-feature
+  // extensions because Swift cannot override a method declared in an extension,
+  // and `open` is the whole point of these.
+
+  /// Today's weather, or nil when it has never been fetched.
+  public var weather: WeatherSnapshot?
+
+  /// Who is signed in to the console, as opposed to which team member this
+  /// machine syncs as. Nil when nobody is.
+  public var session: ConsoleSession?
+
+  /// Fetch weather for the configured place. Cheap to call — the live version
+  /// only goes to the network when the cache is stale.
+  open func refreshWeather(force: Bool = false) async {}
+
+  /// Ask the service to run `daily_plan` now.
+  open func generatePlan() async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  /// Create the next cycle. Every field is optional; the service fills the rest
+  /// from the previous cycle.
+  open func createCycle(_ request: NewCycleRequest) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  /// Generate a section the cycle file does not have yet (retro / review).
+  open func generateCycleSection(cycleID: Cycle.ID, kind: CycleSectionKind) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  /// Sign in to the console account store.
+  open func signIn(username: String, password: String) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  /// End the console session on this machine.
+  open func signOut() async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
   open func newThread() {
     let thread = ChatThread(id: "th_\(UUID().uuidString.prefix(8))", title: "新对话", updatedAt: .now, messages: [])
     threads.insert(thread, at: 0)
