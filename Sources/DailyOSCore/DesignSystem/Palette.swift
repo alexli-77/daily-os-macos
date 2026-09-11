@@ -127,6 +127,26 @@ public enum Palette {
   public static func series(_ index: Int) -> Color {
     series[((index % series.count) + series.count) % series.count]
   }
+
+  /// The colour a plan row and its slice of the day share.
+  ///
+  /// Three tiers rather than one hue per row. Per-row colours answer "which
+  /// slice is which", which the row beside the chart already answers by name;
+  /// tiers answer "how much of today is the important work", which nothing else
+  /// on the screen says at all.
+  ///
+  /// Terracotta and amber, not red and orange. `danger` is the colour of
+  /// something being wrong, and the most important task of the day is not a
+  /// problem — borrowing that red would make a well-planned morning read as an
+  /// alert. Both are drawn from `series`, so the ring stays in the same family
+  /// it always was.
+  public static func importance(_ importance: PlanImportance) -> Color {
+    switch importance {
+    case .mit: Color(light: Color(hex: 0xA85843), dark: Color(hex: 0xD99A82))
+    case .high: warn
+    case .normal: Color(light: Color(hex: 0x8A9490), dark: Color(hex: 0x77837D))
+    }
+  }
 }
 
 /// The five semantic colours anything status-bearing is allowed to be.

@@ -70,6 +70,11 @@ private struct DayProgressPanel: View {
         VStack(alignment: .leading, spacing: Metrics.sm) {
           HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
             Text("今日进度").mutedStyle(Typo.label)
+            // Says where the day stands before the numbers are read. The
+            // figures below are two counts and a bar; none of them says "still
+            // going" versus "done" at a glance, which is the only thing most
+            // looks at this panel are asking.
+            if let badge { Pill(badge.text, tone: badge.tone) }
             Spacer()
             if state.service.state != .running {
               StatusDot(state.service.state.label, tone: state.service.state.tone)
@@ -95,14 +100,15 @@ private struct DayProgressPanel: View {
 
           SegmentedProgress(items: state.plan)
 
-          // Gated on "is there a plan at all", not on "does the plan carry
-          // minutes". The old `plannedMinutes > 0` gate is why this block
-          // disappeared: with no estimates the sum is always zero and the whole
-          // feature silently stopped rendering. A missing input should look
-          // like a missing input.
+          // 建议分配 used to live here: a legend naming every row and its
+          // estimate, directly above a panel that lists every row and its
+          // estimate. Two lists of the same five things is how a screen stops
+          // being readable, so the legend moved into the rows themselves —
+          // each plan row now carries the colour of its own slice. What is
+          // left here is the part a list cannot show: the totals.
           if !state.plan.isEmpty {
             PanelDivider()
-            TimeAllocation(items: state.plan, total: progress.plannedMinutes)
+            ImportanceKey(items: state.plan, total: progress.plannedMinutes)
           }
 
           if let note = state.service.note {
@@ -124,6 +130,14 @@ private struct DayProgressPanel: View {
       }
       .frame(minHeight: state.plan.isEmpty ? 0 : Self.chartSide)
     }
+  }
+
+  /// 进行中 until the last row is resolved. Nothing at all when there is no
+  /// plan — a day with nothing in it is not "in progress", and a badge saying
+  /// so next to `0 / 0` would be the screen inventing activity.
+  private var badge: (text: String, tone: Tone)? {
+    guard !state.plan.isEmpty else { return nil }
+    return state.dayProgress.isComplete ? ("已完成", .ok) : ("进行中", .accent)
   }
 }
 
@@ -161,8 +175,15 @@ private struct TimeDonut: View {
     }
   }
 
-  /// One slice per estimated item, in plan order, so a slice's colour matches
-  /// its legend row without either needing to be sorted.
+  /// One slice per estimated item, in plan order, coloured by how much the row
+  /// matters — the same colour the row itself carries, so the ring and the list
+  /// are one picture rather than two that have to be matched up.
+  ///
+  /// Adjacent slices in the same tier share a hue and are told apart by the
+  /// gap `DonutArc` already cuts between them. That is the trade: the ring
+  /// stops answering "which slice is the PR" — which the list answers by name,
+  /// right beside it — and starts answering "how much of today is the important
+  /// work", which nothing else on the screen says.
   ///
   /// Finished items keep their slice and get faded rather than being dropped.
   /// Removing them would shrink the ring as the day went on, which would make
@@ -171,11 +192,12 @@ private struct TimeDonut: View {
   private var slices: [DonutSlice] {
     items.enumerated().compactMap { index, item in
       guard let minutes = item.estimatedMinutes, minutes > 0 else { return nil }
+      let importance = PlanImportance.forRank(index + 1)
       return DonutSlice(
         id: item.id,
-        label: "\(item.text) · \(Fmt.minutes(minutes))",
+        label: "\(item.text) · \(Fmt.minutes(minutes)) · \(importance.label)",
         value: Double(minutes),
-        color: Palette.series(index),
+        color: Palette.importance(importance),
         isSpent: item.state != .open
       )
     }
@@ -298,78 +320,59 @@ private struct SegmentedProgress: View {
   }
 }
 
-/// The legend for the ring beside it.
+/// What the ring's colours mean, and what the day adds up to.
 ///
-/// The proportional bar this used to draw is gone: it and the donut answered the
-/// same question, and two pictures of one number is how a panel stops being
-/// readable. What is left is the part a ring genuinely cannot do — naming the
-/// slices and giving each one its figure.
+/// All that survives of 建议分配. The row-by-row legend it used to draw is now
+/// the plan list itself: the same five lines, the same five colours, with the
+/// controls attached. Three tier swatches and two totals is what a list of rows
+/// genuinely cannot say.
 ///
-/// It still has to survive having nothing to compare, and the honest states are
-/// three rather than two: all estimated, some estimated, none estimated. The
-/// middle one is the trap — a chart drawn from two of five items looks like the
-/// whole day unless it says otherwise.
-private struct TimeAllocation: View {
+/// The untimed count is the number that stops the ring from lying — a chart
+/// drawn from two of five items looks like the whole day unless something says
+/// otherwise.
+private struct ImportanceKey: View {
   let items: [TodoItem]
   let total: Int
 
-  /// Carries each item's index in the *plan*, not in the filtered list, because
-  /// that index picks the colour and the ring is coloured the same way. Filter
-  /// first and the third slice ends up the second legend colour.
-  private var timed: [(index: Int, item: TodoItem)] {
-    items.enumerated()
-      .filter { ($0.element.estimatedMinutes ?? 0) > 0 }
-      .map { (index: $0.offset, item: $0.element) }
-  }
+  private var untimedCount: Int { items.filter { ($0.estimatedMinutes ?? 0) <= 0 }.count }
 
-  private var untimedCount: Int { items.count - timed.count }
+  /// Only the tiers this plan actually contains. A three-row plan has no 一般
+  /// items, and a swatch for a tier with nothing in it explains a colour that
+  /// is not on screen.
+  private var presentTiers: [PlanImportance] {
+    let tiers = items.indices.map { PlanImportance.forRank($0 + 1) }
+    return PlanImportance.allCases.filter(tiers.contains)
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.xs) {
-      HStack {
-        Text("建议分配").mutedStyle(Typo.label)
-        Spacer()
+      HStack(spacing: Metrics.sm) {
+        ForEach(presentTiers, id: \.self) { tier in
+          HStack(spacing: Metrics.xxs) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+              .fill(Palette.importance(tier))
+              .frame(width: 8, height: 8)
+            Text(tier.label).font(Typo.caption).foregroundStyle(Palette.inkMuted)
+          }
+          .help(tier.explanation)
+        }
+        Spacer(minLength: Metrics.xs)
         if total > 0 {
           Text("共 \(Fmt.minutes(total))").font(Typo.tabularCaption).foregroundStyle(Palette.inkMuted)
         }
       }
 
-      if timed.isEmpty {
+      if untimedCount == items.count {
         MissingEstimates(count: items.count)
-      } else {
-        legend
-        if untimedCount > 0 {
-          Text("另有 \(untimedCount) 项没有估时，点行尾的估时按钮就能填。").mutedStyle()
-        }
+      } else if untimedCount > 0 {
+        Text("其中 \(untimedCount) 项没有估时，没算进这个环里。").mutedStyle()
       }
     }
-    // Correcting one row's estimate is worth watching: these figures and the
-    // ring beside them are the answer to "does today fit", and seeing them move
-    // is the point of editing one.
+    // Correcting one row's estimate is worth watching: this figure and the ring
+    // beside it are the answer to "does today fit", and seeing it move is the
+    // point of editing one.
     .animation(.snappy(duration: 0.32), value: total)
-    .animation(.snappy(duration: 0.32), value: timed.count)
-  }
-
-  private var legend: some View {
-    VStack(alignment: .leading, spacing: Metrics.xxs) {
-      ForEach(timed, id: \.item.id) { entry in
-        HStack(spacing: Metrics.xs) {
-          RoundedRectangle(cornerRadius: 2, style: .continuous)
-            .fill(Palette.series(entry.index))
-            .opacity(entry.item.state == .open ? 1 : 0.35)
-            .frame(width: 8, height: 8)
-          Text(entry.item.text)
-            .font(Typo.caption)
-            .foregroundStyle(entry.item.state == .open ? Palette.ink : Palette.inkMuted)
-            .strikethrough(entry.item.state == .done, color: Palette.inkMuted)
-            .lineLimit(1)
-          Spacer(minLength: Metrics.xs)
-          Text(Fmt.minutes(entry.item.estimatedMinutes ?? 0))
-            .font(Typo.tabularCaption)
-            .foregroundStyle(Palette.inkMuted)
-        }
-      }
-    }
+    .animation(.snappy(duration: 0.32), value: untimedCount)
   }
 }
 
@@ -437,8 +440,26 @@ private struct PlanPanel: View {
   /// already happened.
   @State private var startedAt: Date?
 
+  /// Where the dragged row would land. Lives here rather than on the rows,
+  /// because an insertion line is a statement about the gap *between* two rows
+  /// and no single row owns it.
+  ///
+  /// There is deliberately no companion "which row is being dragged" flag. One
+  /// existed, to fade the source row, and it latched: a drag that ends anywhere
+  /// other than on a drop target gets no callback at all, so the row stayed
+  /// greyed out with nothing left to clear it. macOS already draws the row
+  /// under the cursor while it moves; that is the feedback, and it costs no
+  /// state. `dropIndex` is safe in a way that flag was not — `dropExited` fires
+  /// on the way out of every row, including the way out of the list.
+  @State private var dropIndex: Int?
+
   var body: some View {
-    Panel("今天的计划", subtitle: "来自当前周期的要务与日程") {
+    Panel(
+      "今天的计划",
+      subtitle: subtitle,
+      badge: badge?.text,
+      badgeTone: badge?.tone ?? .neutral
+    ) {
       VStack(alignment: .leading, spacing: Metrics.sm) {
         if let startedAt { StartedNote(at: startedAt) }
 
@@ -463,9 +484,38 @@ private struct PlanPanel: View {
         } else {
           VStack(spacing: 2) {
             ForEach(Array(state.plan.enumerated()), id: \.element.id) { index, item in
-              PlanRow(item: item, rank: index + 1, selectedID: $selectedID)
-                .transition(.taskRow)
+              PlanRow(
+                item: item,
+                rank: index + 1,
+                selectedID: $selectedID,
+                dropEdge: dropEdge(for: index)
+              )
+              .transition(.taskRow)
+              .onDrag {
+                // The candidate id, as plain text. A custom `UTType` would stop
+                // a drag from Safari being *offered* to this list, but the drop
+                // handler has to check the payload against the plan either way
+                // — and an unknown id is rejected there.
+                NSItemProvider(object: item.id as NSString)
+              }
+              .onDrop(
+                of: [.text],
+                delegate: PlanDropDelegate(index: index, dropIndex: $dropIndex, onDrop: move)
+              )
             }
+          }
+          // The gap after the last row, so a row can be dropped at the end.
+          // Without it the only way to make something last is to drag every
+          // other row above it.
+          .overlay(alignment: .bottom) {
+            Color.clear
+              .frame(height: 14)
+              .contentShape(Rectangle())
+              .onDrop(
+                of: [.text],
+                delegate: PlanDropDelegate(index: state.plan.count, dropIndex: $dropIndex, onDrop: move)
+              )
+              .offset(y: 14)
           }
         }
       }
@@ -480,7 +530,57 @@ private struct PlanPanel: View {
           .help("再跑一次 daily_plan：会花模型额度，跑完还会往飞书发一条。")
       }
     }
-    .onChange(of: state.plan.map(\.id)) { startedAt = nil }
+    .onChange(of: state.plan.map(\.id)) {
+      startedAt = nil
+      // Backstop for the insertion line. `dropExited` clears it in every normal
+      // path; this covers a reload landing mid-drag, where the row the line was
+      // measured against may no longer exist.
+      dropIndex = nil
+    }
+  }
+
+  private var subtitle: String {
+    state.plan.isEmpty
+      ? "来自当前周期的要务与日程"
+      : "来自当前周期的要务与日程 · 拖动可以调整顺序，越靠上越重要"
+  }
+
+  /// Whether what is on screen is today's plan or yesterday's.
+  ///
+  /// The distinction is the whole reason for the badge. A stale plan looks
+  /// exactly like a fresh one — same rows, same controls, everything tickable
+  /// — and ticking yesterday's list is the one way to spend a morning working
+  /// from the wrong day without ever being told.
+  private var badge: (text: String, tone: Tone)? {
+    guard !state.plan.isEmpty else { return nil }
+    if let stale = state.planStaleDate { return ("还是 \(stale) 的", .warn) }
+    return ("已更新", .ok)
+  }
+
+  /// Which edge of row `index` should show the insertion line, if any.
+  private func dropEdge(for index: Int) -> PlanRow.DropEdge? {
+    guard let dropIndex else { return nil }
+    if dropIndex == index { return .top }
+    if dropIndex == index + 1, index == state.plan.count - 1 { return .bottom }
+    return nil
+  }
+
+  /// Apply the drop, then tell the service.
+  ///
+  /// Rejects an id that is not in the plan, which is how text dragged in from
+  /// anywhere else gets turned away — the drag payload is a plain string, so
+  /// this check is the only thing standing between a Safari selection and a
+  /// reorder request.
+  private func move(_ id: String, to index: Int) {
+    guard state.plan.contains(where: { $0.id == id }) else { return }
+    let order = withAnimation(.snappy(duration: 0.28)) {
+      state.movePlanItem(id, before: index)
+    }
+    Task {
+      if case .failed(let why) = await state.savePlanOrder(order) {
+        state.toast = why
+      }
+    }
   }
 
   /// Start the run, and say what was started.
@@ -503,6 +603,51 @@ private struct PlanPanel: View {
         state.toast = why
       }
     }
+  }
+}
+
+/// Tracks one row as a drop target.
+///
+/// A `DropDelegate` rather than `.dropDestination`, because the insertion line
+/// has to appear while the cursor is *over* a row and disappear when it leaves,
+/// and only a delegate gets told about entering and exiting. With
+/// `.dropDestination` the list can only react once the mouse is released, which
+/// means dragging with no idea where the row will land.
+///
+/// Reads the payload on drop rather than on entry: `loadObject` is async, and
+/// an insertion line that appears a frame or two after the cursor arrives feels
+/// like the list is lagging behind the mouse.
+private struct PlanDropDelegate: DropDelegate {
+  let index: Int
+  @Binding var dropIndex: Int?
+  let onDrop: (String, Int) -> Void
+
+  func dropEntered(info: DropInfo) {
+    withAnimation(.snappy(duration: 0.18)) { dropIndex = index }
+  }
+
+  func dropExited(info: DropInfo) {
+    // Only if this row still owns the line. Enter on the next row fires before
+    // exit on this one, so clearing unconditionally would erase a line that
+    // belongs to whatever the cursor has already moved onto.
+    if dropIndex == index {
+      withAnimation(.snappy(duration: 0.18)) { dropIndex = nil }
+    }
+  }
+
+  func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+
+  func performDrop(info: DropInfo) -> Bool {
+    let destination = index
+    guard let provider = info.itemProviders(for: [.text]).first else { return false }
+    _ = provider.loadObject(ofClass: NSString.self) { value, _ in
+      guard let id = value as? String else { return }
+      Task { @MainActor in
+        dropIndex = nil
+        onDrop(id, destination)
+      }
+    }
+    return true
   }
 }
 
@@ -540,30 +685,53 @@ private struct StartedNote: View {
 /// circle plus two icons that arrive on select or hover — see `TaskRow` for why
 /// that is not the undiscoverable hover-only pattern it resembles.
 private struct PlanRow: View {
+  enum DropEdge { case top, bottom }
+
   @Environment(AppState.self) private var state
   let item: TodoItem
-  /// Position in the list, 1-based. Part of the ledger key, not decoration.
+  /// Position in the list, 1-based. Part of the ledger key, not decoration —
+  /// and, since the list is ordered by importance, the row's tier as well.
   let rank: Int
   @Binding var selectedID: TodoItem.ID?
+  var dropEdge: DropEdge?
 
   @State private var isNoting = false
   @State private var note = ""
   @State private var isEditingEstimate = false
 
+  private var importance: PlanImportance { .forRank(rank) }
+
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.xxs) {
-      TaskRow(
-        item: item,
-        actions: actions,
-        // Both directions. A tick that cannot be untucked is the one action on
-        // this screen with no way back, and it is also the easiest to do by
-        // accident — the circle is the biggest target on the row.
-        onToggleCheck: item.state == .deferred ? nil : {
-          send(item.state == .done ? "reopen" : "complete", note: nil)
-        },
-        selectedID: $selectedID
-      ) {
-        accessory
+      HStack(spacing: Metrics.xs) {
+        // The stripe is the colour, the handle is the affordance. Both on the
+        // left, because that is the edge the eye scans and the edge a drag
+        // starts from — and because putting the colour anywhere else would make
+        // the list stop reading as the ring's legend.
+        ImportanceStripe(importance: importance, isResolved: item.state != .open)
+          .help("\(importance.explanation)。拖动可以调整顺序。")
+
+        TaskRow(
+          item: item,
+          actions: actions,
+          // Both directions. A tick that cannot be untucked is the one action on
+          // this screen with no way back, and it is also the easiest to do by
+          // accident — the circle is the biggest target on the row.
+          onToggleCheck: item.state == .deferred ? nil : {
+            send(item.state == .done ? "reopen" : "complete", note: nil)
+          },
+          selectedID: $selectedID
+        ) {
+          accessory
+        }
+      }
+      .overlay(alignment: dropEdge == .bottom ? .bottom : .top) {
+        if dropEdge != nil {
+          Capsule()
+            .fill(Palette.moss)
+            .frame(height: 2)
+            .transition(.opacity)
+        }
       }
 
       if isNoting {
@@ -691,6 +859,34 @@ private struct PlanRow: View {
       case .failed(let why), .unsupported(let why): state.toast = why
       }
     }
+  }
+}
+
+/// The colour bar down the left edge of a plan row.
+///
+/// Doubles as the drag handle's target area — it is 4pt of colour with 10pt of
+/// clickable width around it, so the thing you grab is the thing that says why
+/// the row is where it is.
+///
+/// Fades once the row is resolved. A finished task's importance is history: the
+/// tier still explains the ring's faded slice, but at full strength it would
+/// compete with the rows that still need doing.
+private struct ImportanceStripe: View {
+  let importance: PlanImportance
+  let isResolved: Bool
+
+  var body: some View {
+    ZStack {
+      Color.clear.frame(width: 10)
+      RoundedRectangle(cornerRadius: 2, style: .continuous)
+        .fill(Palette.importance(importance))
+        .opacity(isResolved ? 0.3 : 1)
+        .frame(width: 4)
+    }
+    .frame(width: 10)
+    .frame(maxHeight: .infinity)
+    .contentShape(Rectangle())
+    .accessibilityLabel(Text(importance.label))
   }
 }
 

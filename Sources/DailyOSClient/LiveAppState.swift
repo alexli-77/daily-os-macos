@@ -303,6 +303,27 @@ public final class LiveAppState: AppState {
     }
   }
 
+  /// Persist the order the user just dragged into place.
+  ///
+  /// The rows have already moved — `movePlanItem` runs on the drop, before this
+  /// — so there is nothing optimistic left to do here. On failure it reloads,
+  /// which snaps the list back to whatever the service actually has: a row that
+  /// silently stays where you dropped it while the server disagrees is the
+  /// worst of the three outcomes, because tomorrow it will be somewhere else
+  /// and nothing will have said so.
+  public override func savePlanOrder(_ order: [TodoItem.ID]) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      try await client.recordPlanOrder(order)
+      return .ok(nil)
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      lastActionError = reason
+      await reload()
+      return .failed(reason)
+    }
+  }
+
   // MARK: - Console account
 
   /// Sign in to the console account store.

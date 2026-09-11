@@ -379,6 +379,33 @@ open class AppState {
     return .ok(nil)
   }
 
+  /// Move one plan row to a new position.
+  ///
+  /// Applied locally here and *not* refused when there is no service, because
+  /// the local application is the visible half: a drag whose row springs back
+  /// while the app decides whether it is allowed to reorder is worse than no
+  /// drag at all. A live store overrides this to also record the new order, and
+  /// a reload that disagrees will correct it.
+  ///
+  /// Takes a destination index in the *current* list, which is what a drop
+  /// gives you, and returns the resulting order so a caller can send it.
+  @discardableResult
+  open func movePlanItem(_ id: TodoItem.ID, before destination: Int) -> [TodoItem.ID] {
+    guard let from = plan.firstIndex(where: { $0.id == id }) else { return plan.map(\.id) }
+    // Clamp rather than trust: `destination` comes from a drop on a row that
+    // may have moved, or been removed, between the drag starting and ending.
+    let to = max(0, min(destination, plan.count))
+    guard to != from, to != from + 1 else { return plan.map(\.id) }
+    let item = plan.remove(at: from)
+    plan.insert(item, at: to > from ? to - 1 : to)
+    return plan.map(\.id)
+  }
+
+  /// Persist the order produced by `movePlanItem`.
+  open func savePlanOrder(_ order: [TodoItem.ID]) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
   // MARK: Seams added for the parallel build
   //
   // Declared here, in one place, before the work was split across agents. Each
