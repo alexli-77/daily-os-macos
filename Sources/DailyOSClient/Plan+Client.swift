@@ -112,6 +112,23 @@ extension DailyOSClient {
     )
   }
 
+  /// Start a workflow now. `daily_plan`, `daily_review` or `weekly_review` —
+  /// the service rejects anything else by name.
+  ///
+  /// Fire-and-forget on both ends. The service registers the run and answers
+  /// immediately rather than holding the socket open for the whole thing, so a
+  /// `true` here means *started*, never *finished*: the plan does not exist yet
+  /// when this returns. It also runs with `send: true`, exactly like the
+  /// scheduler does, so a run triggered from this app messages the user on
+  /// Feishu as well — which is why the button that calls this has to say so
+  /// before it is pressed rather than after.
+  public func rerunWorkflow(_ workflow: String) async throws {
+    struct Request: Encodable {
+      let workflow: String
+    }
+    try await post("/api/runs/rerun", body: Request(workflow: workflow))
+  }
+
   private static func state(for event: String?) -> TodoState {
     switch event {
     case "complete": .done

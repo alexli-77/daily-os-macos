@@ -81,6 +81,14 @@ public final class LiveAppState: AppState {
     if !connection.state.isConnected { await connection.probe() }
     guard connection.state.isConnected else { return }
 
+    // Who is *using* the app, restored from this machine's own record. Distinct
+    // from the identity the cycle read sets below: that one is the team member
+    // these files belong to (`leon`), and putting it on the footer as if it were
+    // the logged-in account is the confusion `ConsoleSession` was written to
+    // end. Restored here rather than in `init` because a remembered account only
+    // means anything once there is a service behind it.
+    if session == nil { session = ConsoleSessionStore.restore() }
+
     // Each read is independent and a failure in one must not blank the others:
     // a broken OKR file should not cost you the cycle you were reading.
     await load("周期") {
@@ -281,6 +289,200 @@ public final class LiveAppState: AppState {
       await reload()
       return .failed(reason)
     }
+  }
+
+  // MARK: - Console account
+
+  /// Sign in to the console account store.
+  ///
+  /// Not optimistic, unlike every other write here: the answer *is* the result.
+  /// Nothing is worth showing until the service has said which account this is,
+  /// and a wrong password is common enough that guessing "it worked" and taking
+  /// it back a moment later would be the normal case rather than the rare one.
+  public override func signIn(username: String, password: String) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务，登录没有地方可去。") }
+    do {
+      let session = try await client.signIn(username: username, password: password)
+      self.session = session
+      ConsoleSessionStore.remember(session)
+      return .ok(nil)
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      return .failed(reason)
+    }
+  }
+
+  /// End the console session on this machine.
+  ///
+  /// The local record goes first and unconditionally, because it is the thing
+  /// that decides what the app shows; a service that fails to answer must not
+  /// leave someone stuck signed in as a name they just asked to drop. The call
+  /// to the service is what stops the session row from outliving this — it is
+  /// reported when it fails and nothing is rolled back, because nothing about
+  /// the local state was wrong.
+  ///
+  /// Worth being exact about what this is: it changes who the app says is using
+  /// it. It does not lock anything. The runtime token stays on disk and the
+  /// service stays reachable from this Mac account either way.
+  public override func signOut() async -> ActionOutcome {
+    session = nil
+    ConsoleSessionStore.forget()
+    guard let client else { return .ok(nil) }
+    do {
+      try await client.signOut()
+      return .ok(nil)
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      return .failed("已经退出，但服务那边的会话没能销毁：\(reason)")
+    }
+  }
+
+  // MARK: - Today's plan, on demand
+
+  /// The poll that waits for the plan a rerun will eventually write. Held so a
+  /// second press replaces it rather than adding a second one.
+  private var planWatcher: Task<Void, Never>?
+
+  /// Ask the service to run `daily_plan` now.
+  ///
+  /// Returns when the run has *started*, which is all `/api/runs/rerun` ever
+  /// reports: it registers the run and answers immediately rather than holding
+  /// the socket open for a workflow that takes minutes. So this cannot say "计划
+  /// 好了" and must not be presented as if it could — the caller's job is to say
+  /// what was started, and the two facts a person needs before pressing it are
+  /// that it costs model budget and that it also sends them a Feishu message.
+  public override func generatePlan() async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      try await client.rerunWorkflow("daily_plan")
+      watchForPlan()
+      return .ok("已让 daily_plan 跑起来了，跑完会发一条飞书")
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      lastActionError = reason
+      return .failed(reason)
+    }
+  }
+
+  /// Re-read until today's plan shows up.
+  ///
+  /// Without this the button has no visible result: the run writes the plan
+  /// minutes after the POST returns, and nothing else in this app asks again
+  /// until it is relaunched — which is the "按了没反应" that the old empty
+  /// state was at least honest about. Polling is the shape the service leaves:
+  /// it offers no completion event to subscribe to. So it is bounded at ten
+  /// minutes, spaced far enough apart to be free on a local service, and stops
+  /// the moment a plan dated today exists.
+  private func watchForPlan() {
+    planWatcher?.cancel()
+    planWatcher = Task { [weak self] in
+      for _ in 0..<20 {
+        try? await Task.sleep(for: .seconds(30))
+        guard !Task.isCancelled, let self else { return }
+        await self.reload()
+        if self.hasPlan, self.planStaleDate == nil, !self.plan.isEmpty { return }
+      }
+    }
+  }
+
+  // MARK: - Cycles
+
+  /// Create the cycle after the current one.
+  ///
+  /// Not optimistic, unlike the section writes: there is no local edit to show
+  /// while this runs, and the dates are the one thing the call exists to decide.
+  /// The service reads the previous cycle off disk and copies its length —
+  /// guessing it here would be guessing the answer.
+  ///
+  /// What comes back is two facts with different tenses. The file exists once
+  /// this returns; the 要务 inside it do not, because the planning run that
+  /// writes them takes about ten minutes. Both sentences are handed to the
+  /// caller rather than raised as a toast, which is two seconds long and one
+  /// line wide.
+  public override func createCycle(_ request: NewCycleRequest) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      let created = try await client.createCycle(
+        days: request.days,
+        taskCount: request.taskCount,
+        note: request.note
+      )
+      await reload()
+      // After the reload, not before: `reload()` repairs a selection that is not
+      // in the list, and the new cycle is not in the list until it has run.
+      if let id = created.id, visibleCycles.contains(where: { $0.id == id }) {
+        selectedCycleID = id
+      }
+      return .ok(created.message)
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      lastActionError = reason
+      return .failed(reason)
+    }
+  }
+
+  /// Create a section the cycle file does not have yet.
+  ///
+  /// The three sections are not symmetrical, and flattening them into one
+  /// "generate" would be the lie this method exists to avoid:
+  ///
+  /// - 总结 is drafted by life-review-os from this cycle's own 要务 and 复盘, and
+  ///   the service saves it as `ai`.
+  /// - 复盘 has no generator anywhere in the system and should not have one —
+  ///   it is the record of what actually happened to you. What can be created is
+  ///   the empty scaffold, written as your own text for you to fill in.
+  /// - 要务 come out of a planning run against the whole vault rather than out of
+  ///   one cycle, so there is nothing here to call.
+  public override func generateCycleSection(cycleID: Cycle.ID, kind: CycleSectionKind) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    if kind == .priorities {
+      return .unsupported("要务由周期规划生成，这里生成不了。创建新周期时会自动跑一次规划。")
+    }
+    do {
+      let message: String
+      if kind == .retro {
+        try await client.saveCycleSection(cycleID: cycleID, kind: .retro, body: RetroScaffold.body)
+        message = "复盘模板已经放好，接下来是你写"
+      } else {
+        message = "已生成 \(try await client.generateCycleReview(cycleID: cycleID)) 字的总结"
+      }
+      await reload()
+      return .ok(message)
+    } catch {
+      // A timeout on the review is not a failed review: the drafting model runs
+      // for one to two minutes, this client hangs up at thirty seconds, and the
+      // service writes the prose itself precisely so that it survives the
+      // disconnect. Reporting "生成失败" here would send someone looking for a
+      // problem in a file that is about to be written.
+      if kind == .review, case .transport(let underlying)? = error as? ClientError,
+         (underlying as? URLError)?.code == .timedOut {
+        return .failed("等了 30 秒还没写完，服务那边还在跑。生成好会自己写进文件，过一会儿刷新就能看到。")
+      }
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      lastActionError = reason
+      return .failed(reason)
+    }
+  }
+
+  // MARK: - Weather
+
+  /// Owned here rather than by the strip, so the cache outlives leaving the
+  /// Today screen and coming back to it.
+  private let weatherStore = WeatherStore()
+
+  /// Three readings a day — morning, afternoon, evening — and nothing in
+  /// between. See `WeatherSnapshot.isFresh(at:)` for what the slots are.
+  ///
+  /// The in-memory check is first so that the common call costs nothing at all:
+  /// Today appearing asks for the weather every time, and all but three of
+  /// those a day must not reach an actor, a file, or the network.
+  public override func refreshWeather(force: Bool = false) async {
+    if !force, let current = weather, current.isFresh() { return }
+    // Nil means every source failed and there was nothing cached either. Leave
+    // whatever is there — the strip's quiet state is the honest rendering of
+    // "no reading", and a half-drawn one would be worse.
+    guard let snapshot = await weatherStore.snapshot(force: force) else { return }
+    weather = snapshot
   }
 
   /// Fire a write, and put the truth back if it fails.

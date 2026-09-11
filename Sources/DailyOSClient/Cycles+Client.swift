@@ -1,7 +1,8 @@
 import DailyOSCore
 import Foundation
 
-// The cycles endpoints: `GET /api/cycles/state` and `POST /api/cycles/section`.
+// The cycles endpoints: `GET /api/cycles/state`, `POST /api/cycles/section`,
+// `POST /api/cycles/create` and `POST /api/cycles/review`.
 //
 // The service reads and writes hand-editable markdown in the user's vault, and
 // its parser is deliberately forgiving — missing sections, missing frontmatter
@@ -99,6 +100,74 @@ struct SaveCycleSectionRequest: Encodable {
   let id: String
   let section: String
   let content: String
+}
+
+/// Field names taken from `createCycle` in the service's `src/ui/server.ts`.
+///
+/// Every field is optional on both sides, and an omitted one is how the request
+/// says 按默认策略来 — the service answers a blank from the previous cycle. The
+/// synthesised encoder drops `nil` keys rather than writing `null`, which is the
+/// same thing to the service and the reason this can be a plain struct.
+struct CreateCycleRequest: Encodable {
+  let days: Int?
+  let taskCount: Int?
+  let note: String?
+}
+
+/// `text` describes the file that now exists; `planning.reason` describes a run
+/// that has only just started. They are two separate facts and are kept apart,
+/// because the second one is the part that is not finished yet.
+struct CreateCycleResponse: Decodable {
+  let id: String?
+  let cycle: String?
+  let text: String?
+  let planning: CyclePlanningDTO?
+}
+
+struct CyclePlanningDTO: Decodable {
+  /// `started` or `unavailable`. Anything else is treated as "cannot say".
+  let status: String?
+  let reason: String?
+}
+
+/// `save: true` makes the service write the draft itself — see the endpoint's
+/// own comment. Without it the prose is only ever a return value, and this
+/// client hangs up long before there is one.
+struct GenerateCycleReviewRequest: Encodable {
+  let id: String
+  let save: Bool
+}
+
+struct GenerateCycleReviewResponse: Decodable {
+  let review: String?
+  let chars: Int?
+}
+
+// MARK: - Retro scaffold
+
+/// The empty 复盘, copied from `src/cycles/retro-template.ts`.
+///
+/// Not decoration and not a suggestion: life-review-os splits a retro back apart
+/// on exactly these three headings and feeds the pieces to the next planning run
+/// as the previous cycle's context. A retro typed without them still reads fine
+/// to a human and arrives at the planner as one undifferentiated blob.
+///
+/// Duplicated across the two repositories rather than fetched, because the one
+/// thing worse than two copies of eleven lines is a 复盘 that cannot be started
+/// while the service is down.
+enum RetroScaffold {
+  static let body = """
+    😄状态
+    情绪/精力/外部压力：
+    情绪：
+    精力：
+    外部压力：
+    计划外吃掉时间的事：
+
+    👍🏻做的好
+
+    💪🏻待改进
+    """
 }
 
 // MARK: - Dates
@@ -293,5 +362,39 @@ extension DailyOSClient {
   public func saveCycleSection(cycleID: String, kind: CycleSectionKind, body: String) async throws {
     let request = SaveCycleSectionRequest(id: cycleID, section: kind.wireName, content: body)
     try await post("/api/cycles/section", body: request)
+  }
+
+  /// Create the cycle after the current one.
+  ///
+  /// The dates are the service's to decide, not this app's: it reads the
+  /// previous cycle off disk and copies its length, which is the only way to
+  /// get a vault that alternates weekly and biweekly right. So nothing is
+  /// computed here, and both sentences of the answer are handed back as the
+  /// service wrote them — the second one is about a planning run that is still
+  /// going when this returns.
+  public func createCycle(days: Int?, taskCount: Int?, note: String?) async throws -> (id: String?, message: String) {
+    let request = CreateCycleRequest(days: days, taskCount: taskCount, note: note)
+    let response: CreateCycleResponse = try await post("/api/cycles/create", body: request, as: CreateCycleResponse.self)
+    let lines = [response.text, response.planning?.reason].compactMap { $0 }.filter { !$0.isEmpty }
+    return (response.id, lines.joined(separator: "\n"))
+  }
+
+  /// Draft the 总结 for one cycle and let the service save it.
+  ///
+  /// The generation runs a model for one to two minutes and this client gives up
+  /// on the socket after thirty seconds, so the returned prose is usually prose
+  /// nobody receives. `save: true` is what makes the work survive that: the
+  /// service writes it as `source: ai`, and the section appears on the next
+  /// read. A thrown timeout here therefore does not mean the review was lost —
+  /// see the caller, which says so rather than reporting a failure.
+  @discardableResult
+  public func generateCycleReview(cycleID: String) async throws -> Int {
+    let request = GenerateCycleReviewRequest(id: cycleID, save: true)
+    let response: GenerateCycleReviewResponse = try await post(
+      "/api/cycles/review",
+      body: request,
+      as: GenerateCycleReviewResponse.self
+    )
+    return response.chars ?? (response.review?.count ?? 0)
   }
 }

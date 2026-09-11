@@ -330,8 +330,109 @@ check(untimed.allSatisfy { $0.weight > 0 }, "no cell may be zero-width")
 
 check(PlanSegment.layout([]).isEmpty, "an empty plan has no segments")
 
+// MARK: - Regression checks
+//
+// One block per bug that actually shipped. Each names the symptom, because a
+// check whose only description is what it asserts tells the next person nothing
+// about why breaking it matters.
+//
+// What this harness can and cannot cover is worth being blunt about. It runs as
+// a plain executable — the repo targets machines with only Command Line Tools,
+// so there is no XCTest and no view host. Everything below is pure logic that
+// was *extracted* from a view for exactly this reason. Bugs that lived in
+// SwiftUI's own state (a `@State` flag that never reset, a selection that
+// followed focus) are listed at the bottom as explicitly uncovered rather than
+// quietly omitted.
+
+// 11a. 产物类型被改名（log 显示成 Markdown，binary 显示成 PDF）
+//
+// The client's enum was smaller than the service's, so the decoder mapped the
+// missing kinds onto their nearest neighbour and renamed six of the user's
+// seven artifacts. The service's list is the contract; `unknown` is what a
+// future eighth kind must land on.
+let serviceArtifactKinds = ["markdown", "text", "json", "log", "image", "pdf", "binary"]
+for kind in serviceArtifactKinds {
+  check(ArtifactType(rawValue: kind) != nil, "服务端的 \(kind) 在客户端没有对应的类型，会被改名")
+}
+check(ArtifactType(rawValue: "parquet") == nil, "未知类型必须解不出来，由解码器落到 .unknown")
+check(ArtifactType.log.label != ArtifactType.markdown.label, "log 和 markdown 不能显示成同一个名字")
+check(ArtifactType.binary.label != ArtifactType.pdf.label, "binary 和 pdf 不能显示成同一个名字")
+
+// 11b. 没标记过状态的周期被画成 0%
+//
+// `markedCount` is the gate. Covered above in §8; restated here only so the
+// regression list reads as a list of shipped bugs.
+check(PrioritiesDocument(markdown: "- 甲\n- 乙").markedCount == 0, "全未标记时 markedCount 必须是 0")
+check(PrioritiesDocument(markdown: "- 甲 ✅\n- 乙").markedCount == 1, "标记过一条就不再是「无数据」")
+
+// 11c. 天气一天刷三次，而不是按固定间隔
+//
+// A fixed interval drifts: refreshing every N hours eventually lands at 3am and
+// never at 8am. The slots are the three a day actually has.
+let calendar = Calendar(identifier: .gregorian)
+func at(_ hour: Int) -> Date {
+  calendar.date(bySettingHour: hour, minute: 0, second: 0, of: .now)!
+}
+check(WeatherSnapshot.Slot.current(at(7), calendar: calendar) == .morning, "早上 7 点属于 morning")
+check(WeatherSnapshot.Slot.current(at(11), calendar: calendar) == .morning, "11 点仍是 morning")
+check(WeatherSnapshot.Slot.current(at(12), calendar: calendar) == .afternoon, "12 点进入 afternoon")
+check(WeatherSnapshot.Slot.current(at(17), calendar: calendar) == .afternoon, "17 点仍是 afternoon")
+check(WeatherSnapshot.Slot.current(at(18), calendar: calendar) == .evening, "18 点进入 evening")
+check(WeatherSnapshot.Slot.current(at(23), calendar: calendar) == .evening, "深夜属于 evening")
+
+func snapshot(at date: Date) -> WeatherSnapshot {
+  WeatherSnapshot(code: 0, temperatureC: 20, high: 22, low: 15, isDay: true, place: "x", fetchedAt: date)
+}
+check(snapshot(at: at(8)).isFresh(at: at(10), calendar: calendar), "同一个时段内不该重新请求")
+check(!snapshot(at: at(8)).isFresh(at: at(13), calendar: calendar), "跨时段必须重新请求")
+check(!snapshot(at: at(8)).isFresh(at: at(8).addingTimeInterval(86_400), calendar: calendar),
+      "昨天同一时段的数据不算新鲜")
+
+// 11d. 新建周期「什么都不填」要能被识别
+//
+// The empty form means "decide for me"; the service fills it from the previous
+// cycle. A request that cannot tell empty from explicit would have to guess.
+check(NewCycleRequest().isDefault, "什么都不填就是走默认策略")
+check(NewCycleRequest(note: "").isDefault, "空备注等于没填")
+check(!NewCycleRequest(days: 14).isDefault, "填了长度就不是默认")
+check(!NewCycleRequest(note: "下周出差").isDefault, "填了备注就不是默认")
+
+// 11e. 选错服务目录时要当场拒绝
+//
+// `looksValid` is what turns "you picked the wrong folder" into a sentence at
+// pick time instead of a decode error three screens later.
+check(!RepoRoot.looksValid(URL(filePath: "/tmp")), "/tmp 显然不是服务目录")
+check(!RepoRoot.looksValid(URL(filePath: "/definitely/not/here")), "不存在的路径必须被拒绝")
+
+// MARK: - What this harness cannot cover
+//
+// Written down rather than left implicit, because a green run is read as "the
+// regressions are covered" and for these it is not true.
+//
+// All four shipped, all four were found by driving the installed app, and none
+// of them can be reached from here: they lived in SwiftUI's own state, and this
+// is a plain executable with no view host. The repo targets machines with only
+// Command Line Tools, which is why there is no XCTest bundle to put them in.
+//
+//  - **勾选两次后失灵.** `TaskRow.isCompleting` was set and never reset, so it
+//    latched on: the circle stayed filled through an un-tick and the guard then
+//    swallowed every later press. Needs a view host to observe `@State` across
+//    a mutation.
+//  - **启动时第一行自己选中.** Selection followed focus two ways, so SwiftUI's
+//    own first-responder assignment highlighted a finished row on launch.
+//    Needs a focus system.
+//  - **点行没反应.** `.onTapGesture` under `.focusable()` and four buttons never
+//    fired; a background `Button` did. Needs real hit-testing.
+//  - **头像被菜单裁掉.** `.menuStyle(.borderlessButton)` clamps its label to text
+//    height, cropping a 20pt canvas to nothing. Needs layout.
+//
+// Covering these means an XCTest UI target and a machine with full Xcode, which
+// is a real trade against the "clone and `swift build`" property this repo has.
+// Until that trade is made, the honest procedure is the one that found them:
+// build Release, install, and drive the app.
+
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 回归集")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

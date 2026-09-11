@@ -87,8 +87,8 @@ private struct SidebarFooter: View {
         // The name is a menu, because that is where everyone looks for account
         // actions — it is where every other Mac app puts them. The previous
         // answer to "怎么退出登录" was a paragraph in Settings explaining that
-        // there is no session; a correct explanation nobody finds is not an
-        // answer, it is the same dead end with better prose.
+        // there is no session to end; there is one now, and this is where the
+        // person asking that question was already looking.
         AccountMenu()
         StatusDot(
           state.service.state.label,
@@ -144,53 +144,74 @@ private struct DisconnectedBanner: View {
 
 /// Avatar plus name, as a menu.
 ///
-/// What "退出登录" can honestly mean here, in order:
+/// The name is the **console account** — the row in the service's `users` table
+/// that this app signed in against. It used to be `account.displayName`, which
+/// is filled from `team.self.memberId`: a team member id, printed on the one
+/// line of the window that claims to say who you are. `ConsoleSession` exists to
+/// keep those two apart, and this is the line that was getting them wrong.
 ///
-/// 1. **The team session.** Supabase is the one real account this app holds —
-///    an email, a password, a session on this machine. Signing out of it is a
-///    genuine sign-out and it is what the menu offers when there is one.
-/// 2. **Nothing else.** The app's own access is the service's runtime token,
-///    read from a file on this disk. There is no session to end; "logging out"
-///    would mean deleting someone else's file. The menu says so in one line
-///    rather than offering a button that cannot work.
+/// The avatar is a sibling of the menu rather than part of its label. It was
+/// inside, and `.menuStyle(.borderlessButton)` clamps the label to the height of
+/// a line of text — about 16pt — so a 20pt canvas was cropped until there was
+/// nothing left to see. Nothing about a menu requires its label to carry the
+/// picture, so the picture sits outside where no menu style can shrink it.
 ///
-/// The old screen got (2) right and buried it three panels down in Settings.
+/// 退出团队登录 is deliberately not here. Team sign-out is a different account
+/// (Supabase), it already has a confirm flow in 设置 → 团队, and a second door
+/// to it from the account menu only makes the two identities look like one.
 struct AccountMenu: View {
   @Environment(AppState.self) private var state
 
   var body: some View {
-    Menu {
-      Section(state.account.displayName) {
+    HStack(spacing: Metrics.xxs) {
+      PixelAvatar(seed: avatarSeed, size: 20)
+      Menu {
+        if let session = state.session {
+          Section("\(session.username) · \(session.role.label)") {
+            Button("退出登录") { Task { _ = await state.signOut() } }
+          }
+          Divider()
+        }
         Button("账号与服务设置…") { state.section = .settings }
+        Divider()
+        // Said here because this is where someone decides what 退出登录 means,
+        // and the honest answer is narrower than the words suggest.
+        Text("登录只决定「谁在用这台 App」。连服务靠的是本机的运行令牌，退出登录不会锁上任何东西——能登进这台 Mac 的人照样连得上。")
+        Text("退出后会回到登录页，可以换个人登录。")
+      } label: {
+        HStack(spacing: Metrics.xxs) {
+          Text(name)
+            .inkStyle(Typo.caption)
+            .lineLimit(1)
+          Image(systemName: "chevron.up.chevron.down")
+            .font(.system(size: 8, weight: .semibold))
+            .foregroundStyle(Palette.inkMuted)
+        }
+        .contentShape(Rectangle())
       }
-      Divider()
-      // `isReady` is the closest thing to "signed in" the service reports: team
-      // sync only reaches ready once this machine has a Supabase session. Not
-      // renamed to `isSignedIn` here because the service's word is `ready` and
-      // inventing a synonym in the client is how two vocabularies start.
-      if state.teamSync?.isReady == true {
-        Button("退出团队登录…") { state.section = .settings }
-        Text("在设置 → 团队里确认。退出只清掉这台机器上的团队会话，本地文件不动。")
-      } else {
-        Text("这个 App 用本机服务的令牌工作，没有账号会话，也就没有可以退出的登录。")
-        Text("唯一的真实登录是团队同步（Supabase），去设置 → 团队里登录。")
-      }
-    } label: {
-      HStack(spacing: Metrics.xs) {
-        PixelAvatar(seed: state.account.avatarSeed, size: 20)
-        Text(state.account.displayName)
-          .inkStyle(Typo.caption)
-          .lineLimit(1)
-        Image(systemName: "chevron.up.chevron.down")
-          .font(.system(size: 8, weight: .semibold))
-          .foregroundStyle(Palette.inkMuted)
-      }
-      .contentShape(Rectangle())
+      .menuStyle(.borderlessButton)
+      .menuIndicator(.hidden)
+      .fixedSize()
     }
-    .menuStyle(.borderlessButton)
-    .menuIndicator(.hidden)
-    .fixedSize()
     .help("账号")
+  }
+}
+
+private extension AccountMenu {
+  /// Never `account.displayName`: connected, that string is the team member id,
+  /// which is the whole bug. Without a session there are only two honest things
+  /// to say, and which one depends on whether anything is wired at all.
+  var name: String {
+    if let session = state.session { return session.username }
+    return state.wiredSections.isEmpty ? "未连接" : "未登录"
+  }
+
+  /// `/api/login` answers with a name and a role and no seed, so the username
+  /// stands in — which is what the console's own renderer falls back to, so one
+  /// account draws the same avatar in the browser and here.
+  var avatarSeed: String {
+    guard let session = state.session else { return "" }
+    return session.avatarSeed.isEmpty ? session.username : session.avatarSeed
   }
 }
 

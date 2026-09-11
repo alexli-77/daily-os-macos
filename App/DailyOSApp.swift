@@ -36,7 +36,15 @@ struct DailyOSApp: App {
         if connection.state.isConnecting {
           SetupScreen(connection: connection)
         } else if let state {
-          RootView(state: state)
+          // Who is using it, asked only once there is a service to ask against.
+          // Disconnected, the app still opens into itself with the banner — a
+          // login screen there would be a wall in front of a wall, and the one
+          // thing that is actually wrong is not the account.
+          if connection.state.isConnected, state.session == nil {
+            LoginScreen(state: state)
+          } else {
+            RootView(state: state)
+          }
         } else {
           SetupScreen(connection: connection)
         }

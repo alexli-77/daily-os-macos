@@ -40,6 +40,12 @@ targets:
         CFBundleVersion: "1"
         LSMinimumSystemVersion: "14.0"
         LSApplicationCategoryType: public.app-category.productivity
+        # Without this string macOS never shows the prompt and never grants
+        # location — `CLLocationUpdate.liveUpdates()` simply yields nothing. The
+        # weather strip would then take its 6-second timeout on every stale slot
+        # and silently fall back to the default place *forever*, which looks
+        # like a broken feature rather than a missing key.
+        NSLocationWhenInUseUsageDescription: 今天页的天气用它确定你在哪。位置只用来请求天气，不上传、不保存。不给也能用，会回落到设置里的默认城市。
         # The menu bar item is the always-available entry point, but this is not
         # an agent app — it has a real window and belongs in the Dock while open.
         LSUIElement: false

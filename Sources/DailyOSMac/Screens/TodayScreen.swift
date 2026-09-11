@@ -27,6 +27,11 @@ struct TodayScreen: View {
       } trailing: {
         TodoPanel(selectedID: $selectedTaskID)
       }
+    } toolbar: {
+      // The header's right half has been empty since the dashboard tiles left
+      // it, and the weather is the one thing that belongs in a morning screen
+      // without competing with it. See `WeatherStrip` for why it is not a panel.
+      WeatherStrip()
     }
   }
 
@@ -423,30 +428,103 @@ private struct PlanPanel: View {
   @Environment(AppState.self) private var state
   @Binding var selectedID: TodoItem.ID?
 
+  /// Guards the button against a second press while the POST is in flight. It
+  /// is deliberately *not* a "running" flag — the run outlives this view and
+  /// there is nothing here that would know when it ended.
+  @State private var isStarting = false
+  /// When this screen last started a run, or nil. Cleared as soon as a new plan
+  /// lands, because at that point the note is describing something that has
+  /// already happened.
+  @State private var startedAt: Date?
+
   var body: some View {
     Panel("今天的计划", subtitle: "来自当前周期的要务与日程") {
-      if state.plan.isEmpty {
-        // No action button: nothing in this client can start a workflow, and a
-        // "跑一次简报" that does nothing is the complaint this screen exists to
-        // fix. The message carries the two places the plan can actually come
-        // from instead. The panel header lost its 重跑 button for the same
-        // reason — it was wired to an empty closure.
-        EmptyState(
-          icon: "tray",
-          title: "今天还没有计划",
-          message: "计划由 daily_plan 工作流生成——早上的定时任务会跑，也可以在飞书里发一句「daily-os plan」。Mac 端还不能触发工作流，跑完之后这里会自己出现。"
-        )
-      } else {
-        VStack(spacing: 2) {
-          ForEach(Array(state.plan.enumerated()), id: \.element.id) { index, item in
-            PlanRow(item: item, rank: index + 1, selectedID: $selectedID)
-              .transition(.taskRow)
+      VStack(alignment: .leading, spacing: Metrics.sm) {
+        if let startedAt { StartedNote(at: startedAt) }
+
+        if state.plan.isEmpty {
+          // The action is the point of this empty state. It used to say the Mac
+          // client could not start a workflow, which stopped being true when
+          // `/api/runs/rerun` was wired up; an empty state that names a
+          // limitation it no longer has is worse than one with no action at
+          // all, because it sends you to another device for nothing.
+          //
+          // The message says what pressing it costs *before* it is pressed.
+          // This run spends model budget and sends the user a Feishu message —
+          // finding that out afterwards, from your phone buzzing, is the kind
+          // of surprise that makes a button untrustworthy.
+          EmptyState(
+            icon: "tray",
+            title: "今天还没有计划",
+            message: "计划由 daily_plan 工作流生成——早上的定时任务会跑，在飞书里发一句「daily-os plan」也会跑。也可以现在就在这里跑一次：会花模型额度，跑完还会往飞书发一条。",
+            actionTitle: "生成计划",
+            action: generate
+          )
+        } else {
+          VStack(spacing: 2) {
+            ForEach(Array(state.plan.enumerated()), id: \.element.id) { index, item in
+              PlanRow(item: item, rank: index + 1, selectedID: $selectedID)
+                .transition(.taskRow)
+            }
           }
         }
       }
+    } actions: {
+      // Only when there is already a plan. With the panel empty this would be
+      // the same action twice on one screen, and the empty state's version is
+      // the one carrying the explanation.
+      if !state.plan.isEmpty {
+        Button("重新生成", action: generate)
+          .buttonStyle(QuietButtonStyle())
+          .disabled(isStarting)
+          .help("再跑一次 daily_plan：会花模型额度，跑完还会往飞书发一条。")
+      }
     }
+    .onChange(of: state.plan.map(\.id)) { startedAt = nil }
   }
 
+  /// Start the run, and say what was started.
+  ///
+  /// No spinner and no await on the result: `/api/runs/rerun` answers as soon as
+  /// the run is registered, so anything that looked like progress here would be
+  /// measuring the wrong thing — it would finish in milliseconds while the
+  /// workflow it claimed to represent ran for another two minutes.
+  private func generate() {
+    guard !isStarting else { return }
+    isStarting = true
+    Task {
+      let outcome = await state.generatePlan()
+      isStarting = false
+      switch outcome {
+      case .ok(let message):
+        startedAt = .now
+        state.toast = message ?? "已让 daily_plan 跑起来了"
+      case .failed(let why), .unsupported(let why):
+        state.toast = why
+      }
+    }
+  }
+}
+
+/// What the panel says between pressing 生成计划 and the plan existing.
+///
+/// Which is a real gap — a couple of minutes — and the only dishonest thing this
+/// could do is imply it is shorter, or that the plan is already being written
+/// into the rows below. It says where the result will appear and what else the
+/// run does on the way.
+private struct StartedNote: View {
+  let at: Date
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Metrics.xxs) {
+      Label("\(Fmt.time(at)) 已让 daily_plan 跑起来", systemImage: "clock.arrow.circlepath")
+        .font(Typo.caption)
+        .foregroundStyle(Palette.moss)
+      Text("它在后台跑，通常要一两分钟。这里不会有进度，计划写好之后会自己出现；飞书同时也会收到一条。")
+        .mutedStyle()
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
 }
 
 /// One planned item, with all three of the web's actions.

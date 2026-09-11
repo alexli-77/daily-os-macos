@@ -13,10 +13,14 @@ import DailyOSCore
 struct CyclesScreen: View {
   @Environment(AppState.self) private var state
 
+  /// Owned by the screen rather than by the list, because the empty state opens
+  /// it too — and the empty state is the case where it matters most.
+  @State private var isCreating = false
+
   var body: some View {
     HStack(spacing: 0) {
       ResizableListColumn(id: "cycles") {
-        CycleList()
+        CycleList(onCreate: { isCreating = true })
       }
       Group {
         if let cycle = state.selectedCycle {
@@ -26,16 +30,19 @@ struct CyclesScreen: View {
             icon: "calendar.badge.plus",
             title: "还没有周期",
             message: state.isViewingSelf
-              ? "跑一次「周期规划」，或者直接在 20_CYCLES/ 里建一个 Markdown 文件。"
+              ? "建一个周期，规划会填上这一期的要务。也可以直接在 20_CYCLES/ 里写一个 Markdown 文件。"
               : "队友还没有同步过任何周期。",
-            actionTitle: state.isViewingSelf ? "跑一次规划" : nil,
-            action: state.isViewingSelf ? {} : nil
+            // Was a button with an empty closure — it looked like the way out of
+            // an empty vault and did nothing at all.
+            actionTitle: state.isViewingSelf ? "创建新周期" : nil,
+            action: state.isViewingSelf ? { isCreating = true } : nil
           )
         }
       }
       .frame(maxWidth: .infinity)
     }
     .background(Palette.paper)
+    .sheet(isPresented: $isCreating) { NewCycleSheet() }
   }
 }
 
@@ -127,11 +134,21 @@ private struct SyncFootnote: View {
 
 private struct CycleList: View {
   @Environment(AppState.self) private var state
+  let onCreate: () -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      MemberSwitcher()
-        .padding(Metrics.sm)
+      VStack(alignment: .leading, spacing: Metrics.xs) {
+        MemberSwitcher()
+        // Only over your own list. A teammate's cycles are read-only, and a
+        // create button under them would write into this vault while reading as
+        // though it wrote into theirs.
+        if state.isViewingSelf {
+          Button("创建新周期", action: onCreate)
+            .buttonStyle(MossButtonStyle(prominent: false))
+        }
+      }
+      .padding(Metrics.sm)
       Divider()
       CycleTrend()
       Divider()
@@ -304,11 +321,14 @@ private struct CycleDetail: View {
       }
       ForEach(CycleSectionKind.allCases) { kind in
         if let section = cycle.section(kind) {
-          CycleSectionPanel(
-            cycle: cycle,
-            section: section,
-            editable: state.isViewingSelf && cycle.isWritable
-          )
+          CycleSectionPanel(cycle: cycle, section: section, editable: editable)
+        } else {
+          // The three sections are what a cycle *is*, so all three are always on
+          // screen. Rendering only the ones the file happens to have meant the
+          // current cycle showed 要务 and nothing else — and a panel that is not
+          // there says "this app has no such thing", not "you have not written
+          // it yet".
+          MissingSectionPanel(cycle: cycle, kind: kind, editable: editable)
         }
       }
     } toolbar: {
@@ -330,6 +350,84 @@ private struct CycleDetail: View {
   private var era: String {
     if cycle.contains(.now) { return "本期" }
     return cycle.isUpcoming() ? "计划中" : "往期"
+  }
+
+  private var editable: Bool { state.isViewingSelf && cycle.isWritable }
+}
+
+// MARK: - Missing section
+
+/// A section the cycle file does not have yet.
+///
+/// What it offers differs per section, and the difference is the point — the
+/// three are written by three different authors:
+///
+/// - 要务 come from a planning run over the whole vault, so there is no button
+///   here: nothing about one cycle can produce them.
+/// - 复盘 nobody can write for you. What can be created is the empty scaffold,
+///   whose three headings are the ones the next planning run reads back out.
+/// - 总结 the model drafts from this cycle's own 要务 and 复盘.
+///
+/// Offering "生成" for all three would be the easy symmetry and a lie about two
+/// of them.
+private struct MissingSectionPanel: View {
+  @Environment(AppState.self) private var state
+  let cycle: Cycle
+  let kind: CycleSectionKind
+  let editable: Bool
+
+  @State private var isWorking = false
+
+  var body: some View {
+    Panel(kind.label, subtitle: kind.hint) {
+      VStack(alignment: .leading, spacing: Metrics.sm) {
+        Text(explanation)
+          .mutedStyle(Typo.body)
+          .fixedSize(horizontal: false, vertical: true)
+        if editable, let action {
+          Button(isWorking ? action.busy : action.title) { create() }
+            .buttonStyle(MossButtonStyle(prominent: false))
+            .disabled(isWorking)
+        }
+      }
+      .frame(maxWidth: Metrics.readableWidth, alignment: .leading)
+    } actions: {
+      Pill("还没有", tone: .neutral)
+    }
+  }
+
+  private var explanation: String {
+    switch kind {
+    case .priorities:
+      "这个周期还没有要务。要务由周期规划写入——创建新周期时会自动跑一次，跑完会出现在这里。"
+    case .retro:
+      "这个周期还没有复盘。复盘只能你自己写，这里只放一个空模板：三个小标题是规划下一期时会读回去的那三个，写在它们下面才不会被当成一整段。"
+    case .review:
+      "这个周期还没有总结。可以让 life-review-os 按这一期的要务和复盘写一版，生成之后照样可以改。"
+    }
+  }
+
+  /// Nil for 要务: there is nothing this screen can call.
+  private var action: (title: String, busy: String)? {
+    switch kind {
+    case .priorities: nil
+    case .retro: (title: "放一个复盘模板", busy: "写入中…")
+    // The duration is in the label because it is a model call on a local
+    // machine, and a button that looks stuck for a minute gets pressed twice.
+    case .review: (title: "用 AI 生成总结", busy: "生成中…（1-2 分钟）")
+    }
+  }
+
+  private func create() {
+    isWorking = true
+    Task {
+      let outcome = await state.generateCycleSection(cycleID: cycle.id, kind: kind)
+      isWorking = false
+      switch outcome {
+      case .ok(let message): state.toast = message ?? "已创建\(kind.label)"
+      case .failed(let why), .unsupported(let why): state.toast = why
+      }
+    }
   }
 }
 
@@ -650,6 +748,159 @@ private struct LabeledBody: View {
   }
 }
 
+// MARK: - New cycle
+
+/// 创建新周期.
+///
+/// Every field is optional, and that is the design rather than an unfinished
+/// form: a blank field is answered from the previous cycle, off disk, which is a
+/// better answer than the one most people would type. So the dialog opens by
+/// saying what happens if you fill in nothing, and each field says what leaving
+/// it empty means.
+///
+/// The result is shown here instead of in a toast, because it is two sentences
+/// in two tenses: the file exists now, and the planning run that fills in its
+/// 要务 is still going. A capsule that disappears after two seconds can carry
+/// neither.
+private struct NewCycleSheet: View {
+  @Environment(AppState.self) private var state
+  @Environment(\.dismiss) private var dismiss
+
+  @State private var days = ""
+  @State private var taskCount = ""
+  @State private var note = ""
+  @State private var isCreating = false
+  @State private var result: String?
+  @State private var problem: String?
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      Text("创建新周期")
+        .inkStyle(Typo.title)
+        .padding(Metrics.md)
+      Divider()
+
+      VStack(alignment: .leading, spacing: Metrics.md) {
+        Text(defaultPolicy)
+          .mutedStyle(Typo.body)
+          .fixedSize(horizontal: false, vertical: true)
+
+        field("周期长度", unit: "天", text: $days, hint: "留空 = 沿用上一期")
+        field("要务数量", unit: "条", text: $taskCount, hint: "留空 = 交给规划决定")
+
+        VStack(alignment: .leading, spacing: Metrics.xxs) {
+          Text("备注重要事件").mutedStyle(Typo.label)
+          TextEditor(text: $note)
+            .font(Typo.body)
+            .scrollContentBackground(.hidden)
+            .padding(Metrics.xxs)
+            .frame(height: 64)
+            .background(Palette.surfaceSunken)
+            .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
+          // Said out loud because it is the one field whose text does not end up
+          // in the file: it is an input to this planning run and nothing else.
+          Text("出差、考试、休假之类。只作为这次规划的输入，不会写进周期文件。").mutedStyle()
+        }
+
+        if let result {
+          Text(result)
+            .font(Typo.body)
+            .foregroundStyle(Palette.ink)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Metrics.xs)
+            .background(Palette.softBackground(for: .ok))
+            .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
+        }
+        if let problem {
+          Text(problem)
+            .font(Typo.body)
+            .foregroundStyle(Palette.danger)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+      .padding(Metrics.md)
+
+      Divider()
+      HStack(spacing: Metrics.xs) {
+        Spacer(minLength: 0)
+        Button(result == nil ? "取消" : "完成") { dismiss() }
+          .buttonStyle(QuietButtonStyle(tone: .neutral))
+        if result == nil {
+          Button(isCreating ? "创建中…" : "创建") { create() }
+            .buttonStyle(MossButtonStyle())
+            .disabled(isCreating)
+        }
+      }
+      .padding(Metrics.md)
+    }
+    .frame(width: 460)
+    .background(Palette.paper)
+  }
+
+  /// The newest cycle, which is the one the service will follow. Read here only
+  /// to describe the policy — the dates themselves stay the service's answer,
+  /// because it reads the label and this app only knows the mode.
+  private var previous: Cycle? {
+    state.visibleCycles.max { $0.start < $1.start }
+  }
+
+  private var defaultPolicy: String {
+    guard let previous else {
+      return "还没有上一期可以参考。全部留空的话，就从今天开始排一个双周。"
+    }
+    return "全部留空的话：接着上一期 \(previous.label)，从它结束的第二天开始，长度也跟它一样。"
+  }
+
+  private func field(_ label: String, unit: String, text: Binding<String>, hint: String) -> some View {
+    VStack(alignment: .leading, spacing: Metrics.xxs) {
+      Text(label).mutedStyle(Typo.label)
+      HStack(spacing: Metrics.xs) {
+        TextField("", text: text)
+          .textFieldStyle(.roundedBorder)
+          .frame(width: 72)
+        Text(unit).mutedStyle()
+        Text(hint).mutedStyle()
+      }
+    }
+  }
+
+  private func create() {
+    problem = nil
+    // Checked here rather than sent along: a non-number would reach the service
+    // as "no value" and come back as a cycle created on the default policy,
+    // which looks exactly like the app ignoring what was typed.
+    guard let days = number(days, label: "周期长度"),
+          let taskCount = number(taskCount, label: "要务数量")
+    else { return }
+
+    let note = note.trimmingCharacters(in: .whitespacesAndNewlines)
+    isCreating = true
+    Task {
+      let outcome = await state.createCycle(
+        NewCycleRequest(days: days, taskCount: taskCount, note: note.isEmpty ? nil : note)
+      )
+      isCreating = false
+      switch outcome {
+      case .ok(let message): result = message ?? "已创建新周期。"
+      case .failed(let why), .unsupported(let why): problem = why
+      }
+    }
+  }
+
+  /// `.some(nil)` for an empty field — the request's way of saying "decide for
+  /// me" — and `nil` for text that is not a number, which stops the create.
+  private func number(_ raw: String, label: String) -> Int?? {
+    let trimmed = raw.trimmingCharacters(in: .whitespaces)
+    if trimmed.isEmpty { return .some(nil) }
+    guard let value = Int(trimmed) else {
+      problem = "\(label)要填数字，或者留空按默认来。"
+      return nil
+    }
+    return .some(value)
+  }
+}
+
 // MARK: - Previews
 
 #Preview("周期 · 我的") {
@@ -664,6 +915,13 @@ private struct LabeledBody: View {
   CyclesScreen()
     .environment(AppState.previewTeammate())
     .frame(width: 1_040, height: 760)
+}
+
+/// All three fields empty is the case to look at: the dialog has to be readable
+/// as "press 创建 and the right thing happens", not as a form to fill in.
+#Preview("周期 · 创建新周期") {
+  NewCycleSheet()
+    .environment(AppState.previewOwner())
 }
 
 #Preview("周期 · 空状态") {
