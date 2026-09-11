@@ -404,6 +404,40 @@ check(!NewCycleRequest(note: "下周出差").isDefault, "填了备注就不是�
 check(!RepoRoot.looksValid(URL(filePath: "/tmp")), "/tmp 显然不是服务目录")
 check(!RepoRoot.looksValid(URL(filePath: "/definitely/not/here")), "不存在的路径必须被拒绝")
 
+// 11f. 重要程度只由位置决定
+//
+// The list is the ranking, so the tier has to fall out of the position and out
+// of nothing else. Two orderings that could disagree — a rank and a separate
+// priority — is a list sorted one way and coloured the other.
+check(PlanImportance.forRank(1) == .mit, "第一条是最重要的那条")
+check(PlanImportance.forRank(2) == .high && PlanImportance.forRank(3) == .high, "二三条是重要")
+check(PlanImportance.forRank(4) == .normal, "第四条起是一般")
+// Rank is 1-based everywhere in the plan; a 0 would mean somebody passed an
+// array index, and it must not silently become a different tier than rank 1.
+check(PlanImportance.forRank(0) == .mit, "越界的 0 归到最上面一档，不另开一档")
+
+// 11g. 拖动重排的算术
+//
+// The one part of drag-and-drop that is not visual. A drop gives an index in
+// the list *as it is now*, and moving a row downwards shifts every index after
+// it — the classic off-by-one, and it is invisible on screen because a list
+// with the wrong row in the wrong place still looks like a list.
+@MainActor
+func planOrder(_ ids: [String], move id: String, before destination: Int) -> [String] {
+  let state = AppState.previewOwner()
+  state.plan = ids.map { TodoItem(id: $0, text: $0, kind: .priority) }
+  return state.movePlanItem(id, before: destination)
+}
+check(planOrder(["a", "b", "c"], move: "c", before: 0) == ["c", "a", "b"], "拖到最前面")
+check(planOrder(["a", "b", "c"], move: "a", before: 3) == ["b", "c", "a"], "拖到最后面")
+// Dropping onto the gap just below yourself is the most common accidental
+// drag there is, and it has to be a no-op rather than a one-place shuffle.
+check(planOrder(["a", "b", "c"], move: "b", before: 1) == ["a", "b", "c"], "落回原位不算移动")
+check(planOrder(["a", "b", "c"], move: "b", before: 2) == ["a", "b", "c"], "落到自己下沿也不算移动")
+check(planOrder(["a", "b", "c", "d"], move: "a", before: 3) == ["b", "c", "a", "d"], "向下移动要补偿索引")
+check(planOrder(["a", "b", "c"], move: "c", before: 99) == ["a", "b", "c"], "越界的目标要被夹住而不是崩")
+check(planOrder(["a", "b", "c"], move: "zzz", before: 0) == ["a", "b", "c"], "不认识的 id 不动列表")
+
 // MARK: - What this harness cannot cover
 //
 // Written down rather than left implicit, because a green run is read as "the
@@ -432,7 +466,7 @@ check(!RepoRoot.looksValid(URL(filePath: "/definitely/not/here")), "不存在的
 // build Release, install, and drive the app.
 
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 回归集")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 回归集")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

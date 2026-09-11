@@ -112,6 +112,16 @@ extension DailyOSClient {
     )
   }
 
+  /// Record the user's own order for today's plan.
+  ///
+  /// The whole list, not the row that moved. The service writes one ledger
+  /// entry per position, so what is stored is the order itself rather than a
+  /// sequence of moves that both sides would have to replay identically.
+  public func recordPlanOrder(_ order: [String]) async throws {
+    struct Request: Encodable { let order: [String] }
+    try await post("/api/today/plan-order", body: Request(order: order))
+  }
+
   /// Start a workflow now. `daily_plan`, `daily_review` or `weekly_review` —
   /// the service rejects anything else by name.
   ///

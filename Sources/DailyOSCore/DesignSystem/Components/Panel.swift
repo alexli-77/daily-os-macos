@@ -10,17 +10,23 @@ import SwiftUI
 public struct Panel<Content: View, Actions: View>: View {
   private let title: String?
   private let subtitle: String?
+  private let badge: String?
+  private let badgeTone: Tone
   private let content: Content
   private let actions: Actions
 
   public init(
     _ title: String? = nil,
     subtitle: String? = nil,
+    badge: String? = nil,
+    badgeTone: Tone = .neutral,
     @ViewBuilder content: () -> Content,
     @ViewBuilder actions: () -> Actions
   ) {
     self.title = title
     self.subtitle = subtitle
+    self.badge = badge
+    self.badgeTone = badgeTone
     self.content = content()
     self.actions = actions()
   }
@@ -30,7 +36,14 @@ public struct Panel<Content: View, Actions: View>: View {
       if title != nil || subtitle != nil {
         HStack(alignment: .firstTextBaseline, spacing: Metrics.sm) {
           VStack(alignment: .leading, spacing: Metrics.xxs) {
-            if let title { Text(title).inkStyle(Typo.title) }
+            // Beside the title, not out with the actions. It is a fact *about*
+            // the panel's subject — this plan is today's, this day is still in
+            // progress — and a status that drifts to the far right reads as one
+            // more control rather than as part of the heading.
+            HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
+              if let title { Text(title).inkStyle(Typo.title) }
+              if let badge { Pill(badge, tone: badgeTone) }
+            }
             if let subtitle { Text(subtitle).mutedStyle() }
           }
           Spacer(minLength: Metrics.xs)
@@ -59,9 +72,18 @@ extension Panel where Actions == EmptyView {
   public init(
     _ title: String? = nil,
     subtitle: String? = nil,
+    badge: String? = nil,
+    badgeTone: Tone = .neutral,
     @ViewBuilder content: () -> Content
   ) {
-    self.init(title, subtitle: subtitle, content: content, actions: { EmptyView() })
+    self.init(
+      title,
+      subtitle: subtitle,
+      badge: badge,
+      badgeTone: badgeTone,
+      content: content,
+      actions: { EmptyView() }
+    )
   }
 }
 
