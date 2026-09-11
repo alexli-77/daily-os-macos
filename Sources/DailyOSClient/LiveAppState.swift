@@ -85,6 +85,10 @@ public final class LiveAppState: AppState {
     if !connection.state.isConnected { await connection.probe() }
     guard connection.state.isConnected else {
       clearForDisconnected()
+      // Refine the synchronous verdict now that there is somewhere to await:
+      // "not running" and "running but wedged" are indistinguishable from here
+      // and lead to completely different advice.
+      serviceDiagnosis = await .evaluateLive(root: connection.repoRoot)
       return
     }
     serviceDiagnosis = .reachable

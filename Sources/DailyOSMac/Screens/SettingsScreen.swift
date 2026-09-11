@@ -198,6 +198,17 @@ private struct LoadErrorPanel: View {
             Button("手动指定文件夹…") { Task { await store.pickServiceFolder() } }
               .buttonStyle(MossButtonStyle(prominent: false))
           }
+          // Opens the pane directly. Telling someone to "去系统设置 → 隐私与安全性
+          // → 完全磁盘访问权限" is four levels of navigation described in prose,
+          // and this URL is the whole reason macOS exposes it.
+          if state.serviceDiagnosis.wantsFullDiskAccess {
+            Button("打开「完全磁盘访问权限」") {
+              if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                NSWorkspace.shared.open(url)
+              }
+            }
+            .buttonStyle(MossButtonStyle(prominent: false))
+          }
         }
 
         PanelDivider()

@@ -95,8 +95,12 @@ open "/Applications/Daily OS.app"
 用 Release 而不是 Debug：日常用的东西不该带调试开销。**先跑一次 Release 构建再改代码**——
 `#Preview` 块在 Release 下照样编译，所以只在 Debug 存在的符号会让 Release 构建挂掉，而 Debug 永远发现不了。
 
-前提是 daily-os 服务在跑。它在 launchd 下（`com.daily-os-feishu.agent`）就会开机自启；
-`npm run service:install` 装它，`launchctl list | grep daily-os` 查它。
+**注意开发构建和打包构建装的不是同一个服务。** 上面这种 `xcodebuild` 直接拷过去的 App 里
+没有服务负载（`Resources/service` 是 `package.sh` 放进去的），所以它不会去装什么，
+只会去找机器上已有的服务——也就是你自己的 checkout。要验证安装那条路径，
+得跑 `./scripts/package.sh`。
+
+服务在 launchd 下（`com.daily-os-feishu.agent`）开机自启，`launchctl list | grep daily-os` 查它。
 
 **改了服务端之后，光重启没用。** launchd 跑的是 `dist/index.js`，不是源码：
 
@@ -116,10 +120,39 @@ npm run build && launchctl kickstart -k gui/$(id -u)/com.daily-os-feishu.agent
 ./scripts/package.sh
 ```
 
-产出在 `dist/`：`Daily OS.app` 和 `DailyOS-<版本>.zip`（约 2.5 MB）。
+产出在 `dist/`：`Daily OS.app` 和 `DailyOS-<版本>.zip`（约 290 MB）。
 
-**对方那台机器还要有 daily-os 服务在跑。** 这个 App 只是它的客户端——没有服务，
-启动后停在「选择仓库目录」那一屏，什么都读不到。这一条比签名重要得多。
+**服务打包在里面了，对方不需要再装任何东西。** 拖进「应用程序」、双击，第一次启动会自己
+建 `~/Library/Application Support/DailyOS`、写 launchd 配置、把服务拉起来。不用 clone 仓库，
+不用 npm，不用跑安装脚本，也不用选任何文件夹。
+
+290 MB 里 104 MB 是 Node 运行时、81 MB 是生产依赖。这是「一步部署」的价目：
+要么 App 大 290 MB，要么对方的部署分两步——而两步里失败的永远是第二步。
+
+必须是 **nodejs.org 的官方二进制**，不能是 Homebrew 的 `node`：后者是个 68 KB 的壳，
+动态链接 `/opt/homebrew/opt/...` 下一堆 dylib，拷进 bundle 做出来的东西只能在
+「已经装了 Homebrew Node」的机器上跑——正好是这次要消灭的那个前置条件。
+`bundle-service.sh` 里用 `otool -L` 卡住了这一点。
+
+**代码和数据分开放**：代码只读地待在 `Daily OS.app/Contents/Resources/service`，
+数据全在 `~/Library/Application Support/DailyOS`。App 更新时 bundle 是整个被替换的，
+写进 bundle 里的东西会在第一次更新时消失。
+
+**进程还是 launchd 的，不是 App 的。** 服务要跑早晨的 `daily_plan` 和晚上的复盘；
+把它做成 App 的子进程，这些就只在你记得开 App 的那天发生。变的只是：现在由 App
+写 launch agent 并指向自己带的那份服务，而不是让人去终端里跑安装脚本。
+
+**升级会真的生效。** App 更新后 bundle 路径没变、内容变了，launchd 没有理由重启它——
+所以安装记录里存的是构建标识（版本＋commit＋构建时间），对不上就重新登记并重启。
+只比路径的话，发了一个服务端修复、机器上跑的还是昨天那份，而一切看起来都正常。
+
+**老用户的数据会自动搬过去。** 第一次装的时候如果机器上已经有一个跑过的 checkout，
+它的 `.env`、`config/`、`data/` 会被**复制**（不是移动）到托管目录，原目录原样留着当快照。
+唯一搬不过去的是写成 `../xxx` 的配置项（比如 `skills.calendar.workdir`）——
+它现在会相对 `~/Library/Application Support` 解析，得手改成绝对路径。
+
+装不上的时候看 `~/Library/Application Support/DailyOS/logs/install.log`，
+每一步都在里面。
 
 脚本里有两处不是随手写的：
 
@@ -217,22 +250,28 @@ swift run daily-os-checks
 服务把地址和令牌写在自己 checkout 的 `data/runtime/ui.json` 里，那个令牌直接认证为 admin
 （服务源码的注释点名了 mac-companion 是预期调用方）。所以：
 
-- **没有登录界面，也不存密码。** app 读那个文件，走 `Authorization: Bearer`
+- **App 自己不存密码。** 它读那个文件，走 `Authorization: Bearer`；登录界面登的是控制台账号
+  （和网页控制台同一套），换的是身份显示，不是这条连接
 - 令牌每次服务重启重新生成，client 在 401 时**重读文件重试一次**——那是正常路径不是错误
 - 不发 `Origin` 头。服务把无 Origin 的请求当作非浏览器客户端并跳过 CSRF 检查
 
-唯一需要告诉 app 的是**服务装在哪个文件夹**，而通常它自己就能找到：
+正常情况下这个文件夹**根本不需要谁来告诉它**：App 自己装的服务，工作目录就是它自己建的
+`~/Library/Application Support/DailyOS`。剩下的两条是给「服务不是 App 装的」那些机器留的：
 
 1. `~/Library/LaunchAgents/com.daily-os-feishu.agent.plist` 里的 `WorkingDirectory`——
-   这是 `npm run service:install` 写进去的路径，**不是猜的**
+   这是安装时写进去的路径，**不是猜的**
 2. 找不到 plist（服务是手动跑的）才退化成扫描 `~/code`、`~/Developer`、`~/Documents` 这几个常见位置，
    深度 4 层、有访问上限，优先挑已经跑过的那个（有 `data/runtime/ui.json`）
 
-两条都没结果，才会出现「选择服务文件夹」那一屏。**这一屏是给别人看的**——
+判断一个目录能不能用，看的是 `isUsable` 而不是 `looksValid`：托管目录里只有数据、没有一行源码，
+拿「有没有 `src/ui`」去问它，答案会是「不能用」——然后扫描会自信地找到一个**别的**服务。
+
+三条都没结果，才会出现「选择服务文件夹」那一屏。**这一屏是给别人看的**——
 装在队友机器上时，站在电脑前的那个人多半不是搭服务的人，所以那里不能出现「仓库」这种词。
 
 ```bash
-swift run daily-os-live <path-to-daily-os-feishu>
+swift run daily-os-live            # 不带参数＝App 现在连的那个
+swift run daily-os-live <目录>
 ```
 
 拿真实服务验证解码器，只打印数量和长度、不打印你的内容。`daily-os-checks` 证明解析器符合格式；

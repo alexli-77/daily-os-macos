@@ -48,6 +48,12 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 cp -R "$BUILT" "$OUT/$APP_NAME"
 
+# --- 把服务塞进去 ---------------------------------------------------------
+#
+# 这一步之后，这个 .app 就是完整产品：Node 运行时、服务代码、依赖、提示词全在里面。
+# 对方不需要 clone 仓库，不需要 npm，不需要跑任何安装脚本。
+"$(dirname "$0")/bundle-service.sh" "$OUT/$APP_NAME" "${DAILY_OS_SERVICE_REPO:-}"
+
 # Ad-hoc sign, explicitly.
 #
 # Not optional and not cosmetic: **arm64 executables must carry a signature to
@@ -79,9 +85,29 @@ PLIST="$OUT/$APP_NAME/Contents/Info.plist"
 
 # After the plist edits, never before: changing a file inside the bundle
 # invalidates a signature that was already applied.
-echo "==> Ad-hoc 签名"
+# Inside out, and every nested executable individually.
+#
+# `lipo -create` on the two official node binaries **invalidates the signature
+# Node ships with**, and an arm64 binary with a broken signature does not run —
+# it is killed on exec. The native `.node` modules are in the same position.
+# Signing only the outer bundle produces something that verifies, launches, and
+# then cannot start its own service.
+echo "==> Ad-hoc 签名（由内向外）"
+NESTED=0
+while IFS= read -r -d '' f; do
+  codesign --force --sign - --timestamp=none "$f" 2>/dev/null && NESTED=$((NESTED + 1))
+done < <(find "$OUT/$APP_NAME/Contents/Resources" \( -name '*.node' -o -name '*.dylib' \) -print0 2>/dev/null)
+codesign --force --sign - --timestamp=none "$OUT/$APP_NAME/Contents/Resources/node"
+NESTED=$((NESTED + 1))
+echo "  嵌套可执行文件 $NESTED 个"
+
 codesign --force --sign - --timestamp=none "$OUT/$APP_NAME"
 codesign --verify --strict "$OUT/$APP_NAME"
+# The outer verify does not walk into Resources, so the one failure this whole
+# block exists to prevent would pass it. Check the payload itself.
+codesign --verify "$OUT/$APP_NAME/Contents/Resources/node" \
+  || { echo "  ✗ 打包进去的 node 签名无效，装到别的机器上会被系统直接杀掉"; exit 1; }
+echo "  ✓ node 签名有效"
 
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")
 ZIP="$OUT/DailyOS-$VERSION.zip"
@@ -97,6 +123,8 @@ echo "版本：$VERSION"
 echo "App： $(pwd)/$OUT/$APP_NAME"
 echo "Zip： $(pwd)/$ZIP"
 echo
-echo "对方还需要 daily-os 服务在他自己那台机器上跑起来——这个 App 只是它的客户端。"
-echo "服务如果是用 npm run service:install 装的（launchd），App 会自己找到它，什么都不用问；"
-echo "只有手动跑服务、没装 launchd 的情况，才会停在「选择服务文件夹」那一屏。"
+echo "服务已经打包在里面了。对方只要把 .app 拖进「应用程序」并打开——"
+echo "第一次启动会自己建 ~/Library/Application Support/DailyOS、登记后台任务、拉起服务。"
+echo "不需要 clone 仓库，不需要 npm，不需要跑任何安装脚本。"
+echo
+echo "还需要对方自己填的：模型密钥、飞书凭据这些，在 App 的设置里填。"

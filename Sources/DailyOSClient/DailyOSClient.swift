@@ -76,7 +76,7 @@ extension ClientError: LocalizedError {
   public var errorDescription: String? {
     switch self {
     case .notRunning(let root):
-      "服务没在跑。在 \(root.path()) 下执行 `npm run ui`，或检查 launchd 任务。"
+      "服务没在跑。在 \(root.path(percentEncoded: false)) 下执行 `npm run ui`，或检查 launchd 任务。"
     case .runtimeFileUnreadable(let path):
       "读不懂 \(path.lastPathComponent)。服务可能正在启动，或者这个目录不是 daily-os 仓库。"
     case .unauthorized:

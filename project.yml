@@ -46,6 +46,14 @@ targets:
         # and silently fall back to the default place *forever*, which looks
         # like a broken feature rather than a missing key.
         NSLocationWhenInUseUsageDescription: 今天页的天气用它确定你在哪。位置只用来请求天气，不上传、不保存。不给也能用，会回落到设置里的默认城市。
+        # Shown in the 桌面／文稿 consent dialogs the app raises on first install.
+        # Not cosmetic: the vault normally lives in one of these two folders, and
+        # a background service that reads one without permission does not fail —
+        # the read hangs forever, because a launchd job has nowhere to show the
+        # dialog. Asking here, from a window that is on screen, is what makes
+        # that grant exist before the service ever looks.
+        NSDesktopFolderUsageDescription: 你的周期和笔记通常放在桌面上的 vault 里。Daily OS 只读你在设置里指定的那个目录，不碰桌面上的别的东西。
+        NSDocumentsFolderUsageDescription: 你的周期和笔记通常放在「文稿」里的 vault 里。Daily OS 只读你在设置里指定的那个目录，不碰「文稿」里的别的东西。
         # The menu bar item is the always-available entry point, but this is not
         # an agent app — it has a real window and belongs in the Dock while open.
         LSUIElement: false

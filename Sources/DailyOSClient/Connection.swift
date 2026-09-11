@@ -66,28 +66,29 @@ public final class ServiceConnection {
   /// a way that costs more trust than the picker it replaced.
   public private(set) var wasDiscovered = false
 
-  /// Falls back to `RepoRoot.discover()` — the launch agent knows where the
-  /// service lives, so on a machine where it is installed there is nothing to
-  /// ask. Asking anyway is how the first screen ended up demanding a word
-  /// ("仓库") from the one person most likely not to have set any of it up.
+  /// Cheap on purpose: one `UserDefaults` read and nothing else.
+  ///
+  /// This used to call `RepoRoot.discover()`, which touches the filesystem and
+  /// can shell out to `mdfind`. `ServiceConnection()` is a `@State` initialiser
+  /// in `DailyOSApp`, so that ran **synchronously on the main thread before any
+  /// window existed** — and on a machine where the launch agent was missing, so
+  /// the cheap first branch did not short-circuit it, the directory scan hung
+  /// and the app never drew anything at all. No window, no error, just a Dock
+  /// icon. Discovery moved to `bringUp`, which is async and can say what it is
+  /// doing while it works.
   public init(repoRoot: URL? = RepoRoot.stored()) {
-    let resolved = repoRoot ?? RepoRoot.discover()
-    self.wasDiscovered = repoRoot == nil && resolved != nil
-    self.repoRoot = resolved
-    self.state = resolved == nil ? .unconfigured : .connecting
-    if let resolved {
-      // Remembered immediately, so a discovery that works once is not repeated
-      // on every launch — and so moving the folder later still means one picker.
-      RepoRoot.store(resolved)
-      self.client = DailyOSClient(repoRoot: resolved)
+    self.repoRoot = repoRoot
+    self.state = repoRoot == nil ? .unconfigured : .connecting
+    if let repoRoot {
+      self.client = DailyOSClient(repoRoot: repoRoot)
     }
   }
 
   /// Point at a checkout. Rejects an obviously wrong folder here rather than
   /// letting it fail later as a confusing decode error.
   public func use(repoRoot url: URL) {
-    guard RepoRoot.looksValid(url) else {
-      state = .failed(reason: "这个文件夹里没有 daily-os 服务（找不到 package.json 和 src/ui）。选服务代码所在的那个文件夹，不是它里面的某一层。")
+    guard RepoRoot.isUsable(url) else {
+      state = .failed(reason: "这个文件夹里既没有 daily-os 服务代码，也没有 data/runtime/ui.json。选服务代码所在的那个文件夹，或者 App 自己管理的数据目录。")
       return
     }
     wasDiscovered = false
@@ -112,7 +113,39 @@ public final class ServiceConnection {
   ///
   /// So: probe, and if that fails, start the agent and keep asking for a while.
   public func bringUp() async {
+    // Install first, when the app carries its own service and the machine has
+    // never had it — or has an agent still pointing at an older bundle. This is
+    // the one-step deployment: dragging the app to /Applications *is* the
+    // install, and the second half of it happens here rather than in a terminal
+    // somebody else has to be talked through.
+    if ServiceInstaller.isBundled, ServiceInstaller.needsInstall() {
+      await installBundledService()
+      // Any outcome is final. Falling through on failure let the *next* branch
+      // discover a developer checkout on this machine and report on that
+      // instead — so a broken install reported "服务装好了，但现在没在跑" about
+      // a completely different service, and the actual error was never shown.
+      if case .failed = state { return }
+      if state.isConnected { return }
+    }
+
+    // Discovery lives here rather than in `init` so it cannot block the first
+    // frame, and `Task.detached` keeps the filesystem walk off the main actor
+    // entirely — a scan that takes two seconds should cost two seconds of
+    // "正在找服务…", not two seconds of a frozen window.
+    if client == nil {
+      activity = "正在找这台电脑上的服务…"
+      state = .connecting
+      let found = await Task.detached(priority: .userInitiated) { RepoRoot.discover() }.value
+      if let found {
+        RepoRoot.store(found)
+        repoRoot = found
+        wasDiscovered = true
+        client = DailyOSClient(repoRoot: found)
+      }
+    }
+
     guard client != nil else {
+      activity = ""
       state = .unconfigured
       return
     }
@@ -152,6 +185,59 @@ public final class ServiceConnection {
 
     activity = ""
     state = .failed(reason: "服务已经启动，但十几秒后仍然没有响应。看看它的日志：logs/launchd.err.log。")
+  }
+
+  /// First run on a machine, or the first run after an app update.
+  ///
+  /// Points `repoRoot` at the managed data directory rather than at a checkout,
+  /// and runs *before* discovery rather than after it: a bundled app that found
+  /// a checkout first would keep talking to whatever the previous install left
+  /// behind, and would never pick up its own newer service after an update.
+  /// An existing checkout is not ignored — `ServiceInstaller` copies its data
+  /// into the managed directory once, on the first install only.
+  ///
+  /// A developer who wants the app pointed at the tree they are editing still
+  /// can: Settings 里的服务文件夹 overrides this and is remembered.
+  private func installBundledService() async {
+    activity = "第一次启动，正在安装本机服务…"
+    state = .connecting
+    do {
+      try await ServiceInstaller.install { step in
+        self.activity = switch step {
+        case .preparingFiles: "正在准备数据目录…"
+        case .registering: "正在登记后台任务…"
+        case .starting: "正在启动服务…"
+        case .done: "服务已启动，正在连接…"
+        }
+      }
+    } catch {
+      activity = ""
+      state = .failed(reason: "安装本机服务失败：\(error.localizedDescription)")
+      return
+    }
+
+    let managed = ServiceInstaller.dataDirectory
+    RepoRoot.store(managed)
+    repoRoot = managed
+    wasDiscovered = true
+    client = DailyOSClient(repoRoot: managed)
+
+    // The service has to boot, create its config and database, and bind a port.
+    // On a genuinely first run that is the slowest this app ever is, so the
+    // wait is longer than the ordinary restart path and says what it is doing.
+    for attempt in 1...30 {
+      try? await Task.sleep(for: .milliseconds(700))
+      activity = "首次启动要建数据库，稍等…（\(attempt * 7 / 10)s）"
+      await probe()
+      if state.isConnected { activity = ""; return }
+    }
+    activity = ""
+    state = .failed(reason: """
+      服务装好也起来了，但二十秒内没有应答。最常见的原因是系统隐私权限：\
+      如果你的 vault 在桌面、文稿或 iCloud 里，后台服务读它的时候会被系统挂住——\
+      既弹不出授权框，也不会报错。在「完全磁盘访问权限」里把 Daily OS 打开再试。
+      日志：\(managed.path(percentEncoded: false))/logs/service.out.log
+      """)
   }
 
   /// Re-read the stored folder and reconnect, after Settings changed it.

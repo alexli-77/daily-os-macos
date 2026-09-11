@@ -20,15 +20,17 @@ import DailyOSClient
 
 @MainActor
 func run() async -> Int32 {
+  // No argument means "whatever the app itself is talking to" — which, since
+  // the service started shipping inside the app, is normally the managed data
+  // directory rather than a checkout. Guessing at a sibling folder was fine
+  // when there was only ever one answer and is now the wrong one by default.
   let root = CommandLine.arguments.count > 1
     ? URL(filePath: CommandLine.arguments[1])
-    : URL(filePath: FileManager.default.currentDirectoryPath)
-      .deletingLastPathComponent()
-      .appending(path: "daily-os-feishu")
+    : RepoRoot.discover() ?? ServiceInstaller.dataDirectory
 
-  print("repo: \(root.path())")
-  guard RepoRoot.looksValid(root) else {
-    print("✗ 这个目录不像 daily-os 服务仓库。用法：swift run daily-os-live <path-to-daily-os-feishu>")
+  print("repo: \(root.path(percentEncoded: false))")
+  guard RepoRoot.isUsable(root) else {
+    print("✗ 这个目录既没有服务代码，也没有 data/runtime/ui.json。用法：swift run daily-os-live <目录>")
     return 1
   }
 

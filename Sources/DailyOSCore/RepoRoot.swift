@@ -26,8 +26,20 @@ public enum RepoRoot {
   /// Does this look like a daily-os checkout? Used to reject a wrong folder at
   /// pick time rather than as a confusing failure on the first request.
   public static func looksValid(_ url: URL) -> Bool {
-    FileManager.default.fileExists(atPath: url.appending(path: "package.json").path())
-      && FileManager.default.fileExists(atPath: url.appending(path: "src/ui").path())
+    FileManager.default.fileExists(atPath: url.appending(path: "package.json").path(percentEncoded: false))
+      && FileManager.default.fileExists(atPath: url.appending(path: "src/ui").path(percentEncoded: false))
+  }
+
+  /// Can the app talk to a service through this folder?
+  ///
+  /// Broader than `looksValid`, and the two are no longer the same question.
+  /// Since the app started shipping its own service, the folder it normally
+  /// reads is `~/Library/Application Support/DailyOS` — a working directory with
+  /// data in it and no source code anywhere near it. `looksValid` rightly says
+  /// no to that, which is correct for "did you pick the checkout?" and wrong for
+  /// every caller that just wants to know whether a connection is possible.
+  public static func isUsable(_ url: URL) -> Bool {
+    looksValid(url) || hasRun(url)
   }
 
   /// Find the service folder without asking.
@@ -42,7 +54,12 @@ public enum RepoRoot {
   /// 目录" asks someone to know a word they have no reason to know, about a
   /// folder they may never have opened.
   public static func discover() -> URL? {
-    if let url = fromLaunchAgent(), looksValid(url) { return tidy(url) }
+    // `isUsable`, not `looksValid`: the agent an app-managed install writes
+    // points at a working directory with no source in it. Demanding source here
+    // made discovery skip the service that is actually running and fall through
+    // to a scan that found an old checkout instead — the wrong service, found
+    // confidently.
+    if let url = fromLaunchAgent(), isUsable(url) { return tidy(url) }
     if let url = fromCommonLocations() { return tidy(url) }
     return fromSpotlight().map(tidy)
   }
@@ -135,8 +152,14 @@ public enum RepoRoot {
 
     var candidates: [URL] = []
     var budget = 400
+    // A visit budget bounds how many directories are opened; it does not bound
+    // how long one of them takes. A single enumeration can block for seconds on
+    // a network mount, an iCloud folder that has to materialise, or a directory
+    // with a pathological number of entries — and this once hung an app launch
+    // outright. A deadline bounds the thing that actually hurts.
+    let deadline = Date.now.addingTimeInterval(3)
 
-    while !queue.isEmpty, budget > 0 {
+    while !queue.isEmpty, budget > 0, Date.now < deadline {
       let (directory, depth) = queue.removeFirst()
       budget -= 1
       guard let entries = try? FileManager.default.contentsOfDirectory(
@@ -163,7 +186,7 @@ public enum RepoRoot {
   /// The service has started here at least once, so its address and token file
   /// is present — which is the only thing the app actually reads.
   public static func hasRun(_ url: URL) -> Bool {
-    FileManager.default.fileExists(atPath: url.appending(path: "data/runtime/ui.json").path())
+    FileManager.default.fileExists(atPath: url.appending(path: "data/runtime/ui.json").path(percentEncoded: false))
   }
 }
 
