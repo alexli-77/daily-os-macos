@@ -51,36 +51,45 @@ private struct ProfilePanel: View {
   }
 }
 
-/// What used to be 账号, with the dead 退出登录 button replaced by the reason it
-/// was dead.
+/// The console account, and where this machine's configuration lives.
 ///
-/// This app does not sign in. The service mints a runtime token on every start,
-/// writes it into `data/runtime/ui.json`, and treats any caller holding it as
-/// admin — `resolveAuthContext` in `src/ui/server.ts` says so, and names the Mac
-/// companion as the intended caller. `/api/logout` destroys a *browser session
-/// cookie*; a token client has no session for it to destroy, so pressing it here
-/// would have been a request that legitimately answers `{ ok: true }` and
-/// changes nothing at all. Which identity this app runs as is decided entirely
-/// by which checkout it is pointed at.
+/// This comment used to argue at length that the app does not sign in and that a
+/// 退出登录 button here would be dead. That was true of *connecting* and it is
+/// still true: the service mints a runtime token on every start, writes it into
+/// `data/runtime/ui.json`, and treats any caller holding it as admin.
+///
+/// It stopped being the whole story when login arrived. Reaching the service and
+/// saying who is using it are two separate questions, and only the first one is
+/// answered by the token. So 退出登录 *is* here now, at the foot of the panel —
+/// it ends the session in the service's `users` store and returns to the login
+/// screen — and the paragraph above it says what it does not do, because
+/// "log out" on its own sounds like a lock and this is not one.
 private struct IdentityPanel: View {
   @Environment(AppState.self) private var state
   let snapshot: SettingsSnapshot
 
   var body: some View {
-    Panel("身份", subtitle: "这个 App 没有登录，也就没有可以退出的会话") {
+    // Three identities live in this product and this panel is about exactly one
+    // of them: the console account you signed in as. The avatar and name used to
+    // come from `state.account`, which is filled from `team.self.memberId` — a
+    // team member id shown under a heading that says 身份.
+    Panel("身份", subtitle: "当前登录的控制台账号") {
       VStack(spacing: 0) {
         HStack(spacing: Metrics.sm) {
-          PixelAvatar(seed: state.account.avatarSeed, size: 44)
+          PixelAvatar(seed: avatarSeed, size: 44)
           VStack(alignment: .leading, spacing: 2) {
-            Text(state.account.displayName).inkStyle(Typo.heading)
-            Text(state.account.email).mutedStyle()
+            Text(state.session?.username ?? "未登录").inkStyle(Typo.heading)
+            Text(state.session?.email.isEmpty == false ? state.session!.email : "控制台账号库（服务的 users 表）")
+              .mutedStyle()
           }
           Spacer()
-          Pill(state.account.role.label, tone: .accent)
+          if let session = state.session {
+            Pill(session.role.label, tone: .accent)
+          }
         }
         .padding(.bottom, Metrics.sm)
         PanelDivider()
-        KeyValueRow("认证方式", "服务运行时令牌（服务按 admin 对待）")
+        KeyValueRow("连接方式", "服务运行时令牌（服务按 admin 对待）")
         PanelDivider()
         KeyValueRow("令牌来源", "\(snapshot.repoRootPath)/data/runtime/ui.json", mono: true)
         PanelDivider()
@@ -88,21 +97,44 @@ private struct IdentityPanel: View {
         PanelDivider()
         KeyValueRow("环境变量", snapshot.envPath, mono: true)
         PanelDivider()
+        // The distinction this paragraph exists to make:登录 and 连接 are two
+        // different things, and only one of them is a gate. Saying "退出登录"
+        // without saying what it does not do would leave someone thinking they
+        // had locked the machine.
         Text(
           """
-          服务每次启动都会换一个本地令牌并写进 ui.json；这个 App 读它，所以从来不需要账号密码。\
-          换句话说，「退出登录」在这里没有对应的动作——服务端的 /api/logout 只销毁浏览器的 session cookie。\
-          要换身份，就换服务仓库：断开连接（或退出重开）会回到「选择仓库目录」那一屏，指到哪个 checkout，\
-          就以那个 checkout 的服务身份运行。
+          登录决定的是「谁在用这台 App」——同一台电脑上可以有多个账号轮流用。\
+          但连服务靠的是服务自己写下的运行令牌，和登录无关：退出登录只是换掉名字，\
+          不会锁上任何东西，能登进这台 Mac 的人照样连得上。
           """
         )
         .mutedStyle()
         .fixedSize(horizontal: false, vertical: true)
         .padding(.top, Metrics.xs)
+
+        if state.session != nil {
+          PanelDivider()
+          HStack(spacing: Metrics.xs) {
+            Button("退出登录") { Task { _ = await state.signOut() } }
+              .buttonStyle(MossButtonStyle(prominent: false, tone: .danger))
+            Text("退出后回到登录页，可以换一个账号登进来。")
+              .mutedStyle()
+            Spacer(minLength: 0)
+          }
+          .padding(.top, Metrics.sm)
+        }
       }
     } actions: {
       Button("在访达中显示") { revealRepo() }.buttonStyle(QuietButtonStyle())
     }
+  }
+
+  /// Same fallback the login response forces: `/api/login` returns a name and
+  /// a role and no seed, and the console's own renderer falls back to the
+  /// username — so one account draws the same face in both places.
+  private var avatarSeed: String {
+    guard let session = state.session else { return "" }
+    return session.avatarSeed.isEmpty ? session.username : session.avatarSeed
   }
 
   private func revealRepo() {

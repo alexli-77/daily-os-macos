@@ -84,12 +84,15 @@ private struct SidebarFooter: View {
       // footer was two lines tall for two short strings and read as two
       // separate facts rather than one line about this account.
       HStack(spacing: Metrics.xs) {
-        // The name is a menu, because that is where everyone looks for account
-        // actions — it is where every other Mac app puts them. The previous
-        // answer to "怎么退出登录" was a paragraph in Settings explaining that
-        // there is no session to end; there is one now, and this is where the
-        // person asking that question was already looking.
-        AccountMenu()
+        // A label, not a menu. It was a `Menu`, on the reasoning that account
+        // actions belong where people look for them — but the only action it
+        // ever held was 退出登录, and a whole disclosure control for one item
+        // is a chevron that mostly disappoints. Signing out lives at the foot
+        // of 设置 → 基础 now, next to the name and timezone it belongs with.
+        //
+        // What stays here is what the footer is actually for: who you are and
+        // whether the service is up, in one line, from anywhere.
+        AccountLabel()
         StatusDot(
           state.service.state.label,
           tone: state.service.state.tone,
@@ -142,7 +145,7 @@ private struct DisconnectedBanner: View {
   }
 }
 
-/// Avatar plus name, as a menu.
+/// Avatar plus name. Not a control.
 ///
 /// The name is the **console account** — the row in the service's `users` table
 /// that this app signed in against. It used to be `account.displayName`, which
@@ -150,58 +153,29 @@ private struct DisconnectedBanner: View {
 /// line of the window that claims to say who you are. `ConsoleSession` exists to
 /// keep those two apart, and this is the line that was getting them wrong.
 ///
-/// The avatar is a sibling of the menu rather than part of its label. It was
-/// inside, and `.menuStyle(.borderlessButton)` clamps the label to the height of
-/// a line of text — about 16pt — so a 20pt canvas was cropped until there was
-/// nothing left to see. Nothing about a menu requires its label to carry the
-/// picture, so the picture sits outside where no menu style can shrink it.
-///
-/// 退出团队登录 is deliberately not here. Team sign-out is a different account
-/// (Supabase), it already has a confirm flow in 设置 → 团队, and a second door
-/// to it from the account menu only makes the two identities look like one.
-struct AccountMenu: View {
+/// This was a `Menu` for one release. The reasoning was that account actions
+/// belong where people look for them, which is true — but the menu held exactly
+/// one action, and a disclosure chevron that opens onto a single item is a
+/// control that mostly disappoints the person who clicks it. 退出登录 moved to
+/// the foot of 设置 → 基础, beside the display name and timezone it belongs
+/// with; the footer went back to being a statement rather than a control.
+struct AccountLabel: View {
   @Environment(AppState.self) private var state
 
   var body: some View {
     HStack(spacing: Metrics.xxs) {
       PixelAvatar(seed: avatarSeed, size: 20)
-      Menu {
-        if let session = state.session {
-          Section("\(session.username) · \(session.role.label)") {
-            Button("退出登录") { Task { _ = await state.signOut() } }
-          }
-          Divider()
-        }
-        Button("账号与服务设置…") { state.section = .settings }
-        Divider()
-        // Said here because this is where someone decides what 退出登录 means,
-        // and the honest answer is narrower than the words suggest.
-        Text("登录只决定「谁在用这台 App」。连服务靠的是本机的运行令牌，退出登录不会锁上任何东西——能登进这台 Mac 的人照样连得上。")
-        Text("退出后会回到登录页，可以换个人登录。")
-      } label: {
-        HStack(spacing: Metrics.xxs) {
-          Text(name)
-            .inkStyle(Typo.caption)
-            .lineLimit(1)
-          Image(systemName: "chevron.up.chevron.down")
-            .font(.system(size: 8, weight: .semibold))
-            .foregroundStyle(Palette.inkMuted)
-        }
-        .contentShape(Rectangle())
-      }
-      .menuStyle(.borderlessButton)
-      .menuIndicator(.hidden)
-      .fixedSize()
+      Text(name)
+        .inkStyle(Typo.caption)
+        .lineLimit(1)
     }
-    .help("账号")
+    .help(state.session.map { "\($0.username) · \($0.role.label)" } ?? "还没有登录")
   }
-}
 
-private extension AccountMenu {
   /// Never `account.displayName`: connected, that string is the team member id,
   /// which is the whole bug. Without a session there are only two honest things
   /// to say, and which one depends on whether anything is wired at all.
-  var name: String {
+  private var name: String {
     if let session = state.session { return session.username }
     return state.wiredSections.isEmpty ? "未连接" : "未登录"
   }
@@ -209,7 +183,7 @@ private extension AccountMenu {
   /// `/api/login` answers with a name and a role and no seed, so the username
   /// stands in — which is what the console's own renderer falls back to, so one
   /// account draws the same avatar in the browser and here.
-  var avatarSeed: String {
+  private var avatarSeed: String {
     guard let session = state.session else { return "" }
     return session.avatarSeed.isEmpty ? session.username : session.avatarSeed
   }
