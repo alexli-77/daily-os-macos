@@ -58,11 +58,32 @@ cp -R "$BUILT" "$OUT/$APP_NAME"
 # breaks the exact machines it was meant to serve.
 #
 # `-` is ad-hoc: enough to run locally, not a Developer ID, still not notarised.
+# Stamp the build, so the app can answer "am I running the latest?" itself.
+#
+# Every build from this repo carries the same CFBundleShortVersionString, so
+# without this two apps a week apart are indistinguishable from inside. The
+# alternative was reading a binary's mtime in a terminal, which is not something
+# to ask of someone who just wants to know whether their fix landed.
+#
+# `dirty` is stamped too: a commit hash that does not describe the code actually
+# in the bundle is more misleading than no hash at all.
+COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "")
+DIRTY=$([ -n "$(git status --porcelain 2>/dev/null | grep -v '^??')" ] && echo YES || echo NO)
+PLIST="$OUT/$APP_NAME/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :DailyOSBuildCommit string $COMMIT" "$PLIST" >/dev/null 2>&1 \
+  || /usr/libexec/PlistBuddy -c "Set :DailyOSBuildCommit $COMMIT" "$PLIST"
+/usr/libexec/PlistBuddy -c "Add :DailyOSBuildDirty string $DIRTY" "$PLIST" >/dev/null 2>&1 \
+  || /usr/libexec/PlistBuddy -c "Set :DailyOSBuildDirty $DIRTY" "$PLIST"
+/usr/libexec/PlistBuddy -c "Add :DailyOSBuildDate string $(date -u +%Y-%m-%dT%H:%M:%SZ)" "$PLIST" >/dev/null 2>&1 \
+  || /usr/libexec/PlistBuddy -c "Set :DailyOSBuildDate $(date -u +%Y-%m-%dT%H:%M:%SZ)" "$PLIST"
+
+# After the plist edits, never before: changing a file inside the bundle
+# invalidates a signature that was already applied.
 echo "==> Ad-hoc 签名"
 codesign --force --sign - --timestamp=none "$OUT/$APP_NAME"
 codesign --verify --strict "$OUT/$APP_NAME"
 
-VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$OUT/$APP_NAME/Contents/Info.plist")
+VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")
 ZIP="$OUT/DailyOS-$VERSION.zip"
 
 # ditto, not `zip`: a .app is a bundle with symlinks and an executable bit, and

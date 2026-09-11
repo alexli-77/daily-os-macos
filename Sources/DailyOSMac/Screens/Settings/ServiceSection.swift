@@ -34,6 +34,23 @@ struct ServiceSection: View {
         PanelDivider()
         KeyValueRow("地址", state.service.endpoint, mono: true)
         PanelDivider()
+        // Which build of the *app* this is — the service rows below describe the
+        // other half. Without it "我装的是最新的吗" could only be answered by
+        // reading a binary's mtime in a terminal, because every build from this
+        // repo carries the same version string.
+        KeyValueRow("App 版本") {
+          HStack(spacing: Metrics.xs) {
+            Text(BuildInfo.summary)
+              .font(Typo.mono)
+              .foregroundStyle(Palette.inkMuted)
+              .textSelection(.enabled)
+              .fixedSize(horizontal: false, vertical: true)
+            if BuildInfo.isDirty {
+              Pill("有未提交改动", tone: .warn)
+            }
+          }
+        }
+        PanelDivider()
         KeyValueRow("launchd") {
           HStack(spacing: Metrics.xs) {
             Pill(snapshot.service.installed ? "已安装 plist" : "没有 plist", tone: snapshot.service.installed ? .ok : .neutral)
