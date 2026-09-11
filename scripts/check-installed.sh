@@ -53,7 +53,19 @@ if [ "$BUILT_DIRTY" = "YES" ]; then
 fi
 
 if [ "$INSTALLED" != "$HEAD" ]; then
+  # A different commit is not the same as a different app. Only these paths end
+  # up inside the bundle, so ask git exactly which of them changed rather than
+  # inferring from the commit. A README-only commit reported as "your app is
+  # stale" teaches people to ignore the check, which is worse than not having
+  # one.
+  CHANGED=$(git diff --name-only "$INSTALLED..HEAD" -- Sources App project.yml 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$CHANGED" = "0" ] && git cat-file -e "$INSTALLED^{commit}" 2>/dev/null; then
+    green "✓ 代码是最新的（装的 $INSTALLED，仓库 $HEAD）"
+    echo "  中间的提交没动过 Sources/ App/ project.yml —— 重新打包也是同一个 App。"
+    exit 0
+  fi
   red "✗ 不是最新的：装的是 $INSTALLED，仓库是 $HEAD"
+  [ "$CHANGED" != "0" ] && echo "  其中 $CHANGED 个影响 App 的文件有变化。"
   echo "  更新：./scripts/package.sh && rm -rf \"$APP\" && cp -R \"dist/Daily OS.app\" \"$APP\""
   exit 1
 fi
