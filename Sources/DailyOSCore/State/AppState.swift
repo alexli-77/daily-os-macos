@@ -406,6 +406,13 @@ open class AppState {
     .unsupported("这一版没有连接到服务。")
   }
 
+  /// Create a console account and sign in as it.
+  ///
+  /// One call, not two: the service mints a session as part of registering.
+  open func register(username: String, email: String, password: String) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
   /// End the console session on this machine.
   open func signOut() async -> ActionOutcome {
     .unsupported("这一版没有连接到服务。")

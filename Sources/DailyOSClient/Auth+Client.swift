@@ -33,6 +33,25 @@ private struct LoginResponse: Decodable {
   let role: String?
 }
 
+private struct RegisterRequest: Encodable {
+  let username: String
+  let email: String
+  let password: String
+}
+
+/// `/api/register` answers `{ ok, username, role }` on success and
+/// `{ ok: false, errors: { field: message } }` on a validation failure —
+/// `errors`, plural and keyed, not the `error` string login uses.
+private struct RegisterResponse: Decodable {
+  let ok: Bool
+  let username: String?
+  let role: String?
+  let errors: [String: String]?
+  /// Not documented as a register failure shape, decoded anyway: an unexpected
+  /// refusal should surface whatever the service said rather than a shrug.
+  let error: String?
+}
+
 extension DailyOSClient {
   /// Check a username and password against the console account store.
   ///
@@ -76,6 +95,56 @@ extension DailyOSClient {
     return ConsoleSession(
       username: account,
       role: decoded.role.flatMap(Role.init(rawValue:)) ?? .member
+    )
+  }
+
+  /// Create an account, and be signed in as it.
+  ///
+  /// `/api/register` mints a session on success exactly like `/api/login` does,
+  /// so there is no second round trip to "log in after registering" — the
+  /// cookie is already set by the time this returns.
+  ///
+  /// **The first account on a machine becomes the owner; every one after it is
+  /// a member.** That is the service's rule (`registerUser`), written so a
+  /// stranger who reaches a sign-up form on a public build cannot land as
+  /// owner. It is also the single most surprising thing about this screen, so
+  /// the caller is expected to say it *before* the form is filled in, not after
+  /// the second person finds Settings missing.
+  public func register(username: String, email: String, password: String) async throws -> ConsoleSession {
+    let path = "/api/register"
+    let (data, status) = try await postUnauthenticated(
+      path: path,
+      body: RegisterRequest(
+        username: username.trimmingCharacters(in: .whitespacesAndNewlines),
+        email: email.trimmingCharacters(in: .whitespacesAndNewlines),
+        password: password
+      )
+    )
+
+    let decoded: RegisterResponse
+    do {
+      decoded = try JSONDecoder().decode(RegisterResponse.self, from: data)
+    } catch {
+      throw ClientError.decoding(path: path, underlying: error)
+    }
+
+    guard decoded.ok, let account = decoded.username else {
+      // Registration refuses with `errors` — a *map*, one entry per bad field —
+      // where login refuses with a single `error`. Reading only `error` here
+      // would turn "密码需要 8-72 个字符" into "没说原因", which is the one
+      // thing a validation failure must never do.
+      let reasons = decoded.errors?.values.sorted().joined(separator: "；")
+      throw ClientError.service(
+        message: reasons?.isEmpty == false
+          ? reasons!
+          : (decoded.error ?? "服务拒绝了这次注册（HTTP \(status)），但没说原因。")
+      )
+    }
+
+    return ConsoleSession(
+      username: account,
+      role: decoded.role.flatMap(Role.init(rawValue:)) ?? .member,
+      email: email.trimmingCharacters(in: .whitespacesAndNewlines)
     )
   }
 

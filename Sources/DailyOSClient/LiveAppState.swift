@@ -312,6 +312,24 @@ public final class LiveAppState: AppState {
     }
   }
 
+  /// Register, and land signed in.
+  ///
+  /// Identical to `signIn` once the service has answered — deliberately, since
+  /// "registered but not logged in" is a state nobody wants and the service does
+  /// not produce one.
+  public override func register(username: String, email: String, password: String) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务，注册没有地方可去。") }
+    do {
+      let session = try await client.register(username: username, email: email, password: password)
+      self.session = session
+      ConsoleSessionStore.remember(session)
+      return .ok(session.role == .owner || session.role == .admin ? nil : "注册成功。这台机器上已经有所有者了，所以这个账号是成员——配置和密钥看不到。")
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      return .failed(reason)
+    }
+  }
+
   /// End the console session on this machine.
   ///
   /// The local record goes first and unconditionally, because it is the thing

@@ -20,6 +20,15 @@ struct DailyOSApp: App {
   /// cycles is the failure worth a wall rather than a banner.
   @State private var connection = ServiceConnection()
   @State private var state: LiveAppState?
+  /// True only between a successful sign-in and the end of its animation.
+  ///
+  /// The first attempt at this was a `hasEnteredApp` flag defaulting to false,
+  /// which locked out the case it was never thinking about: a *restored*
+  /// session. At launch the session is non-nil and no login ever ran, so
+  /// "has not entered yet" was true and the app held an already-signed-in
+  /// person at the login form with no way forward. Framing it as "a login is
+  /// currently finishing" has no such state — nothing is finishing at launch.
+  @State private var isFinishingLogin = false
 
   var body: some Scene {
     Window("Daily OS", id: DailyOSWindow.main) {
@@ -40,10 +49,18 @@ struct DailyOSApp: App {
           // Disconnected, the app still opens into itself with the banner — a
           // login screen there would be a wall in front of a wall, and the one
           // thing that is actually wrong is not the account.
-          if connection.state.isConnected, state.session == nil {
-            LoginScreen(state: state)
+          // The second clause keeps the login screen up for the length of its
+          // own success animation. Gating purely on `session == nil` swaps the
+          // window on the frame the service answers, which leaves the
+          // transition no time to play — the mark would jump straight from the
+          // form to the sidebar.
+          if connection.state.isConnected, state.session == nil || isFinishingLogin {
+            LoginScreen(state: state, isFinishing: $isFinishingLogin) {
+              withAnimation(.easeOut(duration: 0.3)) { isFinishingLogin = false }
+            }
           } else {
             RootView(state: state)
+              .transition(.opacity)
           }
         } else {
           SetupScreen(connection: connection)

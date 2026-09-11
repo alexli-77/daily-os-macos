@@ -39,18 +39,34 @@ public struct DailyOSMark: View {
   private let style: Style
   private let tint: Color
   private let centerTint: Color?
+  private let gradient: Gradient?
 
   public init(
     motion: Motion = .still,
     style: Style = .rings,
     tint: Color = Palette.moss,
-    centerTint: Color? = nil
+    centerTint: Color? = nil,
+    gradient: Gradient? = nil
   ) {
     self.motion = motion
     self.style = style
     self.tint = tint
     self.centerTint = centerTint
+    self.gradient = gradient
   }
+
+  /// The house gradient: deep moss through to a cooler teal, lifted at the top.
+  ///
+  /// Spans the *whole mark* rather than each ring, which is the difference
+  /// between a logo and seven independently-shaded circles. Two stops are worth
+  /// it and a rainbow is not — this sits next to a UI whose entire visual
+  /// argument is restraint, and a mark that out-colours everything around it
+  /// stops reading as the product's own.
+  public static let houseGradient = Gradient(colors: [
+    Color(light: Color(hex: 0x3FB392), dark: Color(hex: 0x6FE0BC)),
+    Color(light: Color(hex: 0x1F6F58), dark: Color(hex: 0x3E9E82)),
+    Color(light: Color(hex: 0x1B5E7A), dark: Color(hex: 0x3D8FB0)),
+  ])
 
   /// Where the six outer rings sit, in units of the ring pitch, starting at the
   /// top and going clockwise. A flat-top hexagon: `cos30 ≈ 0.866`.
@@ -76,21 +92,32 @@ public struct DailyOSMark: View {
       let lineWidth = max(diameter * 0.17, 0.75)
       let center = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2)
 
-      ZStack {
-        ring(diameter: diameter, lineWidth: lineWidth, color: centerTint ?? tint, lit: true, index: -1)
-          .position(center)
+      // Drawn as a mask and filled once, rather than seven separately-coloured
+      // shapes. A mask carries alpha, so the per-ring opacity that drives the
+      // searching animation still works — and the gradient stays continuous
+      // across the whole mark instead of restarting inside every circle.
+      fill
+        .mask {
+          ZStack {
+            ring(diameter: diameter, lineWidth: lineWidth, lit: true, isCenter: true)
+              .position(center)
 
-        ForEach(Array(Self.outerOffsets.enumerated()), id: \.offset) { index, offset in
-          ring(
-            diameter: diameter,
-            lineWidth: lineWidth,
-            color: tint,
-            lit: isLit(index),
-            index: index
-          )
-          .position(x: center.x + offset.x * pitch, y: center.y + offset.y * pitch)
+            ForEach(Array(Self.outerOffsets.enumerated()), id: \.offset) { index, offset in
+              ring(diameter: diameter, lineWidth: lineWidth, lit: isLit(index), isCenter: false)
+                .position(x: center.x + offset.x * pitch, y: center.y + offset.y * pitch)
+            }
+          }
         }
-      }
+        // The centre is the one thing a single fill cannot say on its own, and
+        // it is load-bearing: six around one *is* the mark. Overlaid rather
+        // than folded into the mask so it keeps its own colour.
+        .overlay {
+          if let centerTint {
+            ring(diameter: diameter, lineWidth: lineWidth, lit: true, isCenter: true)
+              .foregroundStyle(centerTint)
+              .position(center)
+          }
+        }
     }
     .aspectRatio(1, contentMode: .fit)
     .onAppear(perform: start)
@@ -98,16 +125,19 @@ public struct DailyOSMark: View {
     .accessibilityHidden(true)
   }
 
+  /// Colourless on purpose — `fill` supplies the colour through the mask.
   @ViewBuilder
-  private func ring(diameter: CGFloat, lineWidth: CGFloat, color: Color, lit: Bool, index: Int) -> some View {
+  private func ring(diameter: CGFloat, lineWidth: CGFloat, lit: Bool, isCenter: Bool) -> some View {
     Group {
       switch style {
       case .rings:
         Circle()
-          .strokeBorder(color, lineWidth: lineWidth)
-          .background(Circle().fill(color.opacity(lit ? 0.22 : 0)))
+          .strokeBorder(.white, lineWidth: lineWidth)
+          // The wash inside a lit ring. In a mask this is alpha, so it comes
+          // out as the fill at 22% rather than as a grey disc.
+          .background(Circle().fill(.white.opacity(lit ? 0.22 : 0)))
       case .solid:
-        Circle().fill(color)
+        Circle().fill(.white)
       }
     }
       .frame(width: diameter, height: diameter)
@@ -116,6 +146,17 @@ public struct DailyOSMark: View {
       // Each ring animates on its own clock, so the sweep reads as six things
       // happening in order rather than one thing changing shape.
       .animation(.easeOut(duration: 0.42), value: lit)
+  }
+
+  /// One gradient across the whole mark, or one flat colour. The icon generator
+  /// passes a flat colour — an app icon already carries a gradient in its tile,
+  /// and a second one inside the glyph muddies both.
+  @ViewBuilder private var fill: some View {
+    if let gradient {
+      LinearGradient(gradient: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
+    } else {
+      tint
+    }
   }
 
   /// Which rings are drawn full strength.
