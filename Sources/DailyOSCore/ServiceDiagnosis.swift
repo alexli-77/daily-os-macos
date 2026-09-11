@@ -13,7 +13,7 @@ import Foundation
 ///
 /// Everything here is a local filesystem read. Nothing asks the network, which
 /// is the point — the network is the thing that already failed.
-public enum ServiceDiagnosis: Equatable {
+public enum ServiceDiagnosis: Equatable, Sendable {
   /// Nothing found anywhere. Most likely the service was never installed on
   /// this machine.
   case notFound
@@ -23,6 +23,9 @@ public enum ServiceDiagnosis: Equatable {
   /// It has run before and there is a runtime file, but nothing answered. The
   /// service is installed and stopped, or crashed.
   case notRunning(root: URL, isManagedByLaunchd: Bool)
+  /// The process exists and will not answer. On this platform that is almost
+  /// always one thing, and it is not a bug in the service.
+  case unresponsive(root: URL)
   /// Found, running, answering — a failure somewhere past discovery.
   case reachable
 
@@ -32,12 +35,26 @@ public enum ServiceDiagnosis: Equatable {
     return .notRunning(root: root, isManagedByLaunchd: ServiceSupervisor.isInstalled)
   }
 
+  /// Separate the service that is *gone* from the service that is *stuck*.
+  ///
+  /// Needs to ask launchd for a process id, which is why it is not folded into
+  /// `evaluate`. Worth the extra call: the two states look identical from the
+  /// app — nothing answers — and the advice for them has nothing in common.
+  public static func evaluateLive(root: URL?) async -> ServiceDiagnosis {
+    let base = evaluate(root: root)
+    guard case .notRunning(let root, _) = base, await ServiceSupervisor.runningPID() != nil else {
+      return base
+    }
+    return .unresponsive(root: root)
+  }
+
   /// One line, for a banner.
   public var headline: String {
     switch self {
     case .notFound: "这台电脑上没找到 daily-os 服务"
     case .neverStarted: "找到了服务，但它从来没启动过"
     case .notRunning: "服务装好了，但现在没在跑"
+    case .unresponsive: "服务在跑，但卡住了——多半是系统权限"
     case .reachable: "已连接"
     }
   }
@@ -69,9 +86,29 @@ public enum ServiceDiagnosis: Equatable {
         服务在 \(root.path(percentEncoded: false))，但没有装成后台任务，所以只有你手动开着的时候才活着。\
         在那个目录里跑 npm run service:install，之后它会开机自启，Daily OS 也能自己把它拉起来。
         """
+    case .unresponsive(let root):
+      """
+      服务进程在，端口也开着，但请求一直没有回应。这种「接得上、不回话」在 macOS 上几乎只有一个原因：\
+      它在读一个被系统隐私保护的目录（桌面、文稿、下载、iCloud），而权限还没给。\
+      这种情况下系统不会返回「没权限」，而是把这次读操作一直挂着——后台任务弹不出授权框，就永远等下去。
+
+      在「完全磁盘访问权限」里把 Daily OS 打开，然后重启服务。系统是按 App 记这个权限的，\
+      打开一次，App 带着的后台服务也跟着有权限。
+
+      日志在 \(root.path(percentEncoded: false))/logs/service.out.log；\
+      看看它最后停在哪一步，就知道卡在哪个目录。
+      """
     case .reachable:
       ""
     }
+  }
+
+  /// Whether to offer the System Settings shortcut. Only for the one state it
+  /// fixes — a permissions pane offered for a service that is not running at
+  /// all sends someone to flip a switch that was never the problem.
+  public var wantsFullDiskAccess: Bool {
+    if case .unresponsive = self { return true }
+    return false
   }
 
   /// Whether offering "手动指定文件夹" makes any sense. It does not when the
