@@ -167,30 +167,48 @@ private struct SectionList: View {
 /// exact failure this file was rewritten to remove — a plausible-looking config
 /// nobody configured.
 private struct LoadErrorPanel: View {
+  @Environment(AppState.self) private var state
   let store: SettingsStore
   let message: String
 
   var body: some View {
-    Panel("读不到服务的配置") {
+    // Titled by what is wrong, not by what this screen failed to do. "读不到
+    // 服务的配置" describes the symptom from the screen's own point of view and
+    // is equally true of four different problems — which is how someone on a
+    // machine with no service installed ended up being told to 指定服务文件夹.
+    Panel(state.serviceDiagnosis.headline) {
       VStack(alignment: .leading, spacing: Metrics.sm) {
-        Text(message)
+        Text(state.serviceDiagnosis.advice)
           .inkStyle()
-          .fixedSize(horizontal: false, vertical: true)
-        Text("这一屏的每一项都来自本机的 daily-os 服务。在服务能应答之前，这里不显示任何默认值——写死的示例配置比空白更容易被当成真的。")
-          .mutedStyle()
           .fixedSize(horizontal: false, vertical: true)
 
         PanelDivider()
 
-        Text("Daily OS 会自己找服务：先读 launchd 里登记的路径，再翻常见的代码目录，最后问 Spotlight。三条都没找到，才需要你出手。")
+        Text("Daily OS 会自己找服务：先读 launchd 里登记的路径，再翻常见的代码目录，最后问 Spotlight。")
           .mutedStyle()
           .fixedSize(horizontal: false, vertical: true)
         HStack(spacing: Metrics.xs) {
           Button("重新查找") { Task { await store.rediscoverService() } }
             .buttonStyle(MossButtonStyle())
-          Button("手动指定文件夹…") { Task { await store.pickServiceFolder() } }
-            .buttonStyle(MossButtonStyle(prominent: false))
+          // Offered only when there is plausibly another folder to point at.
+          // When the service simply has not been started, the folder is already
+          // right and picking it again would change nothing — a button that
+          // cannot help is worse than no button, because it gets tried first.
+          if state.serviceDiagnosis.wantsFolderPicker {
+            Button("手动指定文件夹…") { Task { await store.pickServiceFolder() } }
+              .buttonStyle(MossButtonStyle(prominent: false))
+          }
         }
+
+        PanelDivider()
+
+        // The transport's own sentence, kept but demoted. It is the precise
+        // thing that failed and it is worth having when the advice above turns
+        // out not to apply — but it is written for whoever wrote the client,
+        // not for whoever is standing at the machine.
+        Text("技术细节：\(message)")
+          .mutedStyle()
+          .fixedSize(horizontal: false, vertical: true)
       }
     } actions: {
       Button("重试") { Task { await store.load() } }.buttonStyle(QuietButtonStyle())

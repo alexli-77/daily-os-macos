@@ -127,8 +127,12 @@ private struct DisconnectedBanner: View {
     HStack(spacing: Metrics.xs) {
       Image(systemName: "bolt.horizontal.circle").foregroundStyle(Palette.warn)
       VStack(alignment: .leading, spacing: 1) {
-        Text("没有连接到 daily-os 服务").inkStyle(Typo.bodyStrong)
-        Text("所有页面都是空的——这里没有示例数据冒充你的内容。去设置里指定服务文件夹，或者让它再找一次。")
+        // Names which of the four failures this is. The sentence it replaced —
+        // "去设置里指定服务文件夹" — was a dead end on the machine it most
+        // needed to help: a teammate's Mac where the service had never been
+        // installed, so there was no folder to point at.
+        Text(state.serviceDiagnosis.headline).inkStyle(Typo.bodyStrong)
+        Text("所有页面都是空的——这里没有示例数据冒充你的内容。")
           .mutedStyle()
           .fixedSize(horizontal: false, vertical: true)
       }

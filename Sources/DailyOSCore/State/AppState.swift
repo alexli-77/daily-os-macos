@@ -59,6 +59,19 @@ open class AppState {
   // Transient
   public var toast: String?
 
+  /// Why the service cannot be reached, when it cannot.
+  ///
+  /// Lives on the store rather than being computed in the banner so that the
+  /// banner and the settings screen cannot disagree about it — they are two
+  /// views of one fact, and the version where they drift is the version where
+  /// one of them tells you to fix something the other already ruled out.
+  ///
+  /// `.reachable` in the shell: the fixture is always "connected". A live store
+  /// sets the real answer.
+  #if os(macOS)
+  public var serviceDiagnosis: ServiceDiagnosis = .reachable
+  #endif
+
   /// Which sections read real data.
   ///
   /// Defaults to everything, because the fixture backs every screen. A live

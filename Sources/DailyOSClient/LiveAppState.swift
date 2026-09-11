@@ -66,6 +66,10 @@ public final class LiveAppState: AppState {
     // the one line of the window that is supposed to say who you are.
     account = Account(id: "", displayName: "未连接", email: "", role: .owner, avatarSeed: "")
     viewingMemberID = ""
+    // Computed here, at the one moment the app knows it is disconnected, and
+    // from local filesystem reads only — the network is the thing that just
+    // failed, so asking it again would be the wrong question.
+    serviceDiagnosis = .evaluate(root: connection.repoRoot)
     // Nothing is wired, so no screen claims to be showing real data.
     wiredSections = []
   }
@@ -79,7 +83,11 @@ public final class LiveAppState: AppState {
     defer { isLoading = false }
 
     if !connection.state.isConnected { await connection.probe() }
-    guard connection.state.isConnected else { return }
+    guard connection.state.isConnected else {
+      clearForDisconnected()
+      return
+    }
+    serviceDiagnosis = .reachable
 
     // Who is *using* the app, restored from this machine's own record. Distinct
     // from the identity the cycle read sets below: that one is the team member
