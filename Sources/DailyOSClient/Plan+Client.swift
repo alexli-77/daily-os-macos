@@ -15,6 +15,14 @@ struct TodayPlanResponse: Decodable {
     let workflow: String
     /// The newest plan is from an earlier day — today's has not run yet.
     let stale: Bool
+    /// ISO-8601 timestamp of when this plan was generated. Absent on plans
+    /// written before the service exposed it.
+    let generatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+      case date, workflow, stale
+      case generatedAt = "generated_at"
+    }
   }
 
   struct Todo: Decodable {
@@ -40,11 +48,15 @@ public struct TodayPlan: Sendable, Equatable {
   /// Present when a plan exists but is not from today.
   public let staleDate: String?
   public let hasPlan: Bool
+  /// When the current plan was generated. Lets the badge say *which* day's plan
+  /// is on screen and at what time, so "已更新" can't be mistaken for today's.
+  public let generatedAt: Date?
 
-  public init(items: [TodoItem], staleDate: String?, hasPlan: Bool) {
+  public init(items: [TodoItem], staleDate: String?, hasPlan: Bool, generatedAt: Date? = nil) {
     self.items = items
     self.staleDate = staleDate
     self.hasPlan = hasPlan
+    self.generatedAt = generatedAt
   }
 }
 
@@ -77,7 +89,8 @@ extension DailyOSClient {
     return TodayPlan(
       items: items,
       staleDate: plan.stale ? plan.date : nil,
-      hasPlan: true
+      hasPlan: true,
+      generatedAt: plan.generatedAt.flatMap(TodoWireDate.timestamp)
     )
   }
 
