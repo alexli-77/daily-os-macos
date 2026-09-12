@@ -60,6 +60,7 @@ public final class LiveAppState: AppState {
     teamSync = nil
     hasPlan = false
     planStaleDate = nil
+    planGeneratedAt = nil
     selectedCycleID = nil
     selectedRunID = nil
     selectedArtifactID = nil
@@ -175,6 +176,7 @@ public final class LiveAppState: AppState {
       let plan = try await client.todayPlan()
       self.plan = plan.items
       self.planStaleDate = plan.staleDate
+      self.planGeneratedAt = plan.generatedAt
       self.hasPlan = plan.hasPlan
     }
 
@@ -453,7 +455,14 @@ public final class LiveAppState: AppState {
       // going; either way this stops claiming to know. Clearing the note is
       // what returns 重新生成 to the user rather than leaving them locked out
       // of the one button that could try again.
-      self?.planRunStartedAt = nil
+      //
+      // But don't clear it *silently*: a run that failed on the backend (a CLI
+      // provider that never returns, an empty output that was rejected) looks
+      // identical to "nothing happened", and the user is left staring at
+      // yesterday's plan with no idea the rerun died. Say so, and point at Runs.
+      guard !Task.isCancelled, let self else { return }
+      self.planRunStartedAt = nil
+      self.toast = "daily_plan 这次没跑出新计划（可能失败或仍在跑）。当前仍是之前那份——去 Runs 看这次运行的结果。"
     }
   }
 

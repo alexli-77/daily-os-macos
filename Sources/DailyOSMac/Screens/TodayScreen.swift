@@ -563,8 +563,14 @@ private struct PlanPanel: View {
   /// from the wrong day without ever being told.
   private var badge: (text: String, tone: Tone)? {
     guard !state.plan.isEmpty else { return nil }
-    if let stale = state.planStaleDate { return ("还是 \(stale) 的", .warn) }
-    return ("已更新", .ok)
+    // "9月11日 08:30" for an older plan, "08:30" for one generated today. The
+    // whole point of #2: "已更新" never said *which day*, so a plan a day behind
+    // read as today's. Now the badge names the generation moment.
+    let when = state.planGeneratedAt.map { Fmt.stamp($0) }
+    if let stale = state.planStaleDate {
+      return (when.map { "还是 \($0) 的" } ?? "还是 \(stale) 的", .warn)
+    }
+    return (when.map { "今天 \($0) 生成" } ?? "已更新", .ok)
   }
 
   /// Which edge of row `index` should show the insertion line, if any.

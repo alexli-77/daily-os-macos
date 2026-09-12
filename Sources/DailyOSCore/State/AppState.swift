@@ -52,6 +52,9 @@ open class AppState {
   /// plan, and quietly presenting it as today's is how someone works a day
   /// behind without noticing.
   public var planStaleDate: String?
+  /// When the plan currently on screen was generated. Drives the badge's
+  /// "MM-dd HH:mm 生成" so a plan can never read as today's without saying when.
+  public var planGeneratedAt: Date?
   /// False when no `daily_plan` has ever run, which wants a different empty
   /// state from "ran and produced nothing".
   public var hasPlan = true
