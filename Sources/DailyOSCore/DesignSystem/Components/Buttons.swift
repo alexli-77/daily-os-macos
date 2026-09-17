@@ -16,24 +16,28 @@ public struct MossButtonStyle: ButtonStyle {
   }
 
   public func makeBody(configuration: Configuration) -> some View {
-    let accent = Palette.foreground(for: tone)
+    // A prominent button is a tinted block with ink on it, not a dark block with
+    // white on it. The old version filled with the accent and wrote `Color.white`
+    // — a hardcoded colour, in the one palette rule that has no exceptions:
+    // nothing in light mode is white-on-dark. `mint200` + `mint800` is what the
+    // token table says a primary button is, and it reads as part of the paper
+    // rather than as a sticker pressed onto it.
+    let shape = RoundedRectangle(cornerRadius: Metrics.radiusPaper, style: .continuous)
     return configuration.label
       .font(Typo.body.weight(.medium))
-      .foregroundStyle(prominent ? Color.white : accent)
+      .foregroundStyle(Palette.foreground(for: tone))
       .padding(.horizontal, Metrics.sm)
       .frame(minHeight: Metrics.hitTarget)
       .background {
-        RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous)
-          .fill(prominent ? accent : Palette.surface)
+        shape.fill(prominent ? Palette.softBackground(for: tone) : Palette.page)
       }
       .overlay {
         if !prominent {
-          RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous)
-            .strokeBorder(Palette.line, lineWidth: Metrics.hairline)
+          shape.strokeBorder(Palette.rule, lineWidth: Metrics.hairline)
         }
       }
       .opacity(configuration.isPressed ? 0.72 : 1)
-      .contentShape(RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
+      .contentShape(shape)
   }
 }
 

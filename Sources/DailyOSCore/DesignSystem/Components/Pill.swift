@@ -102,9 +102,12 @@ public struct ProgressTrack: View {
   public var body: some View {
     GeometryReader { geo in
       ZStack(alignment: .leading) {
-        Capsule().fill(Palette.surfaceSunken)
+        Capsule().fill(Palette.paper)
         Capsule()
-          .fill(Palette.foreground(for: tone))
+          // `fill`, not `foreground`: this is a solid bar, not text. With the
+          // mint ramp those are `mint400` and `mint800` — a progress bar drawn
+          // in the text colour comes out nearly black.
+          .fill(Palette.fill(for: tone))
           .frame(width: max(geo.size.width * fraction, fraction > 0 ? 4 : 0))
       }
     }

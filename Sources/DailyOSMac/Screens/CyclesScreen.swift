@@ -610,12 +610,15 @@ private struct PriorityRow: View {
         state.setPriorityStatus(cycleID: cycle.id, line: item.sourceLine, to: status)
       }
       if item.isMIT {
+        // Three letters in `q1`, no fill. It was a white-on-`danger` capsule,
+        // which said two wrong things at once: nothing in this palette is
+        // white-on-dark, and `danger` is the colour of something being broken —
+        // the most important task of the day is not a fault report.
         Text("MIT")
-          .font(Typo.label)
-          .foregroundStyle(.white)
-          .padding(.horizontal, Metrics.xs)
-          .padding(.vertical, 2)
-          .background(Palette.danger, in: Capsule())
+          .font(Typo.caption)
+          .bold()
+          .kerning(0.96)
+          .foregroundStyle(Palette.q1)
       }
       Text(item.text)
         .font(Typo.body)
@@ -776,7 +779,7 @@ private struct NewCycleSheet: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       Text("创建新周期")
-        .inkStyle(Typo.title)
+        .inkStyle(Typo.heading)
         .padding(Metrics.md)
       Divider()
 

@@ -41,7 +41,7 @@ public struct Panel<Content: View, Actions: View>: View {
             // progress — and a status that drifts to the far right reads as one
             // more control rather than as part of the heading.
             HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
-              if let title { Text(title).inkStyle(Typo.title) }
+              if let title { Text(title).inkStyle(Typo.heading) }
               if let badge { Pill(badge, tone: badgeTone) }
             }
             if let subtitle { Text(subtitle).mutedStyle() }
