@@ -472,6 +472,16 @@ open class AppState {
     .unsupported("这一版没有连接到服务。")
   }
 
+  /// Pull teammates' data now instead of waiting for the service's next
+  /// 60 s tick, then re-read everything so the screens show it.
+  ///
+  /// Exists because the app only reloads at launch and after its own writes.
+  /// The service may have had a teammate's plan on disk for an hour while the
+  /// panel still said "还没有收到" — and there was nothing on screen to press.
+  open func syncTeamNow() async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
   /// Create the next cycle. Every field is optional; the service fills the rest
   /// from the previous cycle.
   open func createCycle(_ request: NewCycleRequest) async -> ActionOutcome {
