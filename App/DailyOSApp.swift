@@ -75,6 +75,22 @@ struct DailyOSApp: App {
           await connect()
         }
       }
+      // Coming back to the app is the strongest signal there is that somebody
+      // is about to read the screen, and it is the one moment the minute poll
+      // cannot help with: the teammate's plan may have been on disk since
+      // before the app lost focus, and the next tick could be 59 seconds away.
+      //
+      // The *app* becoming active rather than the window becoming key: the menu
+      // bar item is a window too, so `didBecomeKeyNotification` fires every time
+      // the companion popover opens and closes — a refresh per glance at the
+      // menu bar, which is not what "came back to the app" means.
+      //
+      // Throttled and skipped-while-disconnected inside `refreshTeamQuietly`
+      // rather than here, so this and the poll share one floor instead of
+      // double-firing when they land together.
+      .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+        Task { await state?.refreshTeamQuietly() }
+      }
     }
     .defaultSize(width: 1_080, height: 720)
     .commands {
@@ -108,8 +124,16 @@ struct DailyOSApp: App {
     if state == nil { state = LiveAppState(connection: connection) }
     if connection.state.isConnected {
       await state?.reload()
+      // Started and stopped here, in the one function that decides whether
+      // there is a service to talk to. `.task(id:)` re-runs this when the
+      // folder changes and the settings notification calls it again, so a
+      // reconnect restarts the poll without anything else having to know it
+      // exists — and a disconnect can never leave a timer asking a service
+      // that is not there.
+      state?.startTeamAutoRefresh()
     } else {
       state?.clearForDisconnected()
+      state?.stopTeamAutoRefresh()
     }
   }
 }

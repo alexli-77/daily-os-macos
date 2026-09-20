@@ -205,6 +205,12 @@ public final class LiveAppState: AppState {
     await load("服务状态") {
       self.service = try await client.serviceStatus()
     }
+
+    // A full reload has just re-read everything a quiet refresh would, so the
+    // floor starts from here as well. Without this, the window coming to the
+    // front one second after launch — which is exactly what happens at launch —
+    // fired a second pair of requests for data that had just arrived.
+    lastTeamRefreshAt = .now
   }
 
   /// Run one read, attributing any failure to the thing that failed.
@@ -409,6 +415,14 @@ public final class LiveAppState: AppState {
 
   public override func syncTeamNow() async -> ActionOutcome {
     guard let client else { return .failed("没有连接到服务。") }
+    // Claim the same flag the quiet refresh uses, for the whole tick *and* the
+    // reload after it. The button and the poll ask the service for the same
+    // thing; while the loud one is running the quiet one has nothing to add and
+    // would only race the reload below for the same fields. The reload's own
+    // stamp then keeps the poll and the focus path quiet for the floor after
+    // this returns, so pressing 更新 never produces two refreshes.
+    isRefreshingTeam = true
+    defer { isRefreshingTeam = false }
     struct Empty: Encodable {}
     do {
       // One tick: push what changed here, pull what changed there. The
@@ -423,6 +437,104 @@ public final class LiveAppState: AppState {
     if let sync = teamTodaySync, !sync.lastError.isEmpty { return .failed(sync.lastError) }
     if let sync = teamTodaySync, !sync.isReady { return .failed(sync.reason.isEmpty ? "团队同步未就绪。" : sync.reason) }
     return .ok("已更新")
+  }
+
+  // MARK: - Team data, without being asked
+  //
+  // The 更新 button was a stopgap for a real hole: this app only re-read at
+  // launch and after its own writes, so the service could have had a teammate's
+  // plan on disk for an hour while the panel still said "还没有收到 TA 的今日
+  // 计划". Pressing a button is not a fix — you have to already know there is
+  // something to press it for, which is the one thing the screen was failing to
+  // tell you.
+
+  /// The poll that keeps teammates' data current while the app is connected.
+  ///
+  /// Held rather than fired and forgotten so that it can be cancelled on
+  /// disconnect and so there can never be a second one running beside it.
+  private var teamPoll: Task<Void, Never>?
+
+  /// When team data was last re-read, by any path: the poll, the window coming
+  /// to the front, the 更新 button, or a full `reload()`. One stamp shared by
+  /// all four is what stops two of them firing for the same event.
+  private var lastTeamRefreshAt: ContinuousClock.Instant?
+
+  /// True while a refresh is in flight, loud or quiet.
+  private var isRefreshingTeam = false
+
+  // There is no `deinit` cancelling `teamPoll`, and it is not an oversight:
+  // this class is `@MainActor`, `deinit` is not, and Swift 6 will not let a
+  // nonisolated deinit touch an isolated stored property. What takes its place
+  // is the `[weak self]` in the loop below — the task cannot keep this store
+  // alive, and it returns at its next tick once the store is gone. The window
+  // that owns it is the app's only window, so the gap is theoretical; what is
+  // not theoretical is a disconnect, and that is cancelled explicitly.
+
+  /// Start refreshing team data every minute.
+  ///
+  /// Idempotent: called again while a poll is running, it does nothing rather
+  /// than starting a second loop. `DailyOSApp.connect()` is the only caller, and
+  /// it is also the only place that decides connected-or-not — a poll that could
+  /// be started from two places is a poll that eventually runs twice.
+  public func startTeamAutoRefresh() {
+    guard teamPoll == nil else { return }
+    teamPoll = Task { [weak self] in
+      while !Task.isCancelled {
+        // Sleep first. `connect()` has just finished a full reload, so asking
+        // immediately would re-read data that is one second old.
+        try? await Task.sleep(for: TeamRefreshPolicy.interval)
+        // `weak`, so a closed window's store is not kept alive by its own timer.
+        guard !Task.isCancelled, let self else { return }
+        await self.refreshTeamQuietly()
+      }
+    }
+  }
+
+  /// Stop polling. Called when the connection goes away; starting again on
+  /// reconnect is `connect()`'s job.
+  public func stopTeamAutoRefresh() {
+    teamPoll?.cancel()
+    teamPoll = nil
+  }
+
+  /// Re-read what teammates own, and only that.
+  ///
+  /// Narrow on purpose rather than calling `reload()`. Three reasons, in order
+  /// of how much they cost: `reload()` fetches `/api/state`, which re-runs the
+  /// service's doctor checks on every call and was measured at 430–745 ms, to
+  /// answer a question about a teammate's plan; it repairs `selectedCycleID`,
+  /// which is the user's selection and not a background task's to move; and it
+  /// rewrites `plan` and `todos`, which carry optimistic edits that may be in
+  /// flight right now — landing an older copy of a row the user just ticked
+  /// would take their click away with no explanation.
+  ///
+  /// What is left is two plain disk reads on the service side. `/api/team/today`
+  /// and `/api/cycles/state` both project files the 60 s sync loop already wrote;
+  /// neither talks to the network. `/api/cycles/state` also carries your own
+  /// cycles and they are thrown away here — it is still the cheapest way to get
+  /// teammates' cycles and the roster, and one endpoint means one round trip.
+  ///
+  /// Quiet means quiet: no toast, no spinner, and failures are swallowed. A
+  /// refresh nobody asked for must not paint an error over the screen somebody
+  /// is working on, and it has a next attempt a minute away. The 更新 button
+  /// stays the loud path, and it is the one that reports.
+  public func refreshTeamQuietly() async {
+    guard let client, connection.state.isConnected else { return }
+    guard !isLoading, !isRefreshingTeam else { return }
+    guard TeamRefreshPolicy.isDue(since: lastTeamRefreshAt, now: .now) else { return }
+    isRefreshingTeam = true
+    defer { isRefreshingTeam = false }
+    // Stamped before the awaits, not after: a read that hangs must still hold
+    // the floor, or every focus event during it queues up behind the flag and
+    // fires the moment it clears.
+    lastTeamRefreshAt = .now
+
+    if let team = try? await client.teamToday() {
+      applyTeamToday(entries: team.entries, sync: team.sync)
+    }
+    if let result = try? await client.cycles() {
+      applyTeamCycles(members: result.members, cycles: result.teammates, sync: result.sync)
+    }
   }
 
   // MARK: - Today's plan, on demand

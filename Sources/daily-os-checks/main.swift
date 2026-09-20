@@ -464,6 +464,119 @@ check(fingerprint(sameRows) != fingerprint([("a", "写 PR", 45)]), "少一条算
 check(fingerprint([]) != fingerprint([], hasPlan: false), "从没跑过和跑出空计划是两回事")
 check(fingerprint(sameRows) != fingerprint(sameRows, stale: "9月10日"), "昨天的计划和今天的不是同一份")
 
+// 11i. 自动刷新的节流下限
+//
+// The window-focus refresh and the 60 s poll share one floor. Getting it wrong
+// costs nothing visible — you would simply send more requests than intended,
+// forever, and never notice — so the boundary is asserted here rather than left
+// to a reading of the code.
+let refreshedAt = ContinuousClock.now
+check(TeamRefreshPolicy.isDue(since: nil, now: refreshedAt), "从没刷新过，必须放行")
+check(!TeamRefreshPolicy.isDue(since: refreshedAt, now: refreshedAt), "同一瞬间的第二次请求要挡掉")
+check(!TeamRefreshPolicy.isDue(since: refreshedAt, now: refreshedAt.advanced(by: .seconds(9))),
+      "不到下限不再发请求——来回切窗口不能变成一次切换一次请求")
+check(TeamRefreshPolicy.isDue(since: refreshedAt, now: refreshedAt.advanced(by: TeamRefreshPolicy.floor)),
+      "刚好到下限要放行，否则边界上永远差一次")
+// Negative elapsed time is not hypothetical: `ContinuousClock` is monotonic, but
+// a stamp taken before a rewrite of this logic, or a future caller passing a
+// different clock, would make it so. Refusing is the safe direction — the poll
+// asks again in a minute regardless.
+check(!TeamRefreshPolicy.isDue(since: refreshedAt, now: refreshedAt.advanced(by: .seconds(-30))),
+      "时间倒流时宁可不刷新")
+// A poll period shorter than the floor would be a poll that throttles itself:
+// every other tick silently dropped, and the advertised 60 s becomes 120 s.
+check(TeamRefreshPolicy.interval >= TeamRefreshPolicy.floor, "轮询周期不能短于节流下限")
+
+// 11j. 后台刷新只许碰队友那一半
+//
+// The rule the auto-refresh rests on: a refresh nobody asked for must not
+// revert an optimistic edit, must not move the selection, and must not talk.
+// It is a rule about *which fields get written*, so it is checked as one.
+@MainActor
+func teammateCycle(id: String, owner: String) -> Cycle {
+  Cycle(
+    id: id,
+    label: id,
+    mode: .biweekly,
+    start: .now,
+    end: .now,
+    ownerId: owner,
+    runId: nil,
+    sections: [],
+    updatedAt: .now
+  )
+}
+
+@MainActor
+func roster(_ ids: [String], selfId: String) -> [TeamMember] {
+  ids.map { TeamMember(id: $0, displayName: $0, avatarSeed: $0, isSelf: $0 == selfId, lastSyncedAt: nil) }
+}
+
+let readySync = TeamSyncState(status: "ready", reason: "", syncedAt: nil, lastError: "")
+
+let untouched = AppState.previewOwner()
+let heldPlan = untouched.plan
+let heldTodos = untouched.todos
+let heldCycles = untouched.cycles
+let heldSelection = untouched.selectedCycleID
+untouched.applyTeamToday(
+  entries: [TeamTodayEntry(id: "u_partner", displayName: "partner", items: [], staleDate: nil, hasPlan: false, updatedAt: nil)],
+  sync: readySync
+)
+untouched.applyTeamCycles(
+  members: roster(["u_demo", "u_partner"], selfId: "u_demo"),
+  cycles: [teammateCycle(id: "p_new", owner: "u_partner")],
+  sync: readySync
+)
+check(untouched.plan == heldPlan, "后台刷新不能改今日计划——那里有还没落地的乐观勾选")
+check(untouched.todos == heldTodos, "后台刷新不能改收件箱")
+check(untouched.cycles == heldCycles, "后台刷新不能改自己的周期——编辑器就开在上面")
+check(untouched.selectedCycleID == heldSelection, "后台刷新不能动选中项")
+check(untouched.toast == nil, "安静刷新就是安静：不弹 toast")
+check(untouched.partnerCycles.map(\.id) == ["p_new"], "队友的周期确实换上了新的")
+check(untouched.teamToday.count == 1, "队友的今日计划确实换上了新的")
+
+// The roster moves with the cycles, but not when moving it would pull the
+// member being viewed out from under the picker — a segmented control whose
+// selection matches no tag renders as nothing selected, which reads as the app
+// losing its place while you were looking at it.
+let viewingPartner = AppState.previewOwner()
+viewingPartner.viewingMemberID = "u_partner"
+viewingPartner.applyTeamCycles(
+  members: roster(["u_demo"], selfId: "u_demo"),
+  cycles: [],
+  sync: readySync
+)
+check(viewingPartner.members.contains { $0.id == "u_partner" }, "正在看的成员不能被后台刷新从名单里删掉")
+viewingPartner.applyTeamCycles(
+  members: roster(["u_demo", "u_partner", "u_third"], selfId: "u_demo"),
+  cycles: [],
+  sync: readySync
+)
+check(viewingPartner.members.count == 3, "名单里还有正在看的那个人时，要接受新名单")
+
+// 11k. 看队友时只看这一个队友
+//
+// `partnerCycles` is every teammate's cycles flattened into one list, so
+// returning it whole showed *everybody's* cycles under whichever name was
+// picked. Two people is exactly the size at which that is invisible: one other
+// name, and the unfiltered answer happens to be right.
+@MainActor
+func visibleIDs(viewing: String, owners: [(String, String)]) -> [String] {
+  let state = AppState.previewOwner()
+  state.partnerCycles = owners.map { teammateCycle(id: $0.0, owner: $0.1) }
+  state.viewingMemberID = viewing
+  return state.visibleCycles.map(\.id)
+}
+let threePerson = [("p_a", "u_a"), ("p_b", "u_b")]
+check(visibleIDs(viewing: "u_a", owners: threePerson) == ["p_a"], "看 A 就只看 A 的周期")
+check(visibleIDs(viewing: "u_b", owners: threePerson) == ["p_b"], "看 B 就只看 B 的周期")
+check(visibleIDs(viewing: "u_gone", owners: threePerson).isEmpty, "看一个没有周期的人，答案是空，不是别人的")
+// Self is still self: the filter must not leak into the owner's own list, which
+// is keyed on `account.id` and not on any cycle's `ownerId`.
+check(AppState.previewOwner().visibleCycles.map(\.id) == AppState.previewOwner().cycles.map(\.id),
+      "看自己时还是自己的全部周期")
+
 // MARK: - What this harness cannot cover
 //
 // Written down rather than left implicit, because a green run is read as "the
@@ -492,7 +605,7 @@ check(fingerprint(sameRows) != fingerprint(sameRows, stale: "9月10日"), "昨�
 // build Release, install, and drive the app.
 
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 回归集")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 回归集")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")
