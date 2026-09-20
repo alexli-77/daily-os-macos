@@ -58,6 +58,8 @@ public final class LiveAppState: AppState {
     sources = []
     members = []
     teamSync = nil
+    teamToday = []
+    teamTodaySync = nil
     hasPlan = false
     planStaleDate = nil
     planGeneratedAt = nil
@@ -178,6 +180,15 @@ public final class LiveAppState: AppState {
       self.planStaleDate = plan.staleDate
       self.planGeneratedAt = plan.generatedAt
       self.hasPlan = plan.hasPlan
+    }
+
+    await load("团队今天") {
+      // Same cache the Cycles screen's teammate view reads; a teammate who has
+      // not pushed a plan yet still comes back, with no items, so the panel can
+      // say "还没收到" instead of dropping them.
+      let team = try await client.teamToday()
+      self.teamToday = team.entries
+      self.teamTodaySync = team.sync
     }
 
     await load("产物") {

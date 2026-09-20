@@ -139,6 +139,35 @@ public struct TeamMember: Sendable, Equatable, Identifiable {
   }
 }
 
+/// One teammate's plan for today, as their machine last pushed it.
+///
+/// Read-only by construction: there is no id to tick against on this side,
+/// and the service refuses any write that names another owner. `items` is the
+/// same shape as `AppState.plan` so the Today screen can draw both lists with
+/// one row type, but a state here is *their* tick, not yours.
+public struct TeamTodayEntry: Sendable, Equatable, Identifiable {
+  /// The member's uuid, never a display label (labels are renameable).
+  public let id: String
+  public var displayName: String
+  public var items: [TodoItem]
+  /// Present when their newest plan is from an earlier day — their morning run
+  /// hasn't happened yet. `nil` with an empty `items` means nothing has ever
+  /// arrived for this member.
+  public var staleDate: String?
+  public var hasPlan: Bool
+  /// When their machine last pushed this plan.
+  public var updatedAt: Date?
+
+  public init(id: String, displayName: String, items: [TodoItem], staleDate: String?, hasPlan: Bool, updatedAt: Date?) {
+    self.id = id
+    self.displayName = displayName
+    self.items = items
+    self.staleDate = staleDate
+    self.hasPlan = hasPlan
+    self.updatedAt = updatedAt
+  }
+}
+
 // MARK: - Cycles
 
 public enum CycleMode: String, Sendable, CaseIterable {

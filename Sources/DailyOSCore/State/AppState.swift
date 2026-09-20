@@ -25,6 +25,10 @@ open class AppState {
   public var cycles: [Cycle]
   public var partnerCycles: [Cycle]
   public var plan: [TodoItem]
+  /// Teammates' plans for today, from the service's sync cache. Empty when
+  /// team sync is off or nobody else has joined; `teamTodaySync` says which.
+  public var teamToday: [TeamTodayEntry]
+  public var teamTodaySync: TeamSyncState?
   public var todos: [TodoItem]
   public var okrFiles: [OkrFile]
   public var runs: [WorkflowRun]
@@ -128,6 +132,8 @@ open class AppState {
     cycles = MockData.cycles
     partnerCycles = MockData.partnerCycles
     plan = MockData.plan
+    teamToday = MockData.teamToday
+    teamTodaySync = MockData.teamSync
     todos = MockData.todos
     okrFiles = MockData.okrFiles
     runs = MockData.runs

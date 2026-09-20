@@ -234,6 +234,21 @@ public enum MockData {
     TodoItem(id: "p4", text: "读半小时论文", kind: .habit, estimatedMinutes: 30),
   ]
 
+  public static let teamToday: [TeamTodayEntry] = [
+    TeamTodayEntry(
+      id: "u_partner",
+      displayName: "partner",
+      items: [
+        TodoItem(id: "q1", text: "完成两轮海外创作者触达", kind: .priority, state: .done, sourceRef: "CUTTO-1038"),
+        TodoItem(id: "q2", text: "整理本周投放数据", kind: .priority, state: .open, sourceRef: "CUTTO-1041"),
+        TodoItem(id: "q3", text: "和设计对一版落地页", kind: .priority, state: .deferred),
+      ],
+      staleDate: nil,
+      hasPlan: true,
+      updatedAt: minutesAgo(12)
+    ),
+  ]
+
   public static let todos: [TodoItem] = [
     TodoItem(id: "t1", text: "回复上周期的 review 评论", kind: .priority, state: .open),
     TodoItem(id: "t2", text: "把 vault 里的散记归档", kind: .habit, state: .open),

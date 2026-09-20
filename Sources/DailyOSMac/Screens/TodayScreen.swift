@@ -27,6 +27,7 @@ struct TodayScreen: View {
       } trailing: {
         TodoPanel(selectedID: $selectedTaskID)
       }
+      TeamTodayPanel()
     } toolbar: {
       // The header's right half has been empty since the dashboard tiles left
       // it, and the weather is the one thing that belongs in a morning screen
@@ -39,6 +40,124 @@ struct TodayScreen: View {
     let date = Fmt.dayHeading()
     guard let cycle = state.currentCycle else { return date }
     return "\(date) · 当前周期 \(Fmt.cycleTitle(cycle))"
+  }
+}
+
+// MARK: - Team today
+
+/// What the rest of the team is doing today.
+///
+/// Read-only on purpose, and visibly so: no check circles, no actions, no
+/// selection. These rows are someone else's ticks, pulled from the service's
+/// sync cache a minute at a time, and a row that looked tickable here would
+/// invite an action the service refuses anyway.
+///
+/// Rendered whenever team sync is configured, even with nobody else in the
+/// team — a panel that disappears when there is nothing to show makes "sync is
+/// off" and "sync is on and quiet" look identical, which is the confusion the
+/// Cycles screen already had to fix once.
+private struct TeamTodayPanel: View {
+  @Environment(AppState.self) private var state
+
+  var body: some View {
+    // Not configured at all is the one case worth hiding: most installs never
+    // set Supabase up, and a permanent "团队同步未启用" on the morning screen is
+    // a nag about a feature they did not ask for.
+    if let sync = state.teamTodaySync, sync.status != "disabled" {
+      Panel("团队今天", subtitle: subtitle(for: sync), badge: "只读", badgeTone: .neutral) {
+        VStack(alignment: .leading, spacing: Metrics.sm) {
+          if let error = nonEmpty(sync.lastError) {
+            Text(error).mutedStyle()
+          }
+          if sync.status != "ready" {
+            Text(sync.reason.isEmpty ? "团队同步还没就绪。" : sync.reason).mutedStyle()
+          } else if state.teamToday.isEmpty {
+            Text("团队里还没有其他成员。").mutedStyle()
+          } else {
+            ForEach(state.teamToday) { entry in
+              TeamTodayMember(entry: entry)
+            }
+          }
+        }
+      } actions: {
+        EmptyView()
+      }
+    }
+  }
+
+  private func subtitle(for sync: TeamSyncState) -> String {
+    guard let syncedAt = sync.syncedAt else { return "队友各自机器上的今日计划" }
+    return "队友各自机器上的今日计划 · 最近同步 \(Fmt.stamp(syncedAt))"
+  }
+
+  private func nonEmpty(_ text: String) -> String? {
+    text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
+  }
+}
+
+private struct TeamTodayMember: View {
+  let entry: TeamTodayEntry
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Metrics.xs) {
+      HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
+        Text(entry.displayName).inkStyle(Typo.heading)
+        if let stale = entry.staleDate {
+          // Same distinction the plan panel draws for your own list: a plan
+          // from an earlier day looks exactly like today's, and the only way
+          // to tell is to be told.
+          Pill("还是 \(stale) 的", tone: .warn)
+        } else if let updatedAt = entry.updatedAt {
+          Text("TA 的机器 \(Fmt.stamp(updatedAt)) 推送").mutedStyle()
+        }
+      }
+      if !entry.hasPlan {
+        Text("还没有收到 TA 的今日计划。").mutedStyle()
+      } else if entry.items.isEmpty {
+        Text("这份计划没有待办条目。").mutedStyle()
+      } else {
+        VStack(spacing: 2) {
+          ForEach(Array(entry.items.enumerated()), id: \.element.id) { index, item in
+            TeamTodayRow(item: item, rank: index + 1)
+          }
+        }
+      }
+    }
+  }
+}
+
+/// A plan row with the tick and the actions taken away.
+///
+/// Not `TaskRow` with `onToggleCheck: nil`: that still hovers, still selects,
+/// still listens for the action keys, and every one of those is a promise this
+/// row cannot keep. What is kept is the importance stripe and the strikethrough,
+/// so the list reads the same way your own does.
+private struct TeamTodayRow: View {
+  let item: TodoItem
+  let rank: Int
+
+  private var importance: PlanImportance { .forRank(rank) }
+  private var isResolved: Bool { item.state != .open }
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
+      ImportanceStripe(importance: importance, isResolved: isResolved)
+      Text(item.text)
+        .inkStyle()
+        .strikethrough(item.state == .done, color: Palette.inkMuted)
+        .foregroundStyle(isResolved ? Palette.inkMuted : Palette.ink)
+        .fixedSize(horizontal: false, vertical: true)
+      Spacer(minLength: Metrics.xs)
+      if item.state == .done {
+        Pill("已完成", tone: .ok)
+      } else if item.state == .deferred {
+        Pill("已延期", tone: .warn)
+      }
+      if let minutes = item.estimatedMinutes {
+        Text("\(minutes) 分钟").mutedStyle()
+      }
+    }
+    .padding(.vertical, Metrics.xxs)
   }
 }
 
