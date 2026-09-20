@@ -81,9 +81,11 @@ private struct TeamTodayPanel: View {
           }
         }
       } actions: {
-        // The service pulls every minute on its own; this is for the moment
-        // you know she has just pushed and do not want to wait for it, and
-        // for the app, which otherwise only re-reads at launch.
+        // No longer the only way to see a teammate's plan — the app re-reads
+        // when it comes to the front and once a minute after that. What is left
+        // is the thing waiting cannot do: this runs a sync *tick*, so it beats
+        // the service's own 60 s loop rather than the app's re-read of what
+        // that loop already wrote. For the moment you know she just pushed.
         Button(isSyncing ? "更新中…" : "更新", action: syncNow)
           .buttonStyle(QuietButtonStyle())
           .disabled(isSyncing)

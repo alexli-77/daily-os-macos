@@ -162,8 +162,17 @@ open class AppState {
   /// from the sync cache and are never editable — the read-only guarantee is
   /// enforced by the service and the database, and mirrored here so the UI
   /// cannot even offer the control.
+  ///
+  /// Filtered by owner, not returned whole. `partnerCycles` is every teammate's
+  /// cycles flattened into one list — the client builds it by walking
+  /// `team.members[].cycles` — so returning it unfiltered showed *everybody's*
+  /// cycles under whichever teammate you had picked. Invisible on a two-person
+  /// team, where the switcher has exactly one other name in it and the unfiltered
+  /// answer happens to be the right one; wrong the moment a third person joins,
+  /// and wrong in the way that matters least visibly, since a list of somebody
+  /// else's cycles still looks like a list of cycles.
   public var visibleCycles: [Cycle] {
-    isViewingSelf ? cycles : partnerCycles
+    isViewingSelf ? cycles : partnerCycles.filter { $0.ownerId == viewingMemberID }
   }
 
   public var selectedCycle: Cycle? {
@@ -475,9 +484,11 @@ open class AppState {
   /// Pull teammates' data now instead of waiting for the service's next
   /// 60 s tick, then re-read everything so the screens show it.
   ///
-  /// Exists because the app only reloads at launch and after its own writes.
-  /// The service may have had a teammate's plan on disk for an hour while the
-  /// panel still said "还没有收到" — and there was nothing on screen to press.
+  /// Still worth its button now that the app refreshes on its own, because the
+  /// two do different things: the background refresh re-reads the cache the
+  /// service's own loop has already written, and this makes that loop run. It
+  /// is the only path that can beat the *service's* 60 s tick rather than the
+  /// app's — for the moment you know the other person has just pushed.
   open func syncTeamNow() async -> ActionOutcome {
     .unsupported("这一版没有连接到服务。")
   }
