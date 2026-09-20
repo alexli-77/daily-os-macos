@@ -58,6 +58,7 @@ struct TodayScreen: View {
 /// Cycles screen already had to fix once.
 private struct TeamTodayPanel: View {
   @Environment(AppState.self) private var state
+  @State private var isSyncing = false
 
   var body: some View {
     // Not configured at all is the one case worth hiding: most installs never
@@ -80,7 +81,26 @@ private struct TeamTodayPanel: View {
           }
         }
       } actions: {
-        EmptyView()
+        // The service pulls every minute on its own; this is for the moment
+        // you know she has just pushed and do not want to wait for it, and
+        // for the app, which otherwise only re-reads at launch.
+        Button(isSyncing ? "更新中…" : "更新", action: syncNow)
+          .buttonStyle(QuietButtonStyle())
+          .disabled(isSyncing)
+          .help("现在拉一次队友的计划和周期，然后刷新这一页。")
+      }
+    }
+  }
+
+  private func syncNow() {
+    guard !isSyncing else { return }
+    isSyncing = true
+    Task {
+      let outcome = await state.syncTeamNow()
+      isSyncing = false
+      switch outcome {
+      case .ok(let message): state.toast = message
+      case .failed(let why), .unsupported(let why): state.toast = why
       }
     }
   }

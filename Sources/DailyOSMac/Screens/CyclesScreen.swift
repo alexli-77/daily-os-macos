@@ -56,6 +56,7 @@ private struct MemberSwitcher: View {
 
   /// Everyone but me. Zero of these is the common case and is not an error.
   private var teammates: [TeamMember] { state.members.filter { !$0.isSelf } }
+  @State private var isSyncing = false
 
   var body: some View {
     @Bindable var state = state
@@ -65,6 +66,25 @@ private struct MemberSwitcher: View {
         Spacer(minLength: 0)
         if let sync = state.teamSync {
           StatusDot(sync.label, tone: sync.tone)
+          if sync.isReady {
+            // Same action as the Today panel's 更新: one sync tick, then a
+            // reload. Here because a teammate's cycle lands in the same tick.
+            Button(isSyncing ? "更新中…" : "更新") {
+              guard !isSyncing else { return }
+              isSyncing = true
+              Task {
+                let outcome = await state.syncTeamNow()
+                isSyncing = false
+                switch outcome {
+                case .ok(let message): state.toast = message
+                case .failed(let why), .unsupported(let why): state.toast = why
+                }
+              }
+            }
+            .buttonStyle(QuietButtonStyle())
+            .disabled(isSyncing)
+            .help("现在拉一次队友的周期和计划，然后刷新。")
+          }
         }
       }
 

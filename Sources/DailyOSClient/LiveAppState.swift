@@ -405,6 +405,26 @@ public final class LiveAppState: AppState {
     }
   }
 
+  // MARK: - Team sync, on demand
+
+  public override func syncTeamNow() async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    struct Empty: Encodable {}
+    do {
+      // One tick: push what changed here, pull what changed there. The
+      // service answers when the tick is done, so the reload below reads the
+      // cache the tick just wrote, not the one from a minute ago.
+      try await client.post("/api/team/sync", body: Empty())
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      return .failed("同步失败：\(reason)")
+    }
+    await reload()
+    if let sync = teamTodaySync, !sync.lastError.isEmpty { return .failed(sync.lastError) }
+    if let sync = teamTodaySync, !sync.isReady { return .failed(sync.reason.isEmpty ? "团队同步未就绪。" : sync.reason) }
+    return .ok("已更新")
+  }
+
   // MARK: - Today's plan, on demand
 
   /// The poll that waits for the plan a rerun will eventually write. Held so a
