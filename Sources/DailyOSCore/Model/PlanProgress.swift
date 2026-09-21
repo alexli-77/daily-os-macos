@@ -73,9 +73,13 @@ public struct PlanSegment: Identifiable, Sendable, Equatable {
   private static func order(_ state: TodoState) -> Int {
     switch state {
     case .done: 0
-    case .open: 1
-    case .deferred: 2
-    case .deleted: 3
+    // Between finished and untouched, which is what it is. Grouping it with
+    // `open` would make the remaining run look longer than the day actually is;
+    // grouping it with `done` would claim work that is not finished.
+    case .partial: 1
+    case .open: 2
+    case .deferred: 3
+    case .deleted: 4
     }
   }
 }

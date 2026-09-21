@@ -323,6 +323,7 @@ public final class LiveAppState: AppState {
     if let index = plan.firstIndex(where: { $0.id == candidateID }) {
       switch event {
       case "complete": plan[index].state = .done
+      case "partial": plan[index].state = .partial
       case "defer": plan[index].state = .deferred
       case "reopen": plan[index].state = .open
       default: break
