@@ -291,6 +291,18 @@ open class AppState {
     toast = "已保存到 \(cycles[cycleIndex].relativePath)"
   }
 
+  /// Write one OKR file back as raw markdown.
+  ///
+  /// Stores the text and leaves `objectives` alone: re-deriving them needs the
+  /// markdown parser, which lives in `DailyOSClient` alongside the transport.
+  /// `LiveAppState` re-parses after calling this, so the rendered view catches
+  /// up with the file in the same frame the save happens.
+  open func updateOkrFile(id: OkrFile.ID, markdown: String) {
+    guard let index = okrFiles.firstIndex(where: { $0.id == id }) else { return }
+    okrFiles[index].markdown = markdown
+    toast = "已保存 \(okrFiles[index].fileName)"
+  }
+
   /// Take the planner's newer draft. The old body is gone from the UI but not
   /// from the file — the service keeps it as a prior version.
   open func acceptDraft(cycleID: Cycle.ID, kind: CycleSectionKind) {

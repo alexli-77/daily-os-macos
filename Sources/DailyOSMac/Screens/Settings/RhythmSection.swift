@@ -21,8 +21,14 @@ struct RhythmSection: View {
   var body: some View {
     ResolvedDayPanel(snapshot: snapshot)
     RestDaysPanel(store: store)
-    NotesPanel(store: store, snapshot: snapshot)
-    RhythmExamplePanel()
+    // Side by side, because the example is a thing you copy *from* while
+    // writing. Stacked under a 340pt editor it was off-screen at the moment it
+    // was useful, which is the same as not shipping it.
+    TwoColumns {
+      NotesPanel(store: store, snapshot: snapshot)
+    } trailing: {
+      RhythmExamplePanel()
+    }
   }
 }
 
@@ -162,38 +168,87 @@ private struct DayChipStyle: ToggleStyle {
   }
 }
 
-/// The prose half: `rhythm.md`, as raw markdown.
+/// The prose half — the user's own rhythm, in their own words.
 ///
-/// Names the file it writes, for the same reason the other markdown editors do:
-/// "已保存" with no path is how people end up editing one copy and wondering why
-/// the plan never changed.
+/// Titled for what it is rather than for the file it happens to live in. The
+/// panel led with `rhythm.md` and two absolute paths, which reads as somebody
+/// else's plumbing rather than as your own note; the path is still here, once,
+/// muted, at the bottom — it has to be, because this file is also editable in
+/// Obsidian and "已保存" with no path is how people end up changing one copy and
+/// wondering why the plan never moved.
+///
+/// The 在访达中显示 button is gone with it. Revealing a file in Finder answers a
+/// question nobody asks while looking straight at an editor for that file.
 private struct NotesPanel: View {
   let store: SettingsStore
   let snapshot: SettingsSnapshot
 
+  @State private var mode: EditorMode = .read
+
+  private var isDirty: Bool { store.draft.rhythmMd != store.original.rhythmMd }
+
   var body: some View {
     @Bindable var store = store
-    Panel("rhythm.md", subtitle: "排不成设置项的规则写这里，大白话就行，模型做计划时原样读") {
+    Panel("我的作息表", subtitle: "排不成设置项的规则写这里，大白话就行，模型做计划时原样读") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
-        KeyValueRow("文件", snapshot.rhythm.notesPath, mono: true)
-        KeyValueRow("记忆仓库", snapshot.rhythm.repositoryPath, mono: true)
         if snapshot.rhythm.isTemplate {
           Pill("还是空模板——写之前它不影响任何计划", tone: .warn)
         }
-        PlainTextEditor(text: $store.draft.rhythmMd, height: 340)
-        HintText("这里写的优先级高于上面的默认规则，冲突时听你的。这是个普通 markdown 文件，在 Obsidian 里直接改效果完全一样。")
+        if mode == .edit {
+          MarkdownEditor(text: $store.draft.rhythmMd)
+        } else {
+          RhythmNotesReadView(markdown: store.draft.rhythmMd)
+        }
+        HintText("这里写的优先级高于上面的默认规则，冲突时听你的。")
+        HintText(snapshot.rhythm.notesPath)
       }
     } actions: {
-      Button("在访达中显示") { store.revealInFinder(snapshot.rhythm.notesPath) }
-        .buttonStyle(QuietButtonStyle(tone: .neutral))
-      SaveAction(
-        isDirty: store.draft.rhythmMd != store.original.rhythmMd,
-        isBusy: store.isBusy,
-        title: "保存 Markdown"
-      ) {
-        Task { await store.saveRhythmNotes() }
+      if isDirty { Pill("未保存", tone: .warn) }
+      EditorModePicker(mode: $mode)
+      if mode == .edit {
+        SaveAction(isDirty: isDirty, isBusy: store.isBusy) {
+          Task {
+            await store.saveRhythmNotes()
+            mode = .read
+          }
+        }
       }
     }
+  }
+}
+
+/// Read mode for the notes.
+///
+/// The template is almost entirely HTML comments — the instructions for filling
+/// it in — so rendering it verbatim shows a screen of `<!-- 例：… -->` and none
+/// of the user's own words. Comments and empty bullets are dropped here, which
+/// means an untouched template reads as empty, which is exactly what it is.
+private struct RhythmNotesReadView: View {
+  let markdown: String
+
+  var body: some View {
+    if visible.isEmpty {
+      HintText("还没写。切到「编辑」，照右边的示例写几条就行。")
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, Metrics.sm)
+    } else {
+      Text(visible)
+        .font(Typo.body)
+        .foregroundStyle(Palette.ink)
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+  }
+
+  private var visible: String {
+    markdown
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .filter { line in
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        return !trimmed.hasPrefix("<!--") && trimmed != "-"
+      }
+      .joined(separator: "\n")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
   }
 }
 

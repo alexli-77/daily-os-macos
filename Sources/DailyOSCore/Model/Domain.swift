@@ -650,12 +650,27 @@ public struct OkrFile: Sendable, Equatable, Identifiable {
   public var label: String
   public var fileName: String
   public var objectives: [Objective]
+  /// The file as written, kept beside the parsed objectives.
+  ///
+  /// The parser is lossy on purpose — it understands objectives and key-result
+  /// tables and ignores everything else in the file. That is the right trade
+  /// for reading, and the wrong one for writing: an editor fed `objectives`
+  /// would silently drop every note, link and stray paragraph the author put
+  /// between them. So the raw text rides along, and the editor writes *that*.
+  public var markdown: String
 
-  public init(id: String, label: String, fileName: String, objectives: [Objective]) {
+  public init(
+    id: String,
+    label: String,
+    fileName: String,
+    objectives: [Objective],
+    markdown: String = ""
+  ) {
     self.id = id
     self.label = label
     self.fileName = fileName
     self.objectives = objectives
+    self.markdown = markdown
   }
 }
 

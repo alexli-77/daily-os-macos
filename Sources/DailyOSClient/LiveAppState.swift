@@ -233,6 +233,21 @@ public final class LiveAppState: AppState {
     write("保存") { try await $0.saveCycleSection(cycleID: cycleID, kind: kind, body: body) }
   }
 
+  /// Save an OKR file, and re-render it from what was actually saved.
+  ///
+  /// The re-parse happens here rather than in `AppState` because the parser
+  /// ships with the transport. Parsing the same string the service is about to
+  /// receive keeps the rendered objectives and the file in agreement without a
+  /// round trip — and if the parse comes back empty, that is worth seeing
+  /// immediately rather than after the next reload.
+  public override func updateOkrFile(id: OkrFile.ID, markdown: String) {
+    super.updateOkrFile(id: id, markdown: markdown)
+    if let index = okrFiles.firstIndex(where: { $0.id == id }) {
+      okrFiles[index].objectives = OkrMarkdown.parse(markdown).objectives
+    }
+    write("保存 OKR") { try await $0.saveOkrFile(level: id, markdown: markdown) }
+  }
+
   public override func setPriorityStatus(cycleID: Cycle.ID, line: Int, to status: CycleTaskStatus?) {
     super.setPriorityStatus(cycleID: cycleID, line: line, to: status)
     // Send what the local edit produced rather than recomputing it, so the file

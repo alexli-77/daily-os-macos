@@ -351,6 +351,9 @@ private struct CycleDetail: View {
           MissingSectionPanel(cycle: cycle, kind: kind, editable: editable)
         }
       }
+      if !state.okrFiles.isEmpty {
+        CycleOKRPanel()
+      }
     } toolbar: {
       if let runId = cycle.runId {
         Pill(runId, tone: .neutral, mono: true)
@@ -446,6 +449,64 @@ private struct MissingSectionPanel: View {
       switch outcome {
       case .ok(let message): state.toast = message ?? "已创建\(kind.label)"
       case .failed(let why), .unsupported(let why): state.toast = why
+      }
+    }
+  }
+}
+
+// MARK: - OKR beside the cycle
+
+/// The objectives this cycle's 要务 are supposed to serve, on the same screen as
+/// the 要务 themselves.
+///
+/// 要务 are already grouped by OKR row — 工作 · 技术专家, 金钱 · 家庭理财规划师 —
+/// so the headings on this page are references to a document that lived one
+/// screen away. Checking whether a fortnight's work actually serves the year
+/// meant leaving, reading, and coming back with it in your head.
+///
+/// Read-only, and last on the page. Editing stays on the OKR screen: this panel
+/// is here to be consulted while you work on something else, and a text box
+/// would invite exactly the kind of edit you make without the other two levels
+/// in front of you. Defaults to 本季 — the level a two-week cycle is actually
+/// accountable to — with the other two a click away.
+private struct CycleOKRPanel: View {
+  @Environment(AppState.self) private var state
+  @State private var selectedFileID: OkrFile.ID?
+
+  /// Last rather than first: the service lists the files north star → annual →
+  /// current, so the last one is this quarter.
+  private var current: OkrFile? {
+    state.okrFiles.first { $0.id == selectedFileID } ?? state.okrFiles.last
+  }
+
+  var body: some View {
+    Panel("OKR", subtitle: current.map { "\($0.label) · \($0.objectives.count) 个目标" }) {
+      VStack(alignment: .leading, spacing: Metrics.sm) {
+        if let file = current {
+          if file.objectives.isEmpty {
+            HintText("\(file.fileName) 里还没有目标。去「OKR」页写。")
+          } else {
+            ForEach(Array(file.objectives.enumerated()), id: \.element.id) { index, objective in
+              if index > 0 { PanelDivider() }
+              ObjectiveBlock(objective: objective)
+            }
+          }
+        }
+        HintText("只读。改目标去「OKR」页，那里有编辑。")
+      }
+    } actions: {
+      if state.okrFiles.count > 1 {
+        Picker("", selection: Binding(
+          get: { current?.id ?? "" },
+          set: { selectedFileID = $0 }
+        )) {
+          ForEach(state.okrFiles) { file in
+            Text(file.label).tag(file.id)
+          }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(maxWidth: 300)
       }
     }
   }

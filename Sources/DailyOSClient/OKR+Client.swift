@@ -306,8 +306,24 @@ extension DailyOSClient {
         id: entry.level ?? entry.fileName ?? "okr-\(index)",
         label: label ?? "OKR",
         fileName: entry.fileName ?? "",
-        objectives: parsed.objectives
+        objectives: parsed.objectives,
+        markdown: entry.markdown ?? ""
       )
     }
+  }
+
+  /// Write one OKR file back.
+  ///
+  /// `level` is the service's own key for the file (`north_star` / `annual` /
+  /// `current`), which is also `OkrFile.id` — the same key the settings screen's
+  /// OKR editors post, to the same endpoint. Two editors writing one file
+  /// through one route is the point: a second endpoint is a second set of rules
+  /// about what a valid OKR file is.
+  public func saveOkrFile(level: String, markdown: String) async throws {
+    struct Request: Encodable {
+      let level: String
+      let markdown: String
+    }
+    try await post("/api/okr", body: Request(level: level, markdown: markdown))
   }
 }
