@@ -112,6 +112,22 @@ open class AppState {
   public var serviceDiagnosis: ServiceDiagnosis = .reachable
   #endif
 
+  /// Which of the reload's independent reads have come back at least once.
+  ///
+  /// Empty here, and it stays empty: the shell reads nothing, so nothing it
+  /// shows was ever real. A live store fills it as each read lands, and it is
+  /// the only thing separating "the first read failed, so you are looking at
+  /// the fixture" from "a refresh failed, so you are looking at real data that
+  /// is a few minutes old". See `markFailed(_:reason:)`.
+  public internal(set) var loadedChunks: Set<ReloadChunk> = []
+
+  /// Why each chunk of the last reload failed, for the chunks that did.
+  ///
+  /// Per chunk rather than one string, because the reload's whole shape is that
+  /// the reads are independent: 产物 failing while 周期 succeeded is two facts,
+  /// and collapsing them to the most recent one hides whichever failed first.
+  public internal(set) var loadFailures: [ReloadChunk: String] = [:]
+
   /// Which sections read real data.
   ///
   /// Defaults to everything, because the fixture backs every screen. A live

@@ -27,6 +27,8 @@ struct MacRootView: View {
         // identical empty states would each look like their own problem.
         if state.wiredSections.isEmpty {
           DisconnectedBanner()
+        } else if !state.loadFailures.isEmpty {
+          LoadFailureBanner()
         }
         SectionView(section: state.section)
       }
@@ -147,6 +149,71 @@ private struct DisconnectedBanner: View {
       Rectangle().fill(Palette.line).frame(height: Metrics.hairline)
     }
   }
+}
+
+/// Says which of the reload's independent reads did not come back.
+///
+/// Same slot as `DisconnectedBanner`, and there for the same reason: a failed
+/// chunk empties one panel and leaves the other six alone, so the panel it
+/// empties is indistinguishable from a panel with nothing in it. The
+/// attribution `reload()` computes had no reader in the app at all — it went to
+/// `lastError`, which only the command-line probe looked at — so "团队面板是空
+/// 的" and "团队读取失败了" were the same picture.
+///
+/// Never both banners at once: with nothing wired every panel is empty for one
+/// reason, and that one is the reason.
+private struct LoadFailureBanner: View {
+  @Environment(AppState.self) private var state
+
+  var body: some View {
+    HStack(spacing: Metrics.xs) {
+      Image(systemName: "exclamationmark.triangle").foregroundStyle(Palette.warn)
+      VStack(alignment: .leading, spacing: 1) {
+        // Wraps rather than truncates, unlike most one-line headlines: the list
+        // of names *is* the message here, and with all seven chunks down the
+        // string is long enough that a narrow window would ellipsize away the
+        // only part worth reading. The detail line below has always wrapped for
+        // the same reason.
+        Text("\(names)没读到")
+          .inkStyle(Typo.bodyStrong)
+          .fixedSize(horizontal: false, vertical: true)
+        // Absent, not blank. A transport error can carry an empty description,
+        // and an empty `Text` still takes a line's height — a gap under the
+        // headline that reads as something failing to render.
+        if let detail {
+          Text(detail)
+            .mutedStyle()
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+      Spacer(minLength: Metrics.xs)
+    }
+    .padding(.horizontal, Metrics.lg)
+    .padding(.vertical, Metrics.sm)
+    .background(Palette.softBackground(for: .warn))
+    .overlay(alignment: .bottom) {
+      Rectangle().fill(Palette.line).frame(height: Metrics.hairline)
+    }
+  }
+
+  /// In `allCases` order rather than the dictionary's, which is unordered and
+  /// would let two failures swap places between redraws.
+  private var failures: [(chunk: ReloadChunk, reason: String)] {
+    ReloadChunk.allCases.compactMap { chunk in
+      state.loadFailures[chunk].map { (chunk, $0) }
+    }
+  }
+
+  private var names: String { failures.map(\.chunk.label).joined(separator: "、") }
+
+  /// One reason, not all of them. When several reads fail together it is almost
+  /// always the same sentence about the same service, and a banner is one line
+  /// tall — the list of *what* failed is the part that differs.
+  ///
+  /// The first one that says something, rather than the first one: reasons come
+  /// from `localizedDescription` and can be empty, and skipping a blank to reach
+  /// a real sentence is strictly better than showing neither.
+  private var detail: String? { failures.first { !$0.reason.isEmpty }?.reason }
 }
 
 /// Avatar plus name. Not a control.
