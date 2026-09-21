@@ -577,15 +577,82 @@ check(visibleIDs(viewing: "u_gone", owners: threePerson).isEmpty, "看一个没�
 check(AppState.previewOwner().visibleCycles.map(\.id) == AppState.previewOwner().cycles.map(\.id),
       "看自己时还是自己的全部周期")
 
+// 11l. 分块读取失败：第一次失败要清空，后来失败要留着
+//
+// `AppState.init` seeds every collection from `MockData` so the first frame is
+// populated. That is a claim about the first frame only — the moment a read
+// fails and its collection is left alone, the fixture stops being a placeholder
+// and becomes an answer. The demo teammate and their demo tasks are plausible
+// enough to act on, which is exactly the mistake `clearForDisconnected()` was
+// written to prevent for the whole app; a failed chunk is the same problem one
+// panel at a time.
+let neverLoaded = AppState.previewOwner()
+check(!neverLoaded.partnerCycles.isEmpty, "前提：fixture 里确实有 demo 队友的周期")
+neverLoaded.markFailed(.cycles, reason: "404")
+check(neverLoaded.cycles.isEmpty, "周期从没读成功过就失败了，要空着")
+check(neverLoaded.partnerCycles.isEmpty, "队友的周期也要空着——demo 队友就是从这里冒出来的")
+check(neverLoaded.members.isEmpty, "名单要空着，不然切换器里还站着 partner")
+check(neverLoaded.teamSync == nil, "同步状态跟着走")
+check(neverLoaded.selectedCycleID == nil, "选中的周期已经不在了")
+check(neverLoaded.loadFailures[.cycles] == "404", "失败原因要记下来，横幅要读它")
+
+// The other six chunks empty their own fields and nothing else: a failed OKR
+// read costing you the cycle you were reading is the thing `load()` splits the
+// reload up to avoid.
+let okrFailed = AppState.previewOwner()
+okrFailed.markFailed(.okr, reason: "读不到")
+check(okrFailed.okrFiles.isEmpty, "OKR 首次失败要空着")
+check(!okrFailed.cycles.isEmpty, "OKR 失败不能带走周期")
+check(okrFailed.loadFailures.count == 1, "只记这一块失败了")
+
+let planFailed = AppState.previewOwner()
+planFailed.markFailed(.plan, reason: "读不到")
+check(planFailed.plan.isEmpty && !planFailed.hasPlan, "今日计划首次失败要空着")
+let todosFailed = AppState.previewOwner()
+todosFailed.markFailed(.todos, reason: "读不到")
+check(todosFailed.todos.isEmpty, "待办首次失败要空着")
+let teamFailed = AppState.previewOwner()
+teamFailed.markFailed(.teamToday, reason: "读不到")
+check(teamFailed.teamToday.isEmpty && teamFailed.teamTodaySync == nil, "团队今天首次失败要空着")
+let artifactsFailed = AppState.previewOwner()
+artifactsFailed.markFailed(.artifacts, reason: "读不到")
+check(artifactsFailed.artifacts.isEmpty && artifactsFailed.selectedArtifactID == nil, "产物首次失败要空着")
+// Degraded, not stopped: the connection answered a moment ago. What is false is
+// the fixture's "运行中，已跑 4 小时 12 分".
+let serviceFailed = AppState.previewOwner()
+serviceFailed.markFailed(.service, reason: "读不到")
+check(serviceFailed.service.state == .degraded, "服务状态读不到就是降级，不是停了")
+check(serviceFailed.service.uptime == .zero, "别继续报 fixture 那个运行时长")
+
+// The other half, and the one that is easy to get wrong by fixing the first:
+// a refresh that fails must not take away what is already on screen. It is real
+// data — a few minutes old, still yours.
+let refreshFailed = AppState.previewOwner()
+refreshFailed.markLoaded(.cycles)
+let realCycles = refreshFailed.cycles
+let realSelection = refreshFailed.selectedCycleID
+refreshFailed.markFailed(.cycles, reason: "服务重启中")
+check(refreshFailed.cycles == realCycles, "已经读到过真数据，刷新失败要留着旧的")
+check(refreshFailed.selectedCycleID == realSelection, "刷新失败不能把选中项也带走")
+check(refreshFailed.loadFailures[.cycles] == "服务重启中", "旧数据留着，但失败照样报")
+
+// And a read that comes back clears its own failure — a banner that keeps
+// naming a chunk which has since loaded is worse than no banner.
+let recovered = AppState.previewOwner()
+recovered.markFailed(.artifacts, reason: "读不到")
+recovered.markLoaded(.artifacts)
+check(recovered.loadFailures.isEmpty, "这一块读回来了，失败标记要撤掉")
+
 // MARK: - What this harness cannot cover
 //
 // Written down rather than left implicit, because a green run is read as "the
 // regressions are covered" and for these it is not true.
 //
-// All four shipped, all four were found by driving the installed app, and none
-// of them can be reached from here: they lived in SwiftUI's own state, and this
-// is a plain executable with no view host. The repo targets machines with only
-// Command Line Tools, which is why there is no XCTest bundle to put them in.
+// The first four shipped, all four were found by driving the installed app, and
+// none of them can be reached from here: they lived in SwiftUI's own state, and
+// this is a plain executable with no view host. The repo targets machines with
+// only Command Line Tools, which is why there is no XCTest bundle to put them
+// in.
 //
 //  - **勾选两次后失灵.** `TaskRow.isCompleting` was set and never reset, so it
 //    latched on: the circle stayed filled through an un-tick and the guard then
@@ -598,6 +665,23 @@ check(AppState.previewOwner().visibleCycles.map(\.id) == AppState.previewOwner()
 //    fired; a background `Button` did. Needs real hit-testing.
 //  - **头像被菜单裁掉.** `.menuStyle(.borderlessButton)` clamps its label to text
 //    height, cropping a 20pt canvas to nothing. Needs layout.
+//
+// §11l above is the rule a failed chunk follows, and the rule is all of it. Two
+// things stand between that rule and what a person sees, and neither is here:
+//
+//  - **接线.** `markLoaded` / `markFailed` are called from `LiveAppState.load()`,
+//    which lives in DailyOSClient; this target depends on DailyOSCore only, so
+//    the checks drive the two methods directly. A chunk whose read forgets to go
+//    through `load()` — or a new endpoint added without a `ReloadChunk` — passes
+//    every check above and still paints the fixture. The 分块 checks prove the
+//    rule, not that the reload obeys it.
+//  - **横幅.** Whether `loadFailures` reaches the screen is `MacRootView`'s
+//    `else if`, i.e. a view, i.e. out of reach for the same reason as the four
+//    above. That branch has already been wrong once: it hangs off
+//    `wiredSections` being non-empty, and a `wiredSections` that was cleared on
+//    disconnect and never restored kept `LoadFailureBanner` off screen for the
+//    whole session (LEO-310). The restore is in `LiveAppState.reload()`; nothing
+//    here can tell if it is removed again.
 //
 // Covering these means an XCTest UI target and a machine with full Xcode, which
 // is a real trade against the "clone and `swift build`" property this repo has.
@@ -692,7 +776,7 @@ check(DaySchedule.duration(120) == "2h" && DaySchedule.duration(90) == "1h30m"
 check(DaySchedule.clock(25 * 60) == "01:00", "跨过午夜要绕回去，不能打印 25:00")
 
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 通告单时段推算, 刷新节流, 后台刷新写入面, 队友周期归属, 回归集")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 回归集")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

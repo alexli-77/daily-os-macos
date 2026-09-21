@@ -23,12 +23,20 @@ public final class LiveAppState: AppState {
 
   private var client: DailyOSClient? { connection.client }
 
+  /// The sections this store actually reads live data for. The rest keep the
+  /// fixture and are marked in the sidebar — see `wiredSections`.
+  ///
+  /// A constant rather than a literal written at each of the two sites that set
+  /// it (`init` and `reload`), because those two must never disagree: wiring up
+  /// a new section in one and not the other would either mark a live screen as
+  /// fixture or claim a fixture screen is live, and neither shows up until
+  /// someone reconnects.
+  private static let liveSections: Set<AppSection> = [.today, .cycles, .okr, .artifacts, .settings]
+
   public init(connection: ServiceConnection) {
     self.connection = connection
     super.init()
-    // Only these three read live data. The rest keep the fixture and are marked
-    // in the sidebar — see `wiredSections`.
-    wiredSections = [.today, .cycles, .okr, .artifacts, .settings]
+    wiredSections = Self.liveSections
   }
 
   // MARK: - Loading
@@ -77,8 +85,23 @@ public final class LiveAppState: AppState {
     // from local filesystem reads only — the network is the thing that just
     // failed, so asking it again would be the wrong question.
     serviceDiagnosis = .evaluate(root: connection.repoRoot)
-    // Nothing is wired, so no screen claims to be showing real data.
+    // Nothing is wired, so no screen claims to be showing real data. `reload()`
+    // puts it back on the way in; this is one half of a pair.
     wiredSections = []
+    // `loadedChunks` and `loadFailures` are deliberately *not* reset, which
+    // looks like an omission next to the twenty lines above and is not.
+    //
+    // The worry would be `loadedChunks` surviving: it is what makes `markFailed`
+    // keep the older copy instead of emptying, so a stale entry could in
+    // principle let a failed first read after reconnecting leave the fixture on
+    // screen. It cannot, because every collection that read owns has just been
+    // emptied right here — what a stale "已经读到过" preserves is an empty
+    // panel, which is the same thing the other branch would have produced.
+    //
+    // `loadFailures` is invisible while disconnected (the sidebar shows
+    // `DisconnectedBanner` instead, see `MacRootView`) and cannot outlive the
+    // reconnect either: `reload()` runs all seven chunks and each one ends in
+    // `markLoaded` or a fresh `markFailed`.
   }
 
   public func reload() async {
@@ -99,6 +122,15 @@ public final class LiveAppState: AppState {
       return
     }
     serviceDiagnosis = .reachable
+    // Undo `clearForDisconnected()`. It is the only other writer of this set and
+    // it writes `[]`, so without this line the very first failed connect latched
+    // the store into "nothing is wired" for the rest of the session: 启动时服务
+    // 没起 → 起服务 → reload 连上 would come back with real data under a
+    // `DisconnectedBanner`, and `LoadFailureBanner` — which is on the else-if —
+    // could never appear again. Restored to the same set `init` chose rather
+    // than `Set(AppSection.allCases)`: the unwired sections are still showing
+    // the fixture, and marking them live is the lie the set exists to prevent.
+    wiredSections = Self.liveSections
 
     // Who is *using* the app, restored from this machine's own record. Distinct
     // from the identity the cycle read sets below: that one is the team member
@@ -110,7 +142,7 @@ public final class LiveAppState: AppState {
 
     // Each read is independent and a failure in one must not blank the others:
     // a broken OKR file should not cost you the cycle you were reading.
-    await load("周期") {
+    await load(.cycles) {
       let result = try await client.cycles()
       self.cycles = result.mine
       self.partnerCycles = result.teammates
@@ -159,7 +191,7 @@ public final class LiveAppState: AppState {
       }
     }
 
-    await load("待办") {
+    await load(.todos) {
       let inbox = try await client.todoInbox()
       // `recent` is *all* non-deleted rows, not just the closed ones, so it
       // already contains everything in `open`. Concatenating the two showed
@@ -171,7 +203,7 @@ public final class LiveAppState: AppState {
       self.todos = (inbox.open + inbox.recent).filter { seen.insert($0.id).inserted }
     }
 
-    await load("今日计划") {
+    await load(.plan) {
       // The plan and the inbox are different lists. Showing the inbox here was
       // wrong in a way that looked right: plausible rows, but not the ones the
       // web shows and not the ones the planner decided.
@@ -182,7 +214,7 @@ public final class LiveAppState: AppState {
       self.hasPlan = plan.hasPlan
     }
 
-    await load("团队今天") {
+    await load(.teamToday) {
       // Same cache the Cycles screen's teammate view reads; a teammate who has
       // not pushed a plan yet still comes back, with no items, so the panel can
       // say "还没收到" instead of dropping them.
@@ -191,18 +223,18 @@ public final class LiveAppState: AppState {
       self.teamTodaySync = team.sync
     }
 
-    await load("产物") {
+    await load(.artifacts) {
       self.artifacts = try await client.artifacts()
       if self.selectedArtifactID == nil || !self.artifacts.contains(where: { $0.id == self.selectedArtifactID }) {
         self.selectedArtifactID = self.artifacts.first?.id
       }
     }
 
-    await load("OKR") {
+    await load(.okr) {
       self.okrFiles = try await client.okrFiles()
     }
 
-    await load("服务状态") {
+    await load(.service) {
       self.service = try await client.serviceStatus()
     }
 
@@ -217,12 +249,22 @@ public final class LiveAppState: AppState {
   ///
   /// "周期读取失败：…" is actionable; a bare "加载失败" from a screen with four
   /// independent sources is not.
-  private func load(_ what: String, _ body: () async throws -> Void) async {
+  ///
+  /// The failure also has to reach the *collections*, which is what this helper
+  /// was missing. Leaving them alone reads as "keep what we had", and what we
+  /// had before the first successful read is `MockData` — so an endpoint an
+  /// older service does not serve produced a panel full of demo rows that
+  /// nothing on screen distinguished from your own. `markFailed` is where the
+  /// "first read" / "later read" distinction is made; see it for why a failed
+  /// refresh keeps the older data instead.
+  private func load(_ chunk: ReloadChunk, _ body: () async throws -> Void) async {
     do {
       try await body()
+      markLoaded(chunk)
     } catch {
       let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
-      lastError = "\(what)读取失败：\(reason)"
+      lastError = "\(chunk.label)读取失败：\(reason)"
+      markFailed(chunk, reason: reason)
     }
   }
 
