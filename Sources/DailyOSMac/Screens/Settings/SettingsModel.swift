@@ -19,6 +19,7 @@ import DailyOSCore
 enum SettingsSection: String, CaseIterable, Identifiable {
   case overview
   case basics
+  case rhythm
   case model
   case feishu
   case sources
@@ -38,6 +39,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     switch self {
     case .overview: "概览"
     case .basics: "基础"
+    case .rhythm: "作息"
     case .model: "模型"
     case .feishu: "飞书"
     case .sources: "数据源"
@@ -57,6 +59,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     switch self {
     case .overview: "checklist"
     case .basics: "person.crop.circle"
+    case .rhythm: "sunrise"
     case .model: "cpu"
     case .feishu: "bubble.left.and.bubble.right"
     case .sources: "tray.and.arrow.down"
@@ -78,6 +81,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     switch self {
     case .overview: "自检结果，以及可以手动跑一次的动作"
     case .basics: "身份、称呼、时区、语言"
+    case .rhythm: "哪几天算休息日，以及你自己的一周节奏"
     case .model: "工作流和对话用什么跑，以及它怎么认证"
     case .feishu: "消息发出去和指令收进来的那条通道"
     case .sources: "证据从这些地方来，结论回到你的文件里"
@@ -93,7 +97,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     }
   }
 
-  static let configGroup: [SettingsSection] = [.overview, .basics, .model, .feishu, .sources, .workflows, .team, .skills]
+  static let configGroup: [SettingsSection] = [.overview, .basics, .rhythm, .model, .feishu, .sources, .workflows, .team, .skills]
   static let documentGroup: [SettingsSection] = [.decision, .strategy, .okr, .guide]
   static let systemGroup: [SettingsSection] = [.service, .logs]
 }
@@ -116,6 +120,7 @@ struct SettingsSnapshot {
   var feishuProfiles: [FeishuProfileRow]
   var background: BackgroundRow
   var decisionPolicy: DecisionPolicyRow
+  var rhythm: RhythmRow
   var strategy: [StrategyFileRow]
   var defaultStrategy: String
   var okrDir: String
@@ -373,6 +378,64 @@ struct DecisionPolicyRow {
   let markdown: String
 }
 
+/// The user's weekly rhythm, both halves of it.
+///
+/// `today` and `tomorrow` are the point of carrying this at all. The settings
+/// themselves are `rest_days: ["SAT","SUN"]` and a number, and leaving it there
+/// asks the reader to work out for themselves what *this* Sunday will look
+/// like — which is the inference the feature exists to stop asking for. The
+/// service resolves both days through the same `resolveDayShape` the planner
+/// calls, so what this screen claims and what the plan does cannot drift.
+struct RhythmRow {
+  let repositoryPath: String
+  let notesPath: String
+  let markdown: String
+  /// The notes are still the shipped template — every bullet empty. Worth its
+  /// own flag because the file always exists (the service seeds it), so "has a
+  /// rhythm file" and "wrote a rhythm" are different questions.
+  let isTemplate: Bool
+  let restDays: [String]
+  let today: DayShapeRow
+  let tomorrow: DayShapeRow
+
+  static let empty = RhythmRow(
+    repositoryPath: "", notesPath: "", markdown: "", isTemplate: true,
+    restDays: [], today: .empty, tomorrow: .empty
+  )
+}
+
+struct DayShapeRow {
+  let date: String
+  let weekdayLabel: String
+  let isRestDay: Bool
+  let dayTypeLabel: String
+  /// `nil` on a work day: the cap there is the decision policy's business, not
+  /// this feature's.
+  let workTaskCap: Int?
+  let enabled: Bool
+
+  static let empty = DayShapeRow(
+    date: "", weekdayLabel: "", isRestDay: false, dayTypeLabel: "", workTaskCap: nil, enabled: false
+  )
+
+  var isMissing: Bool { weekdayLabel.isEmpty }
+
+  /// "星期日 · 休息日"，外加休息日的上限。
+  var line: String {
+    guard !isMissing else { return "服务没有返回今天的判定" }
+    guard enabled else { return "\(weekdayLabel) · 作息规则已关闭" }
+    guard isRestDay, let cap = workTaskCap else { return "\(weekdayLabel) · \(dayTypeLabel)" }
+    return cap == 0
+      ? "\(weekdayLabel) · \(dayTypeLabel)，今天不排工作任务"
+      : "\(weekdayLabel) · \(dayTypeLabel)，工作任务最多 \(cap) 条"
+  }
+
+  var tone: Tone {
+    guard !isMissing, enabled else { return .neutral }
+    return isRestDay ? .accent : .neutral
+  }
+}
+
 struct StrategyFileRow: Identifiable {
   let id: String
   let label: String
@@ -513,6 +576,13 @@ struct SettingsDraft: Equatable {
   // 团队
   var supabaseURL = ""
 
+  // 作息
+  var rhythmEnabled = false
+  /// Three-letter codes, the same alphabet the config and the scorer use.
+  var rhythmRestDays: Set<String> = []
+  var rhythmWorkCap = 1
+  var rhythmMd = ""
+
   // 文档
   var decisionPolicyMd = ""
   var strategyFileID = ""
@@ -613,6 +683,17 @@ struct SettingsDraft: Equatable {
     backgroundChangeOnly = background["send_on_change_only"].bool
 
     supabaseURL = snapshot.supabaseURL
+
+    // The schema materialises `user.rhythm` for anything that went through
+    // `loadConfig`, so these three read straight out of the config — except the
+    // day list, which is taken from the snapshot because the service already
+    // normalised it. `enabled` defaults to true in the schema, and a config
+    // written before this feature existed still arrives with it set.
+    let rhythm = config["user"]["rhythm"]
+    rhythmEnabled = rhythm["enabled"].bool
+    rhythmRestDays = Set(snapshot.rhythm.restDays)
+    rhythmWorkCap = rhythm["work_task_cap_on_rest_days"].int ?? 1
+    rhythmMd = snapshot.rhythm.markdown
 
     decisionPolicyMd = snapshot.decisionPolicy.markdown
     strategyFileID = snapshot.strategy.first?.id ?? ""
@@ -767,6 +848,20 @@ extension SettingsSnapshot {
       notesPath: node["decisionPolicy"]["notesPath"].string,
       markdown: node["decisionPolicy"]["policyMd"].string
     )
+    // `restDays` comes from the service's own normalisation rather than from
+    // `config.user.rhythm.rest_days`: the config is hand-edited YAML and
+    // `[Sat, sunday]` is the kind of thing people write. Seeding the day picker
+    // from the raw list would show days that are not actually in effect.
+    let rhythmNode = node["rhythm"]
+    rhythm = RhythmRow(
+      repositoryPath: rhythmNode["repositoryPath"].string,
+      notesPath: rhythmNode["notesPath"].string,
+      markdown: rhythmNode["notesMd"].string,
+      isTemplate: rhythmNode["isTemplate"].bool,
+      restDays: rhythmNode["restDays"].array.map(\.string),
+      today: DayShapeRow(node: rhythmNode["today"]),
+      tomorrow: DayShapeRow(node: rhythmNode["tomorrow"])
+    )
     strategy = node["strategy"]["files"].array.map {
       StrategyFileRow(
         id: $0["id"].string,
@@ -920,6 +1015,17 @@ extension SettingsSnapshot {
     }
 
     return rows
+  }
+}
+
+extension DayShapeRow {
+  init(node: JSONNode) {
+    date = node["date"].string
+    weekdayLabel = node["weekdayLabel"].string
+    isRestDay = node["isRestDay"].bool
+    dayTypeLabel = node["dayTypeLabel"].string
+    workTaskCap = node["workTaskCap"].int
+    enabled = node["enabled"].bool
   }
 }
 

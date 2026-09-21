@@ -307,6 +307,37 @@ final class SettingsStore {
     ])
   }
 
+  /// 作息: which days are rest days, and how much work may survive one.
+  ///
+  /// Only the structured half. `rhythm.md` is a file in the memory vault with
+  /// its own endpoint and its own button — see `saveRhythmNotes`.
+  ///
+  /// The day list is written in week order rather than in the order the user
+  /// clicked. A `Set` has no order at all, so without this the same seven
+  /// checkboxes would produce a different `rest_days` array each time and every
+  /// save would rewrite the line in config.yaml for no reason.
+  func rhythmEdits(_ draft: SettingsDraft) -> ConfigEdits {
+    let days = SettingsStore.weekdayOrder
+      .filter { draft.rhythmRestDays.contains($0.code) }
+      .map { JSONNode.string($0.code) }
+    return ConfigEdits(config: [
+      ConfigEdit(path: ["user", "rhythm", "enabled"], value: .bool(draft.rhythmEnabled)),
+      ConfigEdit(path: ["user", "rhythm", "rest_days"], value: .array(days)),
+      // Clamped to the schema's own range. A 50 typed here would come back from
+      // zod as a validation failure naming a key this screen never showed.
+      ConfigEdit(
+        path: ["user", "rhythm", "work_task_cap_on_rest_days"],
+        value: .number(Double(min(max(draft.rhythmWorkCap, 0), 20)))
+      ),
+    ])
+  }
+
+  /// The seven days, in the order a week is read rather than alphabetically.
+  static let weekdayOrder: [(code: String, label: String)] = [
+    ("MON", "周一"), ("TUE", "周二"), ("WED", "周三"), ("THU", "周四"),
+    ("FRI", "周五"), ("SAT", "周六"), ("SUN", "周日"),
+  ]
+
   /// CLI paths. Separate from the provider save because they are `.env` rather
   /// than config, and because someone whose PATH cannot find `codex` needs to
   /// fix that without also changing which model runs.
@@ -400,6 +431,7 @@ final class SettingsStore {
   }
 
   var isBasicsDirty: Bool { basicsEdits(draft) != basicsEdits(original) }
+  var isRhythmDirty: Bool { rhythmEdits(draft) != rhythmEdits(original) }
   var isCLIDirty: Bool { cliEdits(draft) != cliEdits(original) }
   var isFeishuDirty: Bool { feishuEdits(draft) != feishuEdits(original) }
   var isSourcesDirty: Bool { sourcesEdits(draft) != sourcesEdits(original) }
@@ -411,6 +443,7 @@ final class SettingsStore {
   }
 
   func saveBasics() async { await save("基础设置", basicsEdits(draft)) }
+  func saveRhythmSettings() async { await save("休息日设置", rhythmEdits(draft)) }
   func saveCLIPaths() async { await save("CLI 路径", cliEdits(draft)) }
   func saveFeishu() async { await save("飞书设置", feishuEdits(draft)) }
   func saveSources() async { await save("数据源", sourcesEdits(draft)) }
@@ -448,6 +481,10 @@ final class SettingsStore {
   }
 
   // MARK: Markdown saves
+
+  func saveRhythmNotes() async {
+    await post("保存作息表", path: "/api/rhythm", body: .object(["notesMd": .string(draft.rhythmMd)]))
+  }
 
   func saveDecisionPolicy() async {
     await post("保存决策规则", path: "/api/decision-policy", body: .object(["policyMd": .string(draft.decisionPolicyMd)]))

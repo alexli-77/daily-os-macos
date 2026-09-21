@@ -103,6 +103,7 @@ struct SettingsScreen: View {
       switch store.section {
       case .overview: OverviewSection(store: store, snapshot: snapshot)
       case .basics: BasicsSection(store: store, snapshot: snapshot)
+      case .rhythm: RhythmSection(store: store, snapshot: snapshot)
       case .model: ModelSection(store: store, snapshot: snapshot)
       case .feishu: FeishuSection(store: store, snapshot: snapshot)
       case .sources: SourcesSection(store: store, snapshot: snapshot)
