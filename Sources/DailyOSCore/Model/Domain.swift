@@ -491,6 +491,17 @@ public enum TodoKind: String, Sendable {
 public enum TodoState: String, Sendable {
   case open
   case done
+  /// Worked on, not finished.
+  ///
+  /// The third thing that actually happens to a row, and until the service grew
+  /// a `partial` feedback event there was nowhere to put it: half-done work had
+  /// to be filed as `done` (which removes it from every future plan) or
+  /// `deferred` (which says the day's work never happened). It is explicitly
+  /// *not* terminal — everything asking "is this still open" has to answer yes.
+  ///
+  /// In the call sheet it also carries arithmetic: a partial row's estimate
+  /// counts half, because the half you did is behind you.
+  case partial
   case deferred
   /// A tombstone, matching the service's own `TodoInboxStatus`.
   ///

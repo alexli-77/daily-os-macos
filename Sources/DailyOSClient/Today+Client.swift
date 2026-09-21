@@ -195,11 +195,20 @@ extension DailyOSClient {
     // `TodoState.rawValue` happens to match the service's `status` on all three
     // spellings, but the wire value is written out so that renaming a case for
     // the UI's sake cannot silently change what gets POSTed.
+    //
+    // `partial` is a *plan* state. It reaches the service as a
+    // `/api/today/todo-feedback` event keyed by candidate id; the inbox ledger
+    // has `open` / `done` / `deferred` / `deleted` and nothing else. Coercing it
+    // to one of those would record something the user did not say — so this
+    // refuses instead, and `RowActionBar` does not offer the button on an inbox
+    // row in the first place. If this error is ever seen, the two have drifted.
     let status = switch state {
     case .open: "open"
     case .done: "done"
     case .deferred: "deferred"
     case .deleted: "deleted"
+    case .partial:
+      throw ClientError.service(message: "随手记的条目没有「做了一部分」这个状态，只有计划行有。")
     }
     try await post("/api/todo-inbox", body: TodoInboxUpdateRequest(id: id, status: status))
   }

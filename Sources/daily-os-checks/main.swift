@@ -604,8 +604,95 @@ check(AppState.previewOwner().visibleCycles.map(\.id) == AppState.previewOwner()
 // Until that trade is made, the honest procedure is the one that found them:
 // build Release, install, and drive the app.
 
+
+// MARK: - 通告单时段推算
+//
+// 每一条都是数字：起点、每行的槽、超时判定、预计结束。一屏时间看起来永远像一屏时间，
+// 游标错一格、late 从不触发、结束时间悄悄漏掉半张单子——没有一个会在界面上自己现形。
+
+func sheetItem(_ id: String, _ minutes: Int?, _ state: TodoState = .open) -> TodoItem {
+  TodoItem(id: id, text: id, kind: .priority, state: state, estimatedMinutes: minutes)
+}
+
+let t0 = 10 * 60 + 30   // 10:30 起
+let noon = 12 * 60      // 现在 12:00
+
+// 顺推：每行从上一行结束接着排
+let basic = DaySchedule.build(
+  items: [sheetItem("a", 120), sheetItem("b", 60), sheetItem("c", 15)],
+  startMinute: t0, nowMinute: noon)
+check(basic.rows[0].start == t0 && basic.rows[0].end == t0 + 120, "第一行从起点开始")
+check(basic.rows[1].start == t0 + 120, "第二行接着第一行结束")
+check(basic.rows[2].end == t0 + 195, "第三行结束等于三段估时之和")
+check(basic.endOfDay == t0 + 195, "预计结束就是最后一行的结束")
+check(DaySchedule.clock(basic.endOfDay) == "13:45", "10:30 加 3h15m 是 13:45")
+
+// 延期不占时间，后面的行往前挪
+let deferred = DaySchedule.build(
+  items: [sheetItem("a", 120, .deferred), sheetItem("b", 60)],
+  startMinute: t0, nowMinute: noon)
+check(deferred.rows[0].start == nil, "延期的行没有时段")
+check(deferred.rows[1].start == t0, "延期不占时间，后面的行拿回这段时间")
+
+// 完成保留自己的时段，照常占用时间——早上确实发生过
+let done = DaySchedule.build(
+  items: [sheetItem("a", 120, .done), sheetItem("b", 60)],
+  startMinute: t0, nowMinute: noon)
+check(done.rows[0].start == t0 && done.rows[0].end == t0 + 120, "完成的行保留时段")
+check(done.rows[1].start == t0 + 120, "完成的行照常把游标往后推")
+check(done.remaining == 60, "已完成的不算在「还需」里")
+
+// 部分按一半算
+let partial = DaySchedule.build(
+  items: [sheetItem("a", 120, .partial), sheetItem("b", 60)],
+  startMinute: t0, nowMinute: noon)
+check(partial.rows[0].end == t0 + 60, "部分完成的估时按一半算")
+check(partial.remaining == 120, "部分仍算未完成，只是少了一半")
+
+// 超时：未做且槽已结束
+let late = DaySchedule.build(
+  items: [sheetItem("a", 60), sheetItem("b", 60)],
+  startMinute: t0, nowMinute: 13 * 60)
+check(late.lateRows.count == 2, "13:00 时 10:30 起的两个一小时槽都过了")
+let lateResolved = DaySchedule.build(
+  items: [sheetItem("a", 60, .done), sheetItem("b", 60, .deferred)],
+  startMinute: t0, nowMinute: 13 * 60)
+check(lateResolved.lateRows.isEmpty, "标了完成或延期的行不算超时——这正是超时提醒要人做的事")
+
+// 现在线落在第一条还没开始的行上面
+let nowline = DaySchedule.build(
+  items: [sheetItem("a", 60), sheetItem("b", 60), sheetItem("c", 60)],
+  startMinute: t0, nowMinute: 11 * 60 + 45)
+check(nowline.nowIndex == 2, "11:45 时前两行已开始，线画在第三行上面")
+let allPast = DaySchedule.build(items: [sheetItem("a", 30)], startMinute: t0, nowMinute: 23 * 60)
+check(allPast.nowIndex == allPast.rows.count, "整张单子都在身后时，线落在末尾")
+
+// 没估时的行不编时间
+let noEstimate = DaySchedule.build(
+  items: [sheetItem("a", nil), sheetItem("b", 60)],
+  startMinute: t0, nowMinute: noon)
+check(noEstimate.rows[0].start == nil, "没估时就没有时段——编一个会让预计结束变成假的")
+check(noEstimate.rows[1].start == t0, "没估时的行不推游标")
+check(noEstimate.missingEstimates == 1, "没估时的条数要报出来，短的总数才是明着短")
+
+// 清完了：延期也算
+check(DaySchedule.build(items: [sheetItem("a", 30, .done), sheetItem("b", 30, .deferred)],
+                        startMinute: t0, nowMinute: noon).isClear,
+      "全部完成或延期就算清完了——诚实顺延的一天也是结束了的一天")
+check(!DaySchedule.build(items: [sheetItem("a", 30, .done), sheetItem("b", 30)],
+                         startMinute: t0, nowMinute: noon).isClear, "还有未做就没清完")
+check(!DaySchedule.build(items: [], startMinute: t0, nowMinute: noon).isClear, "空单子不算清完")
+
+// 起点：没有「几点开工」字段，退回计划生成时间
+check(DayStart.resolve(generatedAt: nil) == DayStart.fallbackMinute, "没有计划时间就用兜底")
+
+// 格式
+check(DaySchedule.duration(120) == "2h" && DaySchedule.duration(90) == "1h30m"
+      && DaySchedule.duration(45) == "45m", "时长按原型的紧凑写法")
+check(DaySchedule.clock(25 * 60) == "01:00", "跨过午夜要绕回去，不能打印 25:00")
+
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 回归集")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 通告单时段推算, 刷新节流, 后台刷新写入面, 队友周期归属, 回归集")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

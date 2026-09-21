@@ -155,6 +155,7 @@ extension DailyOSClient {
   private static func state(for event: String?) -> TodoState {
     switch event {
     case "complete": .done
+    case "partial": .partial
     case "defer": .deferred
     // `update` means the row was edited, not resolved — it is still open. A
     // reopened row never reaches here: the service removes it from the map
