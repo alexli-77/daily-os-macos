@@ -770,6 +770,29 @@ check(!DaySchedule.build(items: [], startMinute: t0, nowMinute: noon).isClear, "
 // 起点：没有「几点开工」字段，退回计划生成时间
 check(DayStart.resolve(generatedAt: nil) == DayStart.fallbackMinute, "没有计划时间就用兜底")
 
+// 起点：作息的 working_hours.start 优先于计划生成时刻（07:43 的 cron 不该决定开工点）
+let cron = Calendar.current.date(bySettingHour: 7, minute: 43, second: 0, of: .now)
+check(DayStart.resolve(generatedAt: cron, workStart: 9 * 60 + 30) == 9 * 60 + 30, "有作息起点就用它，不用 cron 时刻")
+check(DayStart.resolve(generatedAt: cron, workStart: nil) == 7 * 60 + 43, "没作息起点才退回计划生成时刻")
+check(DayStart.minute(fromClock: "09:30") == 570 && DayStart.minute(fromClock: "24:61") == nil, "HH:mm 解析，非法返回 nil")
+
+// 吃饭块：能在午餐前排下的照排，排不下的顶到午餐之后，午餐作为 fixedBlock 暴露
+let lunch = DaySchedule.FixedBlock(id: "meal:午餐", label: "午餐", start: 12 * 60, end: 13 * 60)
+let mealed = DaySchedule.build(
+  items: [sheetItem("a", 30), sheetItem("b", 120)],
+  startMinute: 11 * 60, nowMinute: 11 * 60, meals: [lunch])
+check(mealed.rows[0].start == 11 * 60 && mealed.rows[0].end == 11 * 60 + 30, "短任务在午餐前排下：11:00–11:30")
+check(mealed.rows[1].start == 13 * 60, "放不进午餐前的长任务顶到 13:00 之后，而不是骑在午餐上")
+check(mealed.fixedBlocks.count == 1 && mealed.fixedBlocks[0].label == "午餐", "午餐作为 fixedBlock 暴露给视图渲染")
+// 起点之前的餐（早于 startMinute 结束）被丢弃
+let staleMeal = DaySchedule.build(
+  items: [sheetItem("a", 60)],
+  startMinute: 14 * 60, nowMinute: 14 * 60, meals: [lunch])
+check(staleMeal.fixedBlocks.isEmpty, "计划从 14:00 起时，12:00 的午餐与今天无关，不显示")
+// 没有餐块时行为和以前完全一样（默认参数护栏）
+let noMeal = DaySchedule.build(items: [sheetItem("a", 60), sheetItem("b", 60)], startMinute: t0, nowMinute: noon)
+check(noMeal.fixedBlocks.isEmpty && noMeal.rows[1].start == t0 + 60, "不传餐块时和旧的零间隙顺推一致")
+
 // 格式
 check(DaySchedule.duration(120) == "2h" && DaySchedule.duration(90) == "1h30m"
       && DaySchedule.duration(45) == "45m", "时长按原型的紧凑写法")

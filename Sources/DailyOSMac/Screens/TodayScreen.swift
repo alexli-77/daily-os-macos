@@ -102,8 +102,9 @@ struct TodayScreen: View {
   private var schedule: DaySchedule {
     DaySchedule.build(
       items: items,
-      startMinute: DayStart.resolve(generatedAt: state.planGeneratedAt),
-      nowMinute: DaySchedule.minute(of: .now)
+      startMinute: DayStart.resolve(generatedAt: state.planGeneratedAt, workStart: state.planWorkStartMinute),
+      nowMinute: DaySchedule.minute(of: .now),
+      meals: state.planMealBlocks
     )
   }
 
@@ -164,6 +165,13 @@ private struct CallSheetPanel: View {
   @ViewBuilder private var sheet: some View {
     VStack(spacing: 0) {
       ForEach(Array(schedule.rows.enumerated()), id: \.element.id) { index, row in
+        // Meal / break bands sit at their wall-clock time, before the task the
+        // schedule pushed past them. Display-only — they are not in `rows`, so
+        // drag indices and the now-line are untouched.
+        ForEach(mealsBefore(rowIndex: index)) { meal in
+          MealRow(block: meal)
+          Rectangle().fill(Palette.rule).frame(height: Metrics.hairline)
+        }
         if index == schedule.nowIndex && !schedule.isClear {
           NowLine(minute: schedule.now)
         }
@@ -192,8 +200,19 @@ private struct CallSheetPanel: View {
   }
 
   private var subtitle: String {
-    let start = DayStart.resolve(generatedAt: state.planGeneratedAt)
+    let start = DayStart.resolve(generatedAt: state.planGeneratedAt, workStart: state.planWorkStartMinute)
     return "从 \(DaySchedule.clock(start)) 起按估时顺推 · 拖动换顺序，时段跟着重算"
+  }
+
+  /// Meals that belong immediately before task row `rowIndex` — those starting
+  /// after the previous timed row and before this one. Each band lands in exactly
+  /// one slot: a later row's previous-start floor excludes it.
+  private func mealsBefore(rowIndex: Int) -> [DaySchedule.FixedBlock] {
+    guard let thisStart = schedule.rows[rowIndex].start else { return [] }
+    let prevStart = schedule.rows[..<rowIndex].last(where: { $0.start != nil })?.start
+    return schedule.fixedBlocks.filter { meal in
+      meal.start < thisStart && (prevStart.map { meal.start >= $0 } ?? true)
+    }
   }
 
   private var isRunning: Bool { state.planRunStartedAt != nil }
@@ -1040,6 +1059,36 @@ private struct InlineField: View {
   }
 }
 
+
+// MARK: - Meal / break band
+
+/// A fixed band on the sheet — lunch, a break. Same column geometry as a task
+/// row (96pt slot, 22pt where the circle would be) so the times stay in one
+/// vertical line, but it carries no state circle, no actions and no source: it
+/// is not something you do, it is time the day is not yours.
+private struct MealRow: View {
+  let block: DaySchedule.FixedBlock
+
+  var body: some View {
+    HStack(alignment: .top, spacing: Metrics.sm) {
+      Text("\(DaySchedule.clock(block.start))–\(DaySchedule.clock(block.end))")
+        .font(Typo.label)
+        .foregroundStyle(Palette.ink3)
+        .monospacedDigit()
+        .frame(width: 96, alignment: .leading)
+      Image(systemName: "fork.knife")
+        .foregroundStyle(Palette.ink3)
+        .frame(width: Metrics.circleSize)
+        .padding(.top, 1)
+      Text(block.label)
+        .font(Typo.body)
+        .foregroundStyle(Palette.ink2)
+      Spacer(minLength: 0)
+    }
+    .padding(.vertical, Metrics.sm)
+    .accessibilityElement(children: .combine)
+  }
+}
 
 // MARK: - My todos (rail)
 

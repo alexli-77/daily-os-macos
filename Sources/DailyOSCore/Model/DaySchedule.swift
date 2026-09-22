@@ -54,7 +54,29 @@ public struct DaySchedule: Sendable, Equatable {
     }
   }
 
+  /// A fixed, non-task band on the timeline — a meal or a break. It comes from
+  /// the user's rhythm (`user.rhythm.meal_blocks`), sits at a wall-clock time the
+  /// tasks flow around, and is never checkable/draggable. Kept out of `rows` so
+  /// the task invariants (drag indices, now-line, plan count) are untouched; the
+  /// view interleaves these by start time for display only.
+  public struct FixedBlock: Sendable, Equatable, Identifiable {
+    public let id: String
+    public let label: String
+    public let start: Int
+    public let end: Int
+
+    public init(id: String, label: String, start: Int, end: Int) {
+      self.id = id
+      self.label = label
+      self.start = start
+      self.end = end
+    }
+  }
+
   public let rows: [Row]
+  /// Meal/break bands that fell within the planned day, in start order. The view
+  /// draws these between task rows; the arithmetic already pushed tasks past them.
+  public let fixedBlocks: [FixedBlock]
   /// Index in `rows` where the now-line is drawn — the first row that starts at
   /// or after `now`. Equal to `rows.count` when the whole sheet is behind you.
   public let nowIndex: Int
@@ -88,13 +110,20 @@ public struct DaySchedule: Sendable, Equatable {
   ///   - items: in sheet order. The caller owns the ordering (drag, rank).
   ///   - startMinute: when the day's first slot begins — see `DayStart`.
   ///   - nowMinute: minutes from midnight.
-  public static func build(items: [TodoItem], startMinute: Int, nowMinute: Int) -> DaySchedule {
+  ///   - meals: fixed wall-clock bands (from `user.rhythm.meal_blocks`) that
+  ///     tasks must not run through. Default empty keeps the plain accumulate.
+  public static func build(items: [TodoItem], startMinute: Int, nowMinute: Int, meals: [FixedBlock] = []) -> DaySchedule {
     var cursor = startMinute
     var rows: [Row] = []
     var late: [Row] = []
     var remaining = 0
     var missing = 0
     var nowIndex = -1
+    // Sorted, and dropped if they end before the day even starts (a lunch at
+    // 12:00 is irrelevant to a plan that begins at 14:00). Consumed as the cursor
+    // passes them; whatever is left over never happened within the planned day.
+    var pendingMeals = meals.filter { $0.end > startMinute }.sorted { $0.start < $1.start }
+    var placedMeals: [FixedBlock] = []
 
     for (index, item) in items.enumerated() {
       let rank = index + 1
@@ -113,6 +142,22 @@ public struct DaySchedule: Sendable, Equatable {
       }
 
       let minutes = item.state == .partial ? Int((Double(estimate) / 2).rounded()) : estimate
+
+      // A meal is fixed on the clock; a task may not run through one. Flush any
+      // meal the cursor has already reached, then — if this task would spill into
+      // the next meal — let the meal go first and start the task after it. The
+      // gap this can leave before a meal is real free time, not an error.
+      while let meal = pendingMeals.first, meal.start <= cursor {
+        placedMeals.append(meal)
+        cursor = max(cursor, meal.end)
+        pendingMeals.removeFirst()
+      }
+      if let meal = pendingMeals.first, meal.start < cursor + minutes {
+        placedMeals.append(meal)
+        cursor = meal.end
+        pendingMeals.removeFirst()
+      }
+
       let end = cursor + minutes
 
       // Checked before the row is appended, and before the done-row shortcut, so
@@ -132,6 +177,7 @@ public struct DaySchedule: Sendable, Equatable {
 
     return DaySchedule(
       rows: rows,
+      fixedBlocks: placedMeals,
       nowIndex: nowIndex,
       now: nowMinute,
       remaining: remaining,
@@ -185,14 +231,26 @@ extension DaySchedule {
 /// so by mid-morning the first rows read as late for no better reason than that
 /// a cron job is an early riser.
 ///
-/// Kept as one function with one input so that adding `rhythm.start_time`
-/// upstream is a single line here and changes nothing else.
+/// `workStart` (from `user.rhythm.working_hours.start`) is now that upstream
+/// input: when the user has told us their day begins at 09:30, the sheet begins
+/// at 09:30 regardless of when the 07:43 scheduler happened to write the plan.
+/// Falls back to the plan timestamp, then to a fixed 09:30, when it is absent.
 public enum DayStart {
-  /// 09:30 — used only when there is no plan timestamp at all.
+  /// 09:30 — used only when there is neither a work start nor a plan timestamp.
   public static let fallbackMinute = 9 * 60 + 30
 
-  public static func resolve(generatedAt: Date?, calendar: Calendar = .current) -> Int {
+  public static func resolve(generatedAt: Date?, workStart: Int? = nil, calendar: Calendar = .current) -> Int {
+    if let workStart { return workStart }
     guard let generatedAt else { return fallbackMinute }
     return DaySchedule.minute(of: generatedAt, calendar: calendar)
+  }
+
+  /// Parse "HH:mm" to minutes-from-midnight. `nil` on anything malformed, so a
+  /// bad value falls through to the timestamp rather than to 00:00.
+  public static func minute(fromClock clock: String) -> Int? {
+    let parts = clock.split(separator: ":")
+    guard parts.count == 2, let h = Int(parts[0]), let m = Int(parts[1]),
+          (0...23).contains(h), (0...59).contains(m) else { return nil }
+    return h * 60 + m
   }
 }
