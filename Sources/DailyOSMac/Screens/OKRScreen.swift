@@ -67,7 +67,9 @@ struct OKRScreen: View {
   }
 }
 
-private struct ObjectiveBlock: View {
+/// Shared with the Cycles OKR drawer (`CycleOKRInspector`), which consults the
+/// same objectives beside a cycle's 要务.
+struct ObjectiveBlock: View {
   let objective: Objective
 
   var body: some View {
