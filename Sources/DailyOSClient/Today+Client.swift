@@ -38,6 +38,33 @@ enum TodoWireDate {
 struct StatePayload: Decodable {
   let todoInbox: TodoInboxPayload
   let service: LaunchAgentPayload
+  /// Optional so a service built before rhythm was exposed still decodes — a
+  /// missing key leaves this nil rather than throwing.
+  let rhythm: RhythmPayload?
+}
+
+/// `state.rhythm`'s two structured fields, in the config's own snake_case (the
+/// canonical shape the service documents). The prose half of rhythm is a vault
+/// file the Today screen never reads.
+struct RhythmPayload: Decodable {
+  let workingHours: ClockRangePayload?
+  let mealBlocks: [MealBlockPayload]?
+
+  enum CodingKeys: String, CodingKey {
+    case workingHours = "working_hours"
+    case mealBlocks = "meal_blocks"
+  }
+}
+
+struct ClockRangePayload: Decodable {
+  let start: String
+  let end: String
+}
+
+struct MealBlockPayload: Decodable {
+  let label: String
+  let start: String
+  let end: String
 }
 
 struct TodoInboxPayload: Decodable {
@@ -221,6 +248,23 @@ extension DailyOSClient {
   /// change the words and nothing else.
   public func renameTodo(id: String, text: String) async throws {
     try await post("/api/todo-inbox", body: TodoInboxUpdateRequest(id: id, text: text))
+  }
+
+  /// The structured rhythm the Today timeline lays itself out against: when the
+  /// work day starts, and the meal bands tasks must flow around. Absent or
+  /// malformed values return nil / drop, so the schedule falls back to its old
+  /// behaviour rather than to 00:00.
+  public func dayRhythm() async throws -> (workStart: Int?, meals: [DaySchedule.FixedBlock]) {
+    let payload: StatePayload = try await get(statePath)
+    guard let rhythm = payload.rhythm else { return (nil, []) }
+    let workStart = rhythm.workingHours.flatMap { DayStart.minute(fromClock: $0.start) }
+    let meals: [DaySchedule.FixedBlock] = (rhythm.mealBlocks ?? []).compactMap { block in
+      guard let start = DayStart.minute(fromClock: block.start),
+            let end = DayStart.minute(fromClock: block.end),
+            end > start else { return nil }
+      return DaySchedule.FixedBlock(id: "meal:\(block.label):\(block.start)", label: block.label, start: start, end: end)
+    }
+    return (workStart, meals)
   }
 
   private var statePath: String { "/api/state" }

@@ -71,6 +71,8 @@ public final class LiveAppState: AppState {
     hasPlan = false
     planStaleDate = nil
     planGeneratedAt = nil
+    planWorkStartMinute = nil
+    planMealBlocks = []
     selectedCycleID = nil
     selectedRunID = nil
     selectedArtifactID = nil
@@ -212,6 +214,11 @@ public final class LiveAppState: AppState {
       self.planStaleDate = plan.staleDate
       self.planGeneratedAt = plan.generatedAt
       self.hasPlan = plan.hasPlan
+      // Rhythm rides in the plan chunk: it shapes the same timeline and a failure
+      // to read it is the same "today didn't load" story, not its own banner.
+      let rhythm = try await client.dayRhythm()
+      self.planWorkStartMinute = rhythm.workStart
+      self.planMealBlocks = rhythm.meals
     }
 
     await load(.teamToday) {

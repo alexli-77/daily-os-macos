@@ -63,6 +63,14 @@ open class AppState {
   /// state from "ran and produced nothing".
   public var hasPlan = true
 
+  /// The work day the Today timeline lays items out across, from
+  /// `user.rhythm.working_hours.start` (minutes from midnight). `nil` falls back
+  /// to the plan timestamp — see `DayStart`.
+  public var planWorkStartMinute: Int?
+  /// Fixed meal/break bands (`user.rhythm.meal_blocks`) the schedule flows tasks
+  /// around, so the day is not one unbroken morning block.
+  public var planMealBlocks: [DaySchedule.FixedBlock] = []
+
   /// When this app started a `daily_plan` run that has not produced a plan yet.
   ///
   /// **In the store rather than in the panel**, and that is the whole point of

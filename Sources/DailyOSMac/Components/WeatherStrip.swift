@@ -21,10 +21,15 @@ import DailyOSCore
 struct WeatherStrip: View {
   @Environment(AppState.self) private var state
 
-  private static let glyphSide: CGFloat = 26
+  private static let glyphSide: CGFloat = 34
   /// Both states are pinned to one height so the header does not jump by a line
   /// when a reading finally lands.
   private static let height: CGFloat = 34
+
+  /// The strip has no frame of its own — it sits on the screen's paper. The only
+  /// mark it makes is a mint wash while the pointer is over it, so the tap target
+  /// is discoverable without a permanent box competing with 今日进度.
+  @State private var hovering = false
 
   var body: some View {
     Button {
@@ -38,15 +43,13 @@ struct WeatherStrip: View {
       .frame(height: Self.height)
       .background {
         RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous)
-          .fill(Palette.surface)
+          .fill(hovering ? Palette.mint50 : .clear)
       }
-      .overlay {
-        RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous)
-          .strokeBorder(Palette.line, lineWidth: Metrics.hairline)
-      }
-      .contentShape(RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
+      .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
+    .onHover { hovering = $0 }
+    .animation(.easeOut(duration: 0.12), value: hovering)
     .help(helpText)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(Text(accessibilityText))
@@ -56,18 +59,14 @@ struct WeatherStrip: View {
 
   @ViewBuilder private var glyph: some View {
     if let weather = state.weather {
-      WeatherGlyph(look: WeatherLook(code: weather.code), isDay: weather.isDay)
-        // Replaying the entrance is what makes a new reading noticeable without
-        // anything having to flash: a changed id is a new view, and a new view
-        // draws itself in from zero again. Three times a day, not once a frame.
-        .id(weather.fetchedAt)
+      WeatherIcon(look: WeatherLook(code: weather.code), isDay: weather.isDay)
         .frame(width: Self.glyphSide, height: Self.glyphSide)
     } else {
       // The same hairline dashed outline the donut uses for "nothing to draw",
       // so an empty state in one corner of this screen looks like an empty state
       // in the other.
       Circle()
-        .strokeBorder(Palette.line, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+        .strokeBorder(Palette.rule, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
         .frame(width: 20, height: 20)
         .frame(width: Self.glyphSide, height: Self.glyphSide)
     }
@@ -75,18 +74,26 @@ struct WeatherStrip: View {
 
   @ViewBuilder private var text: some View {
     if let weather = state.weather {
-      VStack(alignment: .leading, spacing: 1) {
-        HStack(alignment: .firstTextBaseline, spacing: Metrics.xxs) {
-          Text(Self.degrees(weather.temperatureC))
-            .font(Typo.tabularBody.weight(.medium))
-            .foregroundStyle(Palette.ink)
-          Text("\(Self.degrees(weather.low)) / \(Self.degrees(weather.high))")
-            .font(Typo.tabularCaption)
-            .foregroundStyle(Palette.inkMuted)
+      HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
+        // One focal number. Everything beside it is demoted a step so the eye
+        // lands on the temperature first and reads the rest only if it wants to.
+        Text(Self.degrees(weather.temperatureC))
+          .font(Typo.tabularTitle)
+          .foregroundStyle(Palette.ink)
+        VStack(alignment: .leading, spacing: 1) {
+          HStack(alignment: .firstTextBaseline, spacing: Metrics.xxs) {
+            Text(WeatherLook(code: weather.code).label)
+              .font(Typo.label)
+              .foregroundStyle(Palette.ink2)
+            Text("\(Self.degrees(weather.low)) / \(Self.degrees(weather.high))")
+              .font(Typo.tabularCaption)
+              .foregroundStyle(Palette.ink2)
+          }
+          Text(weather.place)
+            .font(Typo.caption)
+            .foregroundStyle(Palette.ink3)
+            .lineLimit(1)
         }
-        Text("\(WeatherLook(code: weather.code).label) · \(weather.place)")
-          .mutedStyle()
-          .lineLimit(1)
       }
     } else {
       Text("天气还没取到，点一下重试")
@@ -152,7 +159,7 @@ struct WeatherStrip: View {
 /// The mapping lives here and not in the decoder on purpose: `WeatherSnapshot`
 /// carries the raw code precisely so that "code 71 is snow" stays a drawing
 /// decision. Collapsing ninety-nine codes into seven pictures is lossy, and the
-/// place to be lossy is the place that draws 26 points of cloud.
+/// place to be lossy is the place that picks one small icon.
 private enum WeatherLook {
   case clear, partly, cloudy, fog, rain, snow, thunder
 
@@ -182,168 +189,49 @@ private enum WeatherLook {
     case .thunder: "雷雨"
     }
   }
-
-  var hasSun: Bool { self == .clear || self == .partly }
-  var hasCloud: Bool { self != .clear }
 }
 
-/// A sun, a cloud and some weather under it, at 26 points.
+/// The condition as one SF Symbol, in brand ink rather than system multicolour.
 ///
-/// Everything here animates exactly once, on appear. No `repeatForever`: a
-/// looping animation holds a display link open for as long as the window is
-/// visible, and this app is left open all day next to other work — a decoration
-/// that spins the fans is a decoration that gets deleted. The motion is an
-/// entrance, which means it plays when there is something new to see (a fresh
-/// reading replaces the view, see `.id`) and is perfectly still the rest of the
-/// time.
-private struct WeatherGlyph: View {
+/// `.palette` and not `.multicolor` on purpose: multicolour pulls the system's
+/// own blues and yellows, and a blue raindrop on a page of mint reads as a
+/// second brand. So the layers are assigned by hand — the warm mark (sun, bolt)
+/// is `warn`, the cloud is a muted `ink3`, and precipitation is `mint400` so the
+/// wet conditions stay inside the palette. The layer order is the one Apple
+/// ships: cloud first, then the accent it carries.
+private struct WeatherIcon: View {
   let look: WeatherLook
   let isDay: Bool
 
-  /// 0 before the entrance, 1 after. Every element reads it and declares its own
-  /// timing, which is how the drops can be staggered without a keyframe track.
-  @State private var entrance: Double = 0
-
-  private var cloudOpacity: Double {
-    look == .cloudy || look == .fog ? 0.5 : 0.34
-  }
-
   var body: some View {
-    ZStack {
-      if look.hasSun {
-        if isDay { sun } else { moon }
-      }
-      if look.hasCloud { cloud }
-      precipitation
-    }
-    .frame(width: 26, height: 26)
-    .onAppear { entrance = 1 }
+    symbol
+      .font(.system(size: 30))
+      .symbolRenderingMode(.palette)
   }
 
-  /// Rays only when there is no cloud in front. Eight little capsules behind a
-  /// cloud at this size read as fuzz, not as sunshine.
-  private var sun: some View {
-    ZStack {
-      if look == .clear {
-        ForEach(0..<8, id: \.self) { index in
-          Capsule()
-            .fill(Palette.warn)
-            .frame(width: 1.5, height: 3.5)
-            .offset(y: -9)
-            .rotationEffect(.degrees(Double(index) * 45))
-        }
-        .scaleEffect(0.6 + 0.4 * entrance)
-        .rotationEffect(.degrees((1 - entrance) * 20))
-        .opacity(entrance)
-        .animation(.easeOut(duration: 0.8).delay(0.1), value: entrance)
-      }
-      Circle()
-        .fill(Palette.warn)
-        .frame(width: 11, height: 11)
-        .scaleEffect(0.7 + 0.3 * entrance)
-        .opacity(entrance)
-        .animation(.spring(duration: 0.5), value: entrance)
-    }
-    .offset(x: look.hasCloud ? -6.5 : 0, y: look.hasCloud ? -6 : 0)
-  }
-
-  /// A symbol rather than a hand-drawn crescent, for the same reason as the
-  /// bolt: a crescent is a disc with another disc punched out of it, and that
-  /// cut edge is the first thing to go ragged when a 26-point drawing lands on a
-  /// non-integral position. Two dots beside it, because a lone grey disc reads
-  /// as a hole in the strip rather than as night.
-  private var moon: some View {
-    ZStack {
-      Image(systemName: "moon.fill")
-        .font(.system(size: 12))
-        .foregroundStyle(Palette.inkMuted.opacity(0.75))
-        .scaleEffect(0.7 + 0.3 * entrance)
-        .opacity(entrance)
-        .animation(.spring(duration: 0.5), value: entrance)
-      ForEach(Array([CGSize(width: 8, height: -7), CGSize(width: -8, height: 6)].enumerated()), id: \.offset) { index, position in
-        Circle()
-          .fill(Palette.inkMuted.opacity(0.55))
-          .frame(width: 2, height: 2)
-          .offset(position)
-          .opacity(entrance)
-          .animation(.easeOut(duration: 0.6).delay(0.2 + Double(index) * 0.15), value: entrance)
-      }
-    }
-    .offset(x: look.hasCloud ? -6.5 : 0, y: look.hasCloud ? -6 : 0)
-  }
-
-  /// Drifts in from the left and stops. Clouds move; this one moves once.
-  ///
-  /// The opacity is on the flattened group rather than in each shape's fill.
-  /// Three translucent shapes stacked show their own overlaps, and the
-  /// lens-shaped creases where they cross were the first thing the eye found in
-  /// a drawing this small — a cloud has one silhouette, not three.
-  private var cloud: some View {
-    ZStack {
-      Circle().frame(width: 9, height: 9).offset(x: -3.5, y: -2)
-      Circle().frame(width: 11, height: 11).offset(x: 3, y: -3)
-      Capsule().frame(width: 18, height: 8).offset(y: 1)
-    }
-    .foregroundStyle(Palette.inkMuted)
-    .compositingGroup()
-    .opacity(cloudOpacity * entrance)
-    .offset(x: -6 * (1 - entrance) + 2, y: 1)
-    .animation(.easeOut(duration: 0.7), value: entrance)
-  }
-
-  @ViewBuilder private var precipitation: some View {
+  @ViewBuilder private var symbol: some View {
     switch look {
-    case .rain:
-      falling { Capsule().fill(Palette.inkMuted.opacity(0.55)).frame(width: 1.5, height: 4) }
-    case .snow:
-      falling { Circle().fill(Palette.inkMuted.opacity(0.55)).frame(width: 3, height: 3) }
+    case .clear:
+      if isDay {
+        Image(systemName: "sun.max.fill").foregroundStyle(Palette.warn)
+      } else {
+        Image(systemName: "moon.stars.fill").foregroundStyle(Palette.warn, Palette.ink3)
+      }
+    case .partly:
+      Image(systemName: isDay ? "cloud.sun.fill" : "cloud.moon.fill")
+        .foregroundStyle(Palette.ink3, Palette.warn)
+    case .cloudy:
+      Image(systemName: "cloud.fill").foregroundStyle(Palette.ink3)
     case .fog:
-      fog
+      Image(systemName: "cloud.fog.fill").foregroundStyle(Palette.ink3, Palette.ink2)
+    case .rain:
+      Image(systemName: "cloud.rain.fill").foregroundStyle(Palette.ink3, Palette.mint400)
+    case .snow:
+      Image(systemName: "cloud.snow.fill").foregroundStyle(Palette.ink3, Palette.mint400)
     case .thunder:
-      bolt
-    case .clear, .partly, .cloudy:
-      EmptyView()
+      Image(systemName: "cloud.bolt.rain.fill")
+        .foregroundStyle(Palette.ink3, Palette.warn, Palette.mint400)
     }
-  }
-
-  /// Three drops, staggered, each falling once and staying where it landed —
-  /// which reads as drawn rain rather than as a paused animation.
-  private func falling<Drop: View>(@ViewBuilder drop: @escaping () -> Drop) -> some View {
-    HStack(spacing: 4) {
-      ForEach(0..<3, id: \.self) { index in
-        drop()
-          .offset(y: 6 * entrance)
-          .opacity(entrance)
-          .animation(.easeIn(duration: 0.45).delay(0.25 + Double(index) * 0.12), value: entrance)
-      }
-    }
-    .offset(y: 5)
-  }
-
-  /// Two hairlines under the cloud, widening in. Fog is the one condition with
-  /// no shape of its own, so it borrows the system's: a line.
-  private var fog: some View {
-    VStack(alignment: .leading, spacing: 3) {
-      ForEach(0..<2, id: \.self) { index in
-        Capsule()
-          .fill(Palette.inkMuted.opacity(0.45))
-          .frame(width: index == 0 ? 16 : 11, height: 1.5)
-          .scaleEffect(x: entrance, anchor: .leading)
-          .opacity(entrance)
-          .animation(.easeOut(duration: 0.5).delay(0.3 + Double(index) * 0.12), value: entrance)
-      }
-    }
-    .offset(x: -3, y: 8)
-  }
-
-  private var bolt: some View {
-    Image(systemName: "bolt.fill")
-      .font(.system(size: 9, weight: .semibold))
-      .foregroundStyle(Palette.warn)
-      .offset(y: 8)
-      .scaleEffect(0.5 + 0.5 * entrance, anchor: .top)
-      .opacity(entrance)
-      .animation(.spring(duration: 0.45).delay(0.3), value: entrance)
   }
 }
 
