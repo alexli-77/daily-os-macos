@@ -101,7 +101,13 @@ open class AppState {
   /// change at all.
   public var planFingerprint: String {
     let rows = plan.map { "\($0.id)|\($0.text)|\($0.estimatedMinutes ?? -1)" }.joined(separator: "\n")
-    return "\(hasPlan)|\(planStaleDate ?? "-")|\(rows)"
+    // `generatedAt` is in the fingerprint so a rerun that finishes is detected
+    // even when it produces the same rows. Without it, regenerating a plan whose
+    // items are unchanged left the fingerprint identical, `watchForPlan` never saw
+    // a change, and the "正在生成…" note stuck until its 10-minute timeout — while
+    // the run had in fact completed (and, e.g., sent its Feishu card).
+    let generated = planGeneratedAt.map { "\($0.timeIntervalSince1970)" } ?? "-"
+    return "\(hasPlan)|\(planStaleDate ?? "-")|\(generated)|\(rows)"
   }
 
   // Transient
