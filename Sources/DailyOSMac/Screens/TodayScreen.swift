@@ -19,16 +19,44 @@ struct TodayScreen: View {
   /// and inbox ids are ledger ids, so they cannot collide.
   @State private var selectedTaskID: TodoItem.ID?
   @State private var showsExecution = false
+  /// The rail (我的待办 + 团队) sits beside the call sheet on a wide window and
+  /// drops under it on a narrow one. This flag lets the user force the stacked
+  /// form even when there is room — some people want the call sheet full-width.
+  @AppStorage("today.railStacked") private var railStacked = false
+  /// Measured content width, so the layout follows the window rather than the
+  /// platform. Below the breakpoint two columns would crush the call sheet's
+  /// task text (the slot/source columns are fixed-width), so the rail stacks.
+  @State private var contentWidth: CGFloat = 0
+  private static let railBreakpoint: CGFloat = 800
 
   var body: some View {
     ScreenScaffold("今天", subtitle: subtitle) {
-      if showsExecution { ExecutionPanel(schedule: schedule) }
-      QuickCapturePanel()
-      CallSheetPanel(schedule: schedule, selectedID: $selectedTaskID)
-      TeamTodayPanel()
+      let sideBySide = contentWidth >= Self.railBreakpoint && !railStacked
+      Group {
+        if sideBySide {
+          HStack(alignment: .top, spacing: Metrics.md) {
+            mainColumn.frame(maxWidth: .infinity, alignment: .top)
+            rail.frame(width: Metrics.listIdeal)
+          }
+        } else {
+          VStack(alignment: .leading, spacing: Metrics.md) {
+            mainColumn
+            rail
+          }
+        }
+      }
+      .background(widthReader)
     } toolbar: {
       HStack(spacing: Metrics.sm) {
         WeatherStrip()
+        if contentWidth >= Self.railBreakpoint {
+          Button(railStacked ? "并排侧栏" : "收起侧栏") {
+            withAnimation(.snappy(duration: 0.2)) { railStacked.toggle() }
+          }
+          .buttonStyle(MossButtonStyle(prominent: false))
+          .accessibilityAddTraits(railStacked ? [] : [.isSelected])
+          .help(railStacked ? "把「我的待办 / 团队」放回右侧" : "把「我的待办 / 团队」收到主列下方")
+        }
         Button(showsExecution ? "收起执行情况" : "执行情况") {
           withAnimation(.snappy(duration: 0.2)) { showsExecution.toggle() }
         }
@@ -38,12 +66,38 @@ struct TodayScreen: View {
     }
   }
 
-  /// The plan, then anything captured that is not in it.
-  ///
-  /// Plan order is the planner's ranking and the user's drags; inbox captures go
-  /// after, because they arrived without a position and inventing one for them
-  /// would silently outrank work the planner reasoned about.
-  private var items: [TodoItem] { state.plan + state.todos }
+  /// The day itself: the plan as a call sheet, optionally under the execution
+  /// panel. The inbox and the team used to live here too; they moved to the rail
+  /// so this column stays "one screen of today's plan".
+  @ViewBuilder private var mainColumn: some View {
+    VStack(alignment: .leading, spacing: Metrics.md) {
+      if showsExecution { ExecutionPanel(schedule: schedule) }
+      CallSheetPanel(schedule: schedule, selectedID: $selectedTaskID)
+    }
+  }
+
+  /// 我的待办（随手记 + 列表）+ 团队今天. Secondary but always-glanceable, so it
+  /// rides alongside the plan rather than sinking to the bottom of one scroll.
+  @ViewBuilder private var rail: some View {
+    VStack(alignment: .leading, spacing: Metrics.md) {
+      QuickCapturePanel()
+      TodoPanel(selectedID: $selectedTaskID)
+      TeamTodayPanel()
+    }
+  }
+
+  private var widthReader: some View {
+    GeometryReader { proxy in
+      Color.clear
+        .onAppear { contentWidth = proxy.size.width }
+        .onChange(of: proxy.size.width) { contentWidth = proxy.size.width }
+    }
+  }
+
+  /// The plan only. Inbox captures are a scratchpad, not scheduled work — they
+  /// have their own panel in the rail and no longer get folded into the clock
+  /// (which is what made the call sheet long and the "预计结束" projection lie).
+  private var items: [TodoItem] { state.plan }
 
   private var schedule: DaySchedule {
     DaySchedule.build(
@@ -986,6 +1040,128 @@ private struct InlineField: View {
   }
 }
 
+
+// MARK: - My todos (rail)
+
+/// The inbox, back as its own list.
+///
+/// Restored from before the call sheet swallowed it: captures are a scratchpad,
+/// not scheduled work, and they want their own home with the full set of verbs
+/// (改 / 顺延 / 删 / 恢复) rather than a state circle at the tail of the clock.
+/// Lives in the Today rail next to 团队今天.
+private struct TodoPanel: View {
+  @Environment(AppState.self) private var state
+  @Binding var selectedID: TodoItem.ID?
+  @State private var showsHistory = false
+
+  var body: some View {
+    Panel("我的待办", subtitle: "\(state.openTodos.count) 项未完成") {
+      VStack(spacing: 2) {
+        if state.openTodos.isEmpty {
+          EmptyState(icon: "checkmark.circle", title: "都清完了", message: "收件箱是空的。")
+        } else {
+          ForEach(state.openTodos) { item in
+            TodoRow(item: item, selectedID: $selectedID)
+              .transition(.taskRow)
+          }
+        }
+
+        if !state.doneTodos.isEmpty || !state.deferredTodos.isEmpty {
+          PanelDivider()
+          DisclosureGroup(isExpanded: $showsHistory) {
+            VStack(spacing: 2) {
+              ForEach(state.doneTodos) { TodoRow(item: $0, selectedID: $selectedID) }
+              ForEach(state.deferredTodos) { TodoRow(item: $0, selectedID: $selectedID) }
+            }
+          } label: {
+            Text("已完成 / 已顺延 · \(state.doneTodos.count + state.deferredTodos.count)")
+              .mutedStyle()
+          }
+          .tint(Palette.inkMuted)
+          .padding(.top, Metrics.xs)
+        }
+      }
+    }
+  }
+}
+
+/// One inbox row.
+///
+/// The web gives an open row Done / Defer / Delete, and a history row Restore /
+/// Delete. All four are here; all four are `setTodo(_:to:)`, including delete —
+/// the service's `TodoInboxStatus` has a `deleted` tombstone and `/api/state`
+/// filters those rows out, so sending the status *is* the deletion.
+///
+/// 完成 stays on the check circle rather than becoming a fourth icon. It is the
+/// affordance people already reach for in a todo list, and duplicating it in the
+/// cluster would put the same action on the row twice.
+private struct TodoRow: View {
+  @Environment(AppState.self) private var state
+  let item: TodoItem
+  @Binding var selectedID: TodoItem.ID?
+
+  @State private var isRenaming = false
+  @State private var draft = ""
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Metrics.xxs) {
+      TaskRow(
+        item: item,
+        actions: actions,
+        onToggleCheck: item.state == .deferred ? nil : { state.toggleTodo(item.id) },
+        selectedID: $selectedID
+      ) {
+        if item.state == .deferred { Pill("已顺延", tone: .warn) }
+      }
+
+      if isRenaming {
+        InlineField(
+          placeholder: "改成…",
+          text: $draft,
+          confirm: "保存",
+          onConfirm: {
+            state.renameTodo(item.id, to: draft)
+            withAnimation(.snappy(duration: 0.2)) { isRenaming = false }
+          },
+          onCancel: { withAnimation(.snappy(duration: 0.2)) { isRenaming = false } }
+        )
+        .transition(.taskRow)
+      }
+    }
+  }
+
+  private var actions: [TaskAction] {
+    var actions: [TaskAction] = []
+    switch item.state {
+    case .open:
+      actions.append(
+        TaskAction(id: "rename", label: "修改", symbol: "square.and.pencil", key: "e") {
+          draft = item.text
+          isRenaming.toggle()
+        }
+      )
+      actions.append(
+        TaskAction(id: "defer", label: "顺延", symbol: "clock.arrow.circlepath", tone: .warn, key: "d") {
+          state.setTodo(item.id, to: .deferred)
+        }
+      )
+    case .deferred:
+      actions.append(
+        TaskAction(id: "restore", label: "恢复", symbol: "arrow.uturn.backward", key: "r") {
+          state.setTodo(item.id, to: .open)
+        }
+      )
+    case .done, .deleted, .partial:
+      break
+    }
+    actions.append(
+      TaskAction(id: "delete", label: "删除", symbol: "trash", tone: .danger, key: .delete, role: .destructive) {
+        state.setTodo(item.id, to: .deleted)
+      }
+    )
+    return actions
+  }
+}
 
 // MARK: - Previews
 
