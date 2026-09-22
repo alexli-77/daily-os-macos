@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import DailyOSCore
 
 /// The screen you open by reflex.
@@ -28,6 +29,10 @@ struct TodayScreen: View {
   /// task text (the slot/source columns are fixed-width), so the rail stacks.
   @State private var contentWidth: CGFloat = 0
   private static let railBreakpoint: CGFloat = 800
+  /// Ticked every minute so the now-line and the late flags actually track the
+  /// clock. Without it "现在 15:28" was frozen at whenever the view last drew.
+  @State private var now = Date()
+  private let clock = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
   var body: some View {
     ScreenScaffold("今天", subtitle: subtitle) {
@@ -50,20 +55,30 @@ struct TodayScreen: View {
       HStack(spacing: Metrics.sm) {
         WeatherStrip()
         if contentWidth >= Self.railBreakpoint {
-          Button(railStacked ? "并排侧栏" : "收起侧栏") {
+          // Icon reflects the current layout: a right panel when the rail is
+          // beside the plan, a bottom strip when it is stacked under it.
+          Button {
             withAnimation(.snappy(duration: 0.2)) { railStacked.toggle() }
+          } label: {
+            Image(systemName: railStacked ? "rectangle.bottomthird.inset.filled" : "rectangle.trailinghalf.inset.filled")
           }
           .buttonStyle(MossButtonStyle(prominent: false))
+          .accessibilityLabel(railStacked ? "并排侧栏" : "收起侧栏")
           .accessibilityAddTraits(railStacked ? [] : [.isSelected])
           .help(railStacked ? "把「我的待办 / 团队」放回右侧" : "把「我的待办 / 团队」收到主列下方")
         }
-        Button(showsExecution ? "收起执行情况" : "执行情况") {
+        Button {
           withAnimation(.snappy(duration: 0.2)) { showsExecution.toggle() }
+        } label: {
+          Image(systemName: "chart.bar.xaxis")
         }
         .buttonStyle(MossButtonStyle(prominent: false))
+        .accessibilityLabel(showsExecution ? "收起执行情况" : "执行情况")
         .accessibilityAddTraits(showsExecution ? [.isSelected] : [])
+        .help(showsExecution ? "收起执行情况" : "查看执行情况")
       }
     }
+    .onReceive(clock) { now = $0 }
   }
 
   /// The day itself: the plan as a call sheet, optionally under the execution
@@ -103,7 +118,7 @@ struct TodayScreen: View {
     DaySchedule.build(
       items: items,
       startMinute: DayStart.resolve(generatedAt: state.planGeneratedAt, workStart: state.planWorkStartMinute),
-      nowMinute: DaySchedule.minute(of: .now),
+      nowMinute: DaySchedule.minute(of: now),
       meals: state.planMealBlocks
     )
   }
