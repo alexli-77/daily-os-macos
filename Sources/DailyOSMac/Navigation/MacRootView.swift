@@ -39,38 +39,118 @@ struct MacRootView: View {
   }
 }
 
+/// Hand-drawn rather than `List(selection:).listStyle(.sidebar)`.
+///
+/// The stock sidebar paints its selected row in the system accent — blue on a
+/// default Mac. There is no blue in this product, and the row was also reversed
+/// out to white type, which the palette forbids outright. Both were wrong in the
+/// most-looked-at control in the app.
+///
+/// `.tint()` does not fix it: on macOS the sidebar's selection is drawn by the
+/// platform and ignores the tint, so the only way to own the colour is to draw
+/// the row. What that costs is the List's built-in arrow-key navigation, which
+/// `SectionCommands` in the app target already covers with ⌘1…⌘7.
+///
+/// Geometry and colour follow the Today-page comp (`spec/today-page.html`,
+/// `.side`), which is the authority for this screen.
+///
+/// Deliberately not `SelectableRow` from the design system, which the Settings
+/// screen's left column uses: that one is a 4pt-radius row filled with `mossSoft`,
+/// and widening it to cover this case would change Settings in a PR that is not
+/// about Settings. Worth merging once both have settled.
 private struct Sidebar: View {
   @Environment(AppState.self) private var state
   @Binding var selection: AppSection
 
   var body: some View {
-    List(selection: $selection) {
-      Section {
-        ForEach(AppSection.workGroup) { item(for: $0) }
+    ScrollView {
+      LazyVStack(alignment: .leading, spacing: Metrics.xxs) {
+        ForEach(AppSection.workGroup) { row(for: $0) }
+        SectionLabel("系统")
+        ForEach(AppSection.systemGroup) { row(for: $0) }
       }
-      Section("系统") {
-        ForEach(AppSection.systemGroup) { item(for: $0) }
-      }
+      .padding(Metrics.xs)
     }
-    .listStyle(.sidebar)
+    .scrollContentBackground(.hidden)
     .safeAreaInset(edge: .bottom, spacing: 0) {
       SidebarFooter()
     }
+    // After the inset, so paper covers the footer strip too. Applied inside the
+    // scroll view instead, the footer would keep sitting on the split view's
+    // own translucent sidebar material.
+    .background(Palette.paper)
     .navigationTitle("Daily OS")
   }
 
-  private func item(for section: AppSection) -> some View {
-    Label {
+  private func row(for section: AppSection) -> some View {
+    SidebarRow(
+      section: section,
+      isSelected: section == selection,
+      badge: section == .cycles && state.pendingDraftCount > 0 ? state.pendingDraftCount : nil
+    ) {
+      selection = section
+    }
+  }
+}
+
+/// One navigation row.
+///
+/// Selected is a sheet of `page` lifted off the `paper` sidebar by a hairline
+/// under it — the same two-paper relationship the Today sheet has with its
+/// background, at pill scale. Not a mint fill: the accent is spent inside the
+/// day (the now-line, a completed dot, overdue text), and a permanently mint row
+/// in the corner of every screen would be the loudest thing in the window while
+/// saying the least. See `.side a[aria-current]` in the comp.
+///
+/// No hover state, also from the comp. Seven rows that all light up under the
+/// pointer turn a quiet rail into something that flickers on the way to the
+/// content, and the selected row already says where you are.
+private struct SidebarRow: View {
+  let section: AppSection
+  let isSelected: Bool
+  let badge: Int?
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
       HStack(spacing: Metrics.xs) {
+        Image(systemName: section.icon).frame(width: 18)
         Text(section.title)
-        if section == .cycles, state.pendingDraftCount > 0 {
-          Pill("\(state.pendingDraftCount)", tone: .warn)
+        if let badge {
+          Pill("\(badge)", tone: .warn)
+        }
+        Spacer(minLength: 0)
+      }
+      .font(Typo.body)
+      // The whole row, icon included, is one colour. Tinting the icon and
+      // leaving the label ink — which the Settings list does — reads as two
+      // states on one row when the row already has a fill saying "selected".
+      .foregroundStyle(isSelected ? Palette.ink : Palette.ink2)
+      .padding(.horizontal, Metrics.sm)
+      .padding(.vertical, Metrics.xs)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .frame(minHeight: Metrics.hitTarget)
+      .background {
+        if isSelected {
+          // `box-shadow: 0 1px 0 var(--rule)` in the comp — a hard 1pt line
+          // directly under the pill, not a blur. Radius 0 is what makes it a
+          // line: any blur reads as a drop shadow, and this palette has no
+          // depth effects in it.
+          shape
+            .fill(Palette.page)
+            .shadow(color: Palette.rule, radius: 0, x: 0, y: Metrics.hairline)
         }
       }
-    } icon: {
-      Image(systemName: section.icon)
+      .contentShape(shape)
     }
-    .tag(section)
+    .buttonStyle(.plain)
+    // The row is a button drawing its own selection, so nothing else tells
+    // VoiceOver which section you are in.
+    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+  }
+
+  private var shape: RoundedRectangle {
+    RoundedRectangle(cornerRadius: Metrics.radiusPill, style: .continuous)
   }
 }
 

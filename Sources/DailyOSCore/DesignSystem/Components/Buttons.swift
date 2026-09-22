@@ -22,7 +22,13 @@ public struct MossButtonStyle: ButtonStyle {
     // nothing in light mode is white-on-dark. `mint200` + `mint800` is what the
     // token table says a primary button is, and it reads as part of the paper
     // rather than as a sticker pressed onto it.
-    let shape = RoundedRectangle(cornerRadius: Metrics.radiusPaper, style: .continuous)
+    //
+    // Round, not 4pt. `Metrics` states the rule itself — "anything you can
+    // press" is `radiusPill` — and this style, the most-pressed thing in the
+    // app, was the one place contradicting it. `Panel` and `WeatherStrip` stay
+    // on `radiusPaper`: they are surfaces, and the split the radius scale
+    // encodes is surface versus control, not big versus small.
+    let shape = RoundedRectangle(cornerRadius: Metrics.radiusPill, style: .continuous)
     return configuration.label
       .font(Typo.body.weight(.medium))
       .foregroundStyle(Palette.foreground(for: tone))
