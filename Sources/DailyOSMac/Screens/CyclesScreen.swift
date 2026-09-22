@@ -17,6 +17,10 @@ struct CyclesScreen: View {
   /// it too — and the empty state is the case where it matters most.
   @State private var isCreating = false
 
+  /// Remembered across launches. A panel you have to re-open every morning is a
+  /// panel you stop opening.
+  @AppStorage("cycles.showsOKR") private var showsOKR = false
+
   var body: some View {
     HStack(spacing: 0) {
       ResizableListColumn(id: "cycles") {
@@ -24,7 +28,7 @@ struct CyclesScreen: View {
       }
       Group {
         if let cycle = state.selectedCycle {
-          CycleDetail(cycle: cycle)
+          CycleDetail(cycle: cycle, showsOKR: $showsOKR)
         } else {
           EmptyState(
             icon: "calendar.badge.plus",
@@ -40,7 +44,16 @@ struct CyclesScreen: View {
         }
       }
       .frame(maxWidth: .infinity)
+      // Only when there is something to put in it. An inspector that opens onto
+      // "还没有 OKR 文件" is a drawer that wastes the click that opened it.
+      if showsOKR, !state.okrFiles.isEmpty {
+        Divider()
+        CycleOKRInspector(isPresented: $showsOKR)
+          .frame(width: 360)
+          .transition(.move(edge: .trailing))
+      }
     }
+    .animation(.easeOut(duration: 0.18), value: showsOKR)
     .background(Palette.paper)
     .sheet(isPresented: $isCreating) { NewCycleSheet() }
   }
@@ -156,6 +169,16 @@ private struct CycleList: View {
   @Environment(AppState.self) private var state
   let onCreate: () -> Void
 
+  /// Collapsed by default, and remembered. The list is a way to reach the cycle
+  /// you are working in; everything finished is reference, and a year of
+  /// fortnights above the fold pushes the trend chart and the current cycle out
+  /// of sight on a laptop screen.
+  @AppStorage("cycles.pastExpanded") private var pastExpanded = false
+
+  private func isExpanded(_ group: CycleGroup) -> Bool {
+    group.kind == .past ? pastExpanded : true
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       VStack(alignment: .leading, spacing: Metrics.xs) {
@@ -176,15 +199,20 @@ private struct CycleList: View {
         LazyVStack(alignment: .leading, spacing: 2, pinnedViews: .sectionHeaders) {
           ForEach(state.visibleCycleGroups) { group in
             Section {
-              ForEach(group.cycles) { cycle in
-                SelectableRow(isSelected: cycle.id == state.selectedCycle?.id) {
-                  state.selectedCycleID = cycle.id
-                } content: {
-                  CycleListRow(cycle: cycle, isCurrent: group.kind == .current)
+              if isExpanded(group) {
+                ForEach(group.cycles) { cycle in
+                  SelectableRow(isSelected: cycle.id == state.selectedCycle?.id) {
+                    state.selectedCycleID = cycle.id
+                  } content: {
+                    CycleListRow(cycle: cycle, isCurrent: group.kind == .current)
+                  }
                 }
               }
             } header: {
-              CycleGroupHeader(group: group)
+              // Only 往期 folds — it is the one group that grows without bound,
+              // while the others are one or two rows. A disclosure triangle on a
+              // section that always holds a single row can only waste a click.
+              CycleGroupHeader(group: group, isExpanded: group.kind == .past ? $pastExpanded : nil)
             }
           }
         }
@@ -283,21 +311,48 @@ private struct CycleTrend: View {
 /// Pinned, so scrolling twelve cycles never leaves you unsure which era you are
 /// looking at. Opaque for the same reason — a translucent header with row text
 /// sliding under it is unreadable at this type size.
+/// A section header, optionally one you can fold. `isExpanded == nil` is a plain
+/// label — the group is always open and nothing about the header should suggest
+/// otherwise. With a binding it becomes a full-width button, the triangle at the
+/// leading edge where every other disclosure on this platform puts it.
 private struct CycleGroupHeader: View {
   let group: CycleGroup
+  var isExpanded: Binding<Bool>?
 
   var body: some View {
+    Group {
+      if let isExpanded {
+        Button {
+          isExpanded.wrappedValue.toggle()
+        } label: {
+          label(expanded: isExpanded.wrappedValue)
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+      } else {
+        label(expanded: true)
+      }
+    }
+    .padding(.horizontal, Metrics.xs)
+    .padding(.top, Metrics.xs)
+    .padding(.bottom, Metrics.xxs)
+    .background(Palette.surface)
+  }
+
+  private func label(expanded: Bool) -> some View {
     HStack(spacing: Metrics.xs) {
+      if isExpanded != nil {
+        Image(systemName: "chevron.right")
+          .font(.system(size: 9, weight: .semibold))
+          .foregroundStyle(Palette.inkMuted)
+          .rotationEffect(.degrees(expanded ? 90 : 0))
+      }
       Text(group.title).mutedStyle(Typo.label)
       if group.cycles.count > 1 {
         Text("\(group.cycles.count)").font(Typo.tabularCaption).foregroundStyle(Palette.inkMuted)
       }
       Spacer(minLength: 0)
     }
-    .padding(.horizontal, Metrics.xs)
-    .padding(.top, Metrics.xs)
-    .padding(.bottom, Metrics.xxs)
-    .background(Palette.surface)
   }
 }
 
@@ -333,6 +388,7 @@ private struct CycleListRow: View {
 private struct CycleDetail: View {
   @Environment(AppState.self) private var state
   let cycle: Cycle
+  @Binding var showsOKR: Bool
 
   var body: some View {
     ScreenScaffold(cycle.label, subtitle: subtitle) {
@@ -354,6 +410,18 @@ private struct CycleDetail: View {
     } toolbar: {
       if let runId = cycle.runId {
         Pill(runId, tone: .neutral, mono: true)
+      }
+      // The objectives this cycle's 要务 serve, in a drawer beside them rather
+      // than a panel below — an answer you scroll past the 要务 to reach cannot
+      // be read against them. Hidden when there is no OKR file to show.
+      if !state.okrFiles.isEmpty {
+        Button {
+          showsOKR.toggle()
+        } label: {
+          Label("OKR", systemImage: showsOKR ? "sidebar.trailing" : "target")
+        }
+        .buttonStyle(QuietButtonStyle(tone: showsOKR ? .accent : .neutral))
+        .help(showsOKR ? "收起 OKR" : "在右侧打开 OKR")
       }
     }
   }
@@ -921,6 +989,86 @@ private struct NewCycleSheet: View {
       return nil
     }
     return .some(value)
+  }
+}
+
+// MARK: - OKR beside the cycle
+
+/// The objectives this cycle's 要务 are supposed to serve, in a drawer beside
+/// them. 要务 are already grouped by OKR row — 工作 · 技术专家, 金钱 · 家庭理财
+/// 规划师 — so the headings on this page reference a document that otherwise
+/// lives one screen away; checking whether a fortnight actually serves the year
+/// meant leaving, reading, and coming back with it in your head.
+///
+/// Read-only. Editing stays on the OKR screen: this is here to be consulted
+/// while you work on something else, and a text box would invite the kind of
+/// edit you make without the other two levels in front of you. Opens on 本季 —
+/// the level a two-week cycle is accountable to — with the other two a click away.
+private struct CycleOKRInspector: View {
+  @Environment(AppState.self) private var state
+  @Binding var isPresented: Bool
+  @State private var selectedFileID: OkrFile.ID?
+
+  /// Last rather than first: the service lists the files north star → annual →
+  /// quarter, and 本季 is the one a fortnight answers to.
+  private var current: OkrFile? {
+    state.okrFiles.first { $0.id == selectedFileID } ?? state.okrFiles.last
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      header
+      Divider()
+      ScrollView {
+        VStack(alignment: .leading, spacing: Metrics.sm) {
+          if let file = current {
+            if file.objectives.isEmpty {
+              HintText("\(file.fileName) 里还没有目标。去「OKR」页写。")
+            } else {
+              ForEach(Array(file.objectives.enumerated()), id: \.element.id) { index, objective in
+                if index > 0 { PanelDivider() }
+                ObjectiveBlock(objective: objective)
+              }
+            }
+          }
+          HintText("只读。改目标去「OKR」页，那里有编辑。")
+        }
+        .padding(Metrics.sm)
+      }
+    }
+    .background(Palette.surface)
+  }
+
+  private var header: some View {
+    VStack(alignment: .leading, spacing: Metrics.xs) {
+      HStack(spacing: Metrics.xs) {
+        Text("OKR").inkStyle(Typo.heading)
+        Spacer(minLength: 0)
+        Button {
+          isPresented = false
+        } label: {
+          Image(systemName: "sidebar.trailing")
+        }
+        .buttonStyle(QuietButtonStyle(tone: .neutral))
+        .help("收起")
+      }
+      if state.okrFiles.count > 1 {
+        Picker("", selection: Binding(
+          get: { current?.id ?? "" },
+          set: { selectedFileID = $0 }
+        )) {
+          ForEach(state.okrFiles) { file in
+            Text(file.label).tag(file.id)
+          }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+      }
+      if let file = current {
+        Text("\(file.objectives.count) 个目标").mutedStyle(Typo.label)
+      }
+    }
+    .padding(Metrics.sm)
   }
 }
 
