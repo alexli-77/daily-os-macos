@@ -84,6 +84,10 @@ public enum Typo {
   public static let tabularBody = Font.custom(Face.sans, size: 14, relativeTo: .body).monospacedDigit()
   public static let tabularCaption = Font.custom(Face.sans, size: 12, relativeTo: .caption).monospacedDigit()
 
+  /// A single focal number — the temperature on the weather strip. The one place
+  /// a reading is the thing being looked at rather than a cell in a column.
+  public static let tabularTitle = Font.custom(Face.sansMedium, size: 20, relativeTo: .title3).monospacedDigit()
+
   /// PostScript names. All present on stock macOS and iOS.
   private enum Face {
     static let serifBold = "STSongti-SC-Bold"
