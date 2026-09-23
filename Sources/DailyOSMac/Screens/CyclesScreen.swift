@@ -570,6 +570,7 @@ private struct CycleSectionPanel: View {
   @State private var mode: SectionMode = .read
   @State private var draft: String?
   @State private var showsDraftComparison = false
+  @State private var confirmingReplan = false
 
   private var isDirty: Bool {
     guard let draft else { return false }
@@ -627,6 +628,21 @@ private struct CycleSectionPanel: View {
         Pill("模板", tone: .neutral)
       }
       if editable {
+        // 要务 can be re-planned for the current cycle, even when it already has
+        // content — the recovery/redo path. Overwrites the planner's own 要务;
+        // a hand-edited one comes back as a draft to compare rather than being
+        // eaten. Off for past cycles (the planner targets today's cycle).
+        if section.kind == .priorities, cycle.contains(.now) {
+          Button(state.cyclesPlanningInFlight ? "生成中…" : "重新生成") { confirmingReplan = true }
+            .buttonStyle(QuietButtonStyle(tone: .accent))
+            .disabled(state.cyclesPlanningInFlight)
+            .confirmationDialog("重新生成这一期的要务？", isPresented: $confirmingReplan, titleVisibility: .visible) {
+              Button("重新生成（约十分钟）") { replan() }
+              Button("取消", role: .cancel) {}
+            } message: {
+              Text("会跑一次周期规划，覆盖自动生成的要务；你手工改过的会作为新草稿供你对比合入，不会被直接覆盖。要花订阅额度、约十分钟，跑完自动出现。")
+            }
+        }
         Picker("", selection: $mode) {
           ForEach(SectionMode.allCases) { Text($0.label).tag($0) }
         }
@@ -643,6 +659,16 @@ private struct CycleSectionPanel: View {
           .buttonStyle(QuietButtonStyle())
           .disabled(!isDirty)
         }
+      }
+    }
+  }
+
+  private func replan() {
+    Task {
+      let outcome = await state.generateCycleSection(cycleID: cycle.id, kind: .priorities)
+      switch outcome {
+      case .ok(let message): state.toast = message ?? "重新生成已开始"
+      case .failed(let why), .unsupported(let why): state.toast = why
       }
     }
   }
