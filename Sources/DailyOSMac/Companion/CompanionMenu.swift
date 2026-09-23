@@ -114,6 +114,9 @@ private struct QuickCaptureField: View {
 
 public enum DailyOSWindow {
   public static let main = "daily-os.main"
+  /// The detachable chat window — same conversation as the Chat section, in its
+  /// own floating window you can keep beside the main one.
+  public static let chat = "daily-os.chat"
 }
 
 // MARK: - Previews
