@@ -292,6 +292,16 @@ public final class LiveAppState: AppState {
     write("标记") { try await $0.saveCycleSection(cycleID: cycleID, kind: .priorities, body: body) }
   }
 
+  public override func acceptDraft(cycleID: Cycle.ID, kind: CycleSectionKind) {
+    super.acceptDraft(cycleID: cycleID, kind: kind) // optimistic: body := draft, draft cleared
+    write("合入草稿") { try await $0.acceptCycleDraft(cycleID: cycleID, section: kind) }
+  }
+
+  public override func discardDraft(cycleID: Cycle.ID, kind: CycleSectionKind) {
+    super.discardDraft(cycleID: cycleID, kind: kind) // optimistic: draft cleared
+    write("丢弃草稿") { try await $0.discardCycleDraft(cycleID: cycleID, section: kind) }
+  }
+
   /// Capture is the one write that is *not* optimistic.
   ///
   /// The service parses the text with its own command grammar — "提醒我 …"
