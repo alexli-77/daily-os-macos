@@ -349,6 +349,14 @@ public struct Cycle: Sendable, Equatable, Identifiable {
     sections.contains { $0.pendingDraft != nil }
   }
 
+  /// True when 要务 actually has content. False when the section is missing or
+  /// blank — the signal that a planning run failed or never finished, which the
+  /// date-based "current" status cannot tell you on its own.
+  public var prioritiesGenerated: Bool {
+    guard let document = section(.priorities)?.priorities else { return false }
+    return !document.isEmpty
+  }
+
   /// How much of this cycle's 要务 got done, or `nil` when the cycle was never
   /// marked up at all.
   ///

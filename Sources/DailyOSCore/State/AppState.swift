@@ -45,6 +45,10 @@ open class AppState {
   /// Whether the top chat panel is dropped down. Same conversation as the Chat
   /// section — this is a second way to reach it, from anywhere in the app.
   public var chatPanelOpen: Bool = false
+  /// True while a weekly/biweekly planning run is on. Lets a cycle with empty
+  /// 要务 read as "正在生成" rather than "生成失败" — the service reports it because
+  /// the run only resolves its target cycle when it finishes.
+  public var cyclesPlanningInFlight: Bool = false
   public var selectedCycleID: Cycle.ID?
   public var viewingMemberID: TeamMember.ID
   public var selectedRunID: WorkflowRun.ID?

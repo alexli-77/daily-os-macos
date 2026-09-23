@@ -23,6 +23,9 @@ struct CyclesStateDTO: Decodable {
 struct CyclesBlockDTO: Decodable {
   let dir: String?
   let items: [CycleDTO]?
+  /// True while a weekly/biweekly planning run is on — the app uses it to tell
+  /// "正在生成" apart from "generated and left empty (failed)".
+  let planningInFlight: Bool?
 }
 
 /// Timestamps stay `String` here rather than `Date`.
@@ -112,6 +115,11 @@ struct CreateCycleRequest: Encodable {
   let days: Int?
   let taskCount: Int?
   let note: String?
+}
+
+/// Re-plan an existing cycle by id. Reuses `CreateCycleResponse` on the way back.
+struct ReplanCycleRequest: Encodable {
+  let id: String
 }
 
 /// `text` describes the file that now exists; `planning.reason` describes a run
@@ -306,7 +314,7 @@ extension DailyOSClient {
   /// `team.members[].cycles`, read from the local sync cache; that array is
   /// empty until team sync is configured, which is the common case, so an empty
   /// `teammates` is the normal answer rather than a failure.
-  public func cycles() async throws -> (mine: [Cycle], teammates: [Cycle], members: [TeamMember], sync: TeamSyncState) {
+  public func cycles() async throws -> (mine: [Cycle], teammates: [Cycle], members: [TeamMember], sync: TeamSyncState, planningInFlight: Bool) {
     let state: CyclesStateDTO = try await get("/api/cycles/state", as: CyclesStateDTO.self)
     let team = state.team
     let selfId = team?.signedIn?.userId ?? ""
@@ -350,8 +358,19 @@ extension DailyOSClient {
         reason: team?.reason ?? "",
         syncedAt: syncedAt,
         lastError: team?.lastError ?? ""
-      )
+      ),
+      state.cycles?.planningInFlight ?? false
     )
+  }
+
+  /// Re-run planning for an existing cycle — the recovery path when its planning
+  /// run failed or was empty. Only the current cycle is accepted by the service.
+  /// Returns the "started" sentence; the run itself is async (~10 min).
+  public func replanCycle(cycleID: String) async throws -> String {
+    let request = ReplanCycleRequest(id: cycleID)
+    let response: CreateCycleResponse = try await post("/api/cycles/replan", body: request, as: CreateCycleResponse.self)
+    let lines = [response.text, response.planning?.reason].compactMap { $0 }.filter { !$0.isEmpty }
+    return lines.isEmpty ? "重新生成已开始。" : lines.joined(separator: "\n")
   }
 
   /// Write one section of one of *your* cycles.
