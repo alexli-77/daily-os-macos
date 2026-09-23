@@ -357,6 +357,7 @@ private struct CycleGroupHeader: View {
 }
 
 private struct CycleListRow: View {
+  @Environment(AppState.self) private var state
   let cycle: Cycle
   var isCurrent = false
 
@@ -369,17 +370,29 @@ private struct CycleListRow: View {
           Pill("新草稿", tone: .warn)
         }
       }
-      // A moss dot on the row you are inside. The heading already says 本期, but
-      // the heading scrolls and a selected row does not always sit under it.
+      // A dot on the row you are inside. The heading already says 本期, but the
+      // heading scrolls and a selected row does not always sit under it. The
+      // colour/word also carries whether 要务 actually generated — "进行中" alone
+      // was a lie on a cycle whose planning run failed and left 要务 empty.
       HStack(spacing: Metrics.xxs) {
         if isCurrent {
-          Circle().fill(Palette.moss).frame(width: 5, height: 5)
-          Text("进行中").font(Typo.caption).foregroundStyle(Palette.moss)
+          Circle().fill(currentTone).frame(width: 5, height: 5)
+          Text(currentLabel).font(Typo.caption).foregroundStyle(currentTone)
           Text("·").mutedStyle()
         }
         Text("更新于 \(Fmt.stamp(cycle.updatedAt))").mutedStyle()
       }
     }
+  }
+
+  private var currentTone: Color {
+    if cycle.prioritiesGenerated { return Palette.moss }
+    return state.cyclesPlanningInFlight ? Palette.warn : Palette.danger
+  }
+
+  private var currentLabel: String {
+    if cycle.prioritiesGenerated { return "进行中" }
+    return state.cyclesPlanningInFlight ? "要务生成中" : "要务未生成"
   }
 }
 
@@ -473,21 +486,29 @@ private struct MissingSectionPanel: View {
           .mutedStyle(Typo.body)
           .fixedSize(horizontal: false, vertical: true)
         if editable, let action {
-          Button(isWorking ? action.busy : action.title) { create() }
+          Button(busy ? action.busy : action.title) { create() }
             .buttonStyle(MossButtonStyle(prominent: false))
-            .disabled(isWorking)
+            .disabled(busy)
         }
       }
       .frame(maxWidth: Metrics.readableWidth, alignment: .leading)
     } actions: {
-      Pill("还没有", tone: .neutral)
+      Pill(isCurrent && kind == .priorities ? "要务未生成" : "还没有", tone: isCurrent && kind == .priorities ? .warn : .neutral)
     }
   }
+
+  private var isCurrent: Bool { cycle.contains(.now) }
+
+  /// True while the button should read as working — either this press, or a
+  /// planning run already on for the whole app (so it never invites a second one).
+  private var busy: Bool { isWorking || (kind == .priorities && state.cyclesPlanningInFlight) }
 
   private var explanation: String {
     switch kind {
     case .priorities:
-      "这个周期还没有要务。要务由周期规划写入——创建新周期时会自动跑一次，跑完会出现在这里。"
+      isCurrent
+        ? "这个周期的要务还没生成好——上次规划可能失败或还在跑。可以在这里重新生成，会跑一次周期规划（约十分钟），跑完自动出现。"
+        : "这个周期没有要务，且只能重新生成「当前周期」。历史周期暂不支持在这里重跑。"
     case .retro:
       "这个周期还没有复盘。复盘只能你自己写，这里只放一个空模板：三个小标题是规划下一期时会读回去的那三个，写在它们下面才不会被当成一整段。"
     case .review:
@@ -495,10 +516,11 @@ private struct MissingSectionPanel: View {
     }
   }
 
-  /// Nil for 要务: there is nothing this screen can call.
+  /// 要务 can be regenerated only for the current cycle (the planner targets the
+  /// cycle that contains today). Retro/review are unchanged.
   private var action: (title: String, busy: String)? {
     switch kind {
-    case .priorities: nil
+    case .priorities: isCurrent ? (title: "重新生成要务", busy: "生成中…（约十分钟）") : nil
     case .retro: (title: "放一个复盘模板", busy: "写入中…")
     // The duration is in the label because it is a model call on a local
     // machine, and a button that looks stuck for a minute gets pressed twice.
@@ -667,7 +689,7 @@ private struct PrioritiesView: View {
           VStack(alignment: .leading, spacing: Metrics.xs) {
             Text(group.title).inkStyle(Typo.heading)
             if group.items.isEmpty {
-              Text("这一行下没有条目。").mutedStyle()
+              Text(PrioritiesDocument.emptyPlaceholder).mutedStyle()
             } else {
               itemList(group.items)
             }

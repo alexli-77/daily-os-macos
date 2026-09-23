@@ -149,6 +149,7 @@ public final class LiveAppState: AppState {
       self.cycles = result.mine
       self.partnerCycles = result.teammates
       self.teamSync = result.sync
+      self.cyclesPlanningInFlight = result.planningInFlight
       if let me = result.members.first(where: \.isSelf) {
         self.members = result.members
         // `account.id` has to move with `viewingMemberID`, because
@@ -711,7 +712,16 @@ public final class LiveAppState: AppState {
   public override func generateCycleSection(cycleID: Cycle.ID, kind: CycleSectionKind) async -> ActionOutcome {
     guard let client else { return .failed("没有连接到服务。") }
     if kind == .priorities {
-      return .unsupported("要务由周期规划生成，这里生成不了。创建新周期时会自动跑一次规划。")
+      // 要务 come out of a planning run, not a one-cycle write. For the current
+      // cycle we can re-run that planning to recover a failed/empty 要务; the
+      // run is async (~10 min), so this only reports that it started.
+      do {
+        let message = try await client.replanCycle(cycleID: cycleID)
+        await reload()
+        return .ok(message)
+      } catch {
+        return .failed("没能开始重新生成：\(error.localizedDescription)")
+      }
     }
     do {
       let message: String

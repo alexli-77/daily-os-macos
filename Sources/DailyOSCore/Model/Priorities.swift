@@ -106,6 +106,10 @@ public struct PriorityGroup: Sendable, Equatable, Identifiable {
 // MARK: - Document
 
 public struct PrioritiesDocument: Sendable, Equatable {
+  /// Written by the service under an objective with nothing planned this cycle.
+  /// Mirrors `EMPTY_PRIORITY_PLACEHOLDER` in the service's `src/cycles/migration.ts`.
+  public static let emptyPlaceholder = "本周期无安排"
+
   /// Items that appeared before any heading. Rendered above the groups rather
   /// than dropped — a file people hand-edit will have them.
   public let loose: [PriorityItem]
@@ -152,6 +156,12 @@ public struct PrioritiesDocument: Sendable, Equatable {
         currentTitle = heading
         continue
       }
+
+      // The service writes this under an objective with nothing planned this
+      // cycle. It is a marker, not a task — skip it so the group stays empty
+      // (rendered as muted "本周期无安排") instead of becoming a clickable item
+      // that would also inflate the completion denominator.
+      if line == Self.emptyPlaceholder { continue }
 
       let body = Self.bullet(in: line) ?? line
       let item = Self.item(from: body, sourceLine: index)
