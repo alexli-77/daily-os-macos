@@ -585,6 +585,16 @@ public final class LiveAppState: AppState {
     }
     if let result = try? await client.cycles() {
       applyTeamCycles(members: result.members, cycles: result.teammates, sync: result.sync)
+      // Keep the planning flag fresh on the poll, not only on a full reload —
+      // otherwise a run that finished (or failed) leaves the "生成中" button stuck
+      // disabled until the app is relaunched. When it clears, pull the cycle
+      // itself so the new 要务 (or the failed/empty state) shows without a manual
+      // refresh.
+      let wasInFlight = cyclesPlanningInFlight
+      cyclesPlanningInFlight = result.planningInFlight
+      if wasInFlight && !result.planningInFlight {
+        await reload()
+      }
     }
   }
 
