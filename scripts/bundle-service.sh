@@ -23,6 +23,11 @@ set -euo pipefail
 
 APP="${1:?用法: bundle-service.sh <Daily OS.app 路径> [服务仓库路径]}"
 SERVICE_REPO="${2:-$(cd "$(dirname "$0")/../.." && pwd)/daily-os-feishu}"
+# The biweekly/weekly-review skill (life-review-os) is a separate CLI the service
+# shells out to. Bundling it here makes the .app self-contained — no clone needed
+# on the target machine. Its per-machine config.yaml (Feishu tokens) is NOT
+# shipped; it stays under the data dir, see daily-os src/skills/life-review-os.ts.
+LIFE_REVIEW_OS_REPO="${DAILY_OS_LIFE_REVIEW_OS_REPO:-$(cd "$(dirname "$0")/../.." && pwd)/life-review-os}"
 NODE_VERSION="${DAILY_OS_NODE_VERSION:-v22.14.0}"
 CACHE="$(cd "$(dirname "$0")/.." && pwd)/.build/node-cache"
 
@@ -81,6 +86,35 @@ cp "$SERVICE_REPO/package.json" "$PAYLOAD/package.json"
 cp "$SERVICE_REPO/.env.example" "$PAYLOAD/.env.example"
 mkdir -p "$PAYLOAD/config"
 cp "$SERVICE_REPO/config/config.example.yaml" "$PAYLOAD/config/config.example.yaml"
+
+# --- life-review-os 技能 CLI ------------------------------------------------
+# The daily-os wrapper looks for it at <service>/life-review-os/bin (installRoot).
+# life-review-os has zero npm dependencies, so this is just code + read-only
+# assets. Excluded on purpose:
+#   config.yaml — per-machine personal config with Feishu doc tokens; shipping it
+#                 would leak one user's tokens and point every machine at the
+#                 wrong docs. It lives under the data dir instead.
+#   .runs       — run records, written at runtime to the (writable) data dir.
+#   .git/test/node_modules — not needed to run.
+echo "==> life-review-os 技能"
+if [ -d "$LIFE_REVIEW_OS_REPO" ]; then
+  LROS="$PAYLOAD/life-review-os"
+  mkdir -p "$LROS"
+  rsync -a \
+    --exclude '.git' \
+    --exclude 'node_modules' \
+    --exclude '.runs' \
+    --exclude 'config.yaml' \
+    --exclude 'test' \
+    --exclude '.DS_Store' \
+    "$LIFE_REVIEW_OS_REPO/" "$LROS/"
+  [ -x "$LROS/bin/life-review-os.mjs" ] || { echo "  ✗ 没拷到 bin/life-review-os.mjs"; exit 1; }
+  [ -e "$LROS/config.yaml" ] && { echo "  ✗ config.yaml 不该被打进包（含个人飞书 token）"; exit 1; }
+  echo "  $(du -sh "$LROS" | cut -f1)（已排除个人 config.yaml / .runs）"
+else
+  echo "  ✗ 找不到 life-review-os 仓库：$LIFE_REVIEW_OS_REPO（biweekly 将无法自带，需机器上 clone）"
+  exit 1
+fi
 
 # --- 生产依赖 ---------------------------------------------------------------
 # `--omit=dev` because the test and build toolchain is most of the weight and
