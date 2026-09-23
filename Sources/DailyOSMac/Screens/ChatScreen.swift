@@ -19,6 +19,64 @@ struct ChatScreen: View {
   }
 }
 
+/// The chat as a right-side panel that drops from the top (⌘⇧C or the toolbar
+/// bubble). Narrow by design — so the thread list is a popover off the header
+/// rather than a permanent second column, and the conversation gets the whole
+/// width. Same store as the `.chat` section: it is the one conversation, not a
+/// copy. Lives here, not in its own file, because it reuses the private
+/// `Conversation` / `ThreadList` above.
+struct ChatPanel: View {
+  @Binding var isOpen: Bool
+  @Environment(AppState.self) private var state
+  @State private var showHistory = false
+
+  var body: some View {
+    VStack(spacing: 0) {
+      header
+      Divider()
+      Conversation()
+    }
+    .frame(width: 420)
+    .frame(maxHeight: .infinity)
+    .background(Palette.paper)
+    .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusMedium, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: Metrics.radiusMedium, style: .continuous)
+        .stroke(Palette.line)
+    )
+    .shadow(color: .black.opacity(0.16), radius: 18, y: 6)
+    .padding(.top, Metrics.xs)
+    .padding(.bottom, Metrics.md)
+  }
+
+  private var header: some View {
+    HStack(spacing: Metrics.xs) {
+      Text("聊天").font(Typo.label)
+      Spacer()
+      Button { showHistory.toggle() } label: {
+        Image(systemName: "clock.arrow.circlepath")
+      }
+      .help("历史对话")
+      .popover(isPresented: $showHistory, arrowEdge: .bottom) {
+        ThreadList()
+          .frame(width: 260, height: 380)
+          .environment(state)
+      }
+      Button { state.newThread() } label: {
+        Image(systemName: "square.and.pencil")
+      }
+      .help("新对话")
+      Button { isOpen = false } label: {
+        Image(systemName: "xmark")
+      }
+      .help("收起（⌘⇧C）")
+    }
+    .buttonStyle(QuietButtonStyle(tone: .neutral))
+    .padding(.horizontal, Metrics.sm)
+    .padding(.vertical, Metrics.xs)
+  }
+}
+
 // MARK: - Threads
 
 private struct ThreadList: View {

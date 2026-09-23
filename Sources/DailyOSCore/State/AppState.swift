@@ -42,6 +42,9 @@ open class AppState {
 
   // Selection
   public var section: AppSection = .today
+  /// Whether the top chat panel is dropped down. Same conversation as the Chat
+  /// section — this is a second way to reach it, from anywhere in the app.
+  public var chatPanelOpen: Bool = false
   public var selectedCycleID: Cycle.ID?
   public var viewingMemberID: TeamMember.ID
   public var selectedRunID: WorkflowRun.ID?
