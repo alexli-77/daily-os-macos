@@ -10,10 +10,6 @@ import DailyOSCore
 /// a column that is sometimes meaningless is worse than no column at all.
 struct MacRootView: View {
   @Environment(AppState.self) private var state
-  // Opens the detachable chat window (DailyOSWindow.chat). The same conversation
-  // as the Chat section — this is a second way to look at it, kept beside the
-  // main window, not a second chat.
-  @Environment(\.openWindow) private var openWindow
 
   var body: some View {
     @Bindable var state = state
@@ -40,14 +36,27 @@ struct MacRootView: View {
     }
     .background(Palette.paper)
     .toastOverlay()
+    // The chat panel drops from the top on the right, over the detail column —
+    // same conversation as the Chat section, reachable from anywhere without
+    // leaving the current screen. topTrailing so it hangs under the toolbar's
+    // chat button; the transition slides it down from the top edge.
+    .overlay(alignment: .topTrailing) {
+      if state.chatPanelOpen {
+        ChatPanel(isOpen: $state.chatPanelOpen)
+          .padding(.trailing, Metrics.sm)
+          .transition(.move(edge: .top).combined(with: .opacity))
+          .zIndex(1)
+      }
+    }
+    .animation(.spring(response: 0.32, dampingFraction: 0.86), value: state.chatPanelOpen)
     .toolbar {
       ToolbarItem(placement: .automatic) {
         Button {
-          openWindow(id: DailyOSWindow.chat)
+          state.chatPanelOpen.toggle()
         } label: {
           Image(systemName: "bubble.left.and.bubble.right")
         }
-        .help("在浮动窗口里打开聊天（⌘⇧C）")
+        .help("聊天（⌘⇧C）")
       }
     }
   }

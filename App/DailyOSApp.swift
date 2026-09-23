@@ -94,23 +94,11 @@ struct DailyOSApp: App {
     }
     .defaultSize(width: 1_080, height: 720)
     .commands {
-      if let state { SectionCommands(state: state) }
-      ChatWindowCommands()
-    }
-
-    // The detachable chat window. A single Window (not a WindowGroup): reopening
-    // it focuses the one that exists rather than stacking copies. It shares the
-    // App-owned store, so it is the same conversation as the Chat section — open
-    // in a floating window you can keep beside the main one. Not global-topmost:
-    // it floats within the app, and is hidden when Daily OS is in the background.
-    Window("聊天", id: DailyOSWindow.chat) {
-      if let state, connection.state.isConnected {
-        ChatWindow(state: state)
-      } else {
-        ChatWindowUnavailable()
+      if let state {
+        SectionCommands(state: state)
+        ChatPanelCommands(state: state)
       }
     }
-    .defaultSize(width: 460, height: 640)
 
     MenuBarExtra {
       if let state, connection.state.isConnected {
@@ -174,16 +162,18 @@ private struct SectionCommands: Commands {
   }
 }
 
-/// ⌘⇧C opens the detachable chat window, and puts it in the menu so the shortcut
-/// is discoverable. Separate from `SectionCommands` because it needs no store —
-/// it only asks the scene to open, which works before sign-in too.
-private struct ChatWindowCommands: Commands {
-  @Environment(\.openWindow) private var openWindow
+/// ⌘⇧C drops the top chat panel down (and hides it again), and puts it in the
+/// menu so the shortcut is discoverable. Toggles the shared `chatPanelOpen` the
+/// toolbar button also flips, so the two never disagree.
+private struct ChatPanelCommands: Commands {
+  let state: AppState
 
   var body: some Commands {
     CommandGroup(after: .toolbar) {
-      Button("聊天窗口") { openWindow(id: DailyOSWindow.chat) }
-        .keyboardShortcut("c", modifiers: [.command, .shift])
+      Button(state.chatPanelOpen ? "收起聊天" : "聊天") {
+        state.chatPanelOpen.toggle()
+      }
+      .keyboardShortcut("c", modifiers: [.command, .shift])
     }
   }
 }
