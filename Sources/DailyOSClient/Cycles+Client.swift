@@ -54,6 +54,14 @@ struct CycleSectionDTO: Decodable {
   let content: String?
   let source: String?
   let updatedAt: String?
+  /// A regenerated version staged for compare/merge, when the body was hand-edited.
+  let pendingDraft: CyclePendingDraftDTO?
+}
+
+struct CyclePendingDraftDTO: Decodable {
+  let content: String?
+  let source: String?
+  let updatedAt: String?
 }
 
 struct TeamBlockDTO: Decodable {
@@ -120,6 +128,12 @@ struct CreateCycleRequest: Encodable {
 /// Re-plan an existing cycle by id. Reuses `CreateCycleResponse` on the way back.
 struct ReplanCycleRequest: Encodable {
   let id: String
+}
+
+/// Accept or discard a section's pending draft.
+struct ResolveDraftRequest: Encodable {
+  let id: String
+  let section: String
 }
 
 /// `text` describes the file that now exists; `planning.reason` describes a run
@@ -286,9 +300,11 @@ extension CycleDTO {
         // said, and hand-edited frontmatter can hold anything at all.
         source: SectionSource(rawValue: section.source ?? "") ?? kind.presumedSource,
         updatedAt: CycleWireDate.timestamp(section.updatedAt) ?? fallbackUpdatedAt,
-        // Neither endpoint reports a pending planner draft or whether the body
-        // is still the seeded placeholder.
-        pendingDraft: nil,
+        // The regenerated version waiting to be merged, when the body was
+        // hand-edited. nil (the common case) means no draft — the DraftBanner
+        // stays hidden. The domain model carries only the draft's text, which is
+        // all the compare view needs.
+        pendingDraft: section.pendingDraft?.content,
         isTemplate: false
       )
     }
@@ -371,6 +387,17 @@ extension DailyOSClient {
     let response: CreateCycleResponse = try await post("/api/cycles/replan", body: request, as: CreateCycleResponse.self)
     let lines = [response.text, response.planning?.reason].compactMap { $0 }.filter { !$0.isEmpty }
     return lines.isEmpty ? "重新生成已开始。" : lines.joined(separator: "\n")
+  }
+
+  /// Merge a section's pending draft into its body (accept) — the draft becomes
+  /// the section, the draft is cleared.
+  public func acceptCycleDraft(cycleID: String, section: CycleSectionKind) async throws {
+    try await post("/api/cycles/accept-draft", body: ResolveDraftRequest(id: cycleID, section: section.wireName))
+  }
+
+  /// Drop a section's pending draft (discard) — the body stays, the draft is cleared.
+  public func discardCycleDraft(cycleID: String, section: CycleSectionKind) async throws {
+    try await post("/api/cycles/discard-draft", body: ResolveDraftRequest(id: cycleID, section: section.wireName))
   }
 
   /// Write one section of one of *your* cycles.
