@@ -68,12 +68,29 @@ public actor WeatherStore {
   /// not where you are". A city you did not ask about, printed as if it were
   /// yours, is the one dishonest state this feature could have.
   private func resolvePlace() async -> Place {
-    guard let coordinate = await Self.deviceCoordinate() else { return Self.fallbackPlace() }
+    // The strip is decoration and must not nag. By default it shows the standing
+    // place (configured city, else 蒙特利尔) and never raises a location prompt —
+    // which also means a rebuilt, ad-hoc-signed app, that macOS treats as new and
+    // would otherwise re-ask on every install, stays quiet. Device location is
+    // opt-in: `defaults write <bundleid> weather.useDeviceLocation -bool true`.
+    if !Self.useDeviceLocation { return Self.standingPlace(markDefault: false) }
+    guard let coordinate = await Self.deviceCoordinate() else { return Self.standingPlace(markDefault: true) }
     let name = await Self.placeName(for: coordinate)
     return Place(latitude: coordinate.latitude, longitude: coordinate.longitude, name: name ?? "当前位置")
   }
 
-  /// Where to ask about when there is no location to use.
+  /// Off by default (see `resolvePlace`). Opt in to use the device's location.
+  private static var useDeviceLocation: Bool {
+    UserDefaults.standard.bool(forKey: "weather.useDeviceLocation")
+  }
+
+  /// The standing place: the configured city, else 蒙特利尔. Used whenever device
+  /// location is off (the default) or unavailable.
+  ///
+  /// `markDefault` appends "（默认）" only when this is a *fallback* after a device
+  /// fix was attempted and failed — so "not where you are" is still said in that
+  /// case. In the normal no-location mode the name is shown plain, because it is
+  /// the place the user asked for, not a stand-in.
   ///
   /// Overridable without a settings screen, because the strip must not become
   /// the reason this app grows one:
@@ -81,7 +98,7 @@ public actor WeatherStore {
   ///     defaults write com.example.dailyos.mac weather.place.name 北京
   ///     defaults write com.example.dailyos.mac weather.place.latitude 39.9042
   ///     defaults write com.example.dailyos.mac weather.place.longitude 116.4074
-  private static func fallbackPlace() -> Place {
+  private static func standingPlace(markDefault: Bool) -> Place {
     let defaults = UserDefaults.standard
     let name = defaults.string(forKey: "weather.place.name") ?? "蒙特利尔"
     let latitude = defaults.object(forKey: "weather.place.latitude") as? Double
@@ -89,7 +106,7 @@ public actor WeatherStore {
     return Place(
       latitude: latitude ?? 45.5019,
       longitude: longitude ?? -73.5674,
-      name: "\(name)（默认）"
+      name: markDefault ? "\(name)（默认）" : name
     )
   }
 
