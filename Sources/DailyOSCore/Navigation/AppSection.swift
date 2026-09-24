@@ -15,7 +15,6 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
   case today
   case cycles
   case okr
-  case chat
   case runs
   case artifacts
   case schedules
@@ -28,7 +27,6 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
     case .today: "今天"
     case .cycles: "周期"
     case .okr: "OKR"
-    case .chat: "对话"
     case .runs: "运行"
     case .artifacts: "产物"
     case .schedules: "排程"
@@ -41,7 +39,6 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
     case .today: "sun.horizon"
     case .cycles: "calendar.badge.clock"
     case .okr: "target"
-    case .chat: "bubble.left.and.text.bubble.right"
     case .runs: "waveform.path.ecg"
     case .artifacts: "shippingbox"
     case .schedules: "clock.arrow.circlepath"
@@ -49,25 +46,25 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
     }
   }
 
-  /// ⌘1…⌘7. Settings keeps the platform-standard ⌘, instead.
+  /// ⌘1…⌘6. Settings keeps the platform-standard ⌘, instead. Chat is no longer a
+  /// section — it lives in the top-right drop-down panel (⌘⇧C), not the sidebar.
   public var shortcut: KeyEquivalent? {
     switch self {
     case .today: "1"
     case .cycles: "2"
     case .okr: "3"
-    case .chat: "4"
-    case .runs: "5"
-    case .artifacts: "6"
-    case .schedules: "7"
+    case .runs: "4"
+    case .artifacts: "5"
+    case .schedules: "6"
     case .settings: nil
     }
   }
 
   /// The sidebar groups. Work you do, then work the machine did, then config.
-  public static let workGroup: [AppSection] = [.today, .cycles, .okr, .chat]
+  public static let workGroup: [AppSection] = [.today, .cycles, .okr]
   public static let systemGroup: [AppSection] = [.runs, .artifacts, .schedules]
 
-  /// The four iOS tabs. Everything in `systemGroup` plus settings lives behind
+  /// The iOS tabs. Everything in `systemGroup` plus settings lives behind
   /// "更多" — on a phone you check state, you do not administer a service.
-  public static let phoneTabs: [AppSection] = [.today, .cycles, .chat]
+  public static let phoneTabs: [AppSection] = [.today, .cycles, .okr]
 }
