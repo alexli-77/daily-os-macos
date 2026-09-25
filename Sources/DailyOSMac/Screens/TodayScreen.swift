@@ -307,12 +307,59 @@ private struct CallSheetRow: View {
   var dropEdge: DropEdge?
 
   @State private var isHovering = false
+  // Restored after the call-sheet rewrite dropped them (74ef388): the old
+  // PlanRow let you change a row's estimate and leave it an update note, and
+  // the call sheet is *more* dependent on the estimate than the list was —
+  // every slot below a row is pushed by it.
+  @State private var isEditingEstimate = false
+  @State private var isNoting = false
+  @State private var note = ""
 
   private var item: TodoItem { row.item }
+  private var isEditable: Bool { item.state == .open || item.state == .partial }
   private var isResolved: Bool { item.state == .done || item.state == .deferred }
   private var isMIT: Bool { isPlanRow && PlanImportance.forRank(row.rank) == .mit }
 
   var body: some View {
+    VStack(alignment: .leading, spacing: Metrics.xs) {
+      mainLine
+      if isNoting && isEditable {
+        // Inline rather than a dialog: a modal for one optional sentence is
+        // heavier than the sentence.
+        InlineField(
+          placeholder: "记一条更新（可留空）",
+          text: $note,
+          confirm: "记下",
+          onConfirm: sendNote,
+          onCancel: closeEditors
+        )
+        .padding(.leading, Self.textInset)
+        .transition(.opacity)
+      }
+      if isEditingEstimate && isEditable {
+        EstimateEditor(item: item, rank: row.rank) {
+          withAnimation(.snappy(duration: 0.2)) { isEditingEstimate = false }
+        }
+        .padding(.leading, Self.textInset)
+        .transition(.opacity)
+      }
+    }
+    .padding(.vertical, Metrics.sm)
+    .contentShape(Rectangle())
+    .onHover { isHovering = $0 }
+    .onTapGesture { selectedID = item.id }
+    .overlay(alignment: dropEdge == .bottom ? .bottom : .top) {
+      if dropEdge != nil {
+        Capsule().fill(Palette.mint400).frame(height: 2).transition(.opacity)
+      }
+    }
+  }
+
+  /// Where the task text starts: slot column + gap + circle + gap. Editors line
+  /// up under the text, not under the time, so they read as belonging to it.
+  private static let textInset: CGFloat = 96 + Metrics.sm + Metrics.circleSize + Metrics.sm
+
+  private var mainLine: some View {
     HStack(alignment: .top, spacing: Metrics.sm) {
       slot
       StateCircle(state: item.state) {
@@ -338,6 +385,10 @@ private struct CallSheetRow: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
 
+      if isEditable {
+        noteButton
+      }
+
       RowActionBar(
         state: item.state,
         isVisible: isHovering || selectedID == item.id,
@@ -347,15 +398,33 @@ private struct CallSheetRow: View {
 
       source
     }
-    .padding(.vertical, Metrics.sm)
-    .contentShape(Rectangle())
-    .onHover { isHovering = $0 }
-    .onTapGesture { selectedID = item.id }
-    .overlay(alignment: dropEdge == .bottom ? .bottom : .top) {
-      if dropEdge != nil {
-        Capsule().fill(Palette.mint400).frame(height: 2).transition(.opacity)
+  }
+
+  /// 更新 — same look as the state buttons beside it, same fade-in, and like
+  /// them it stays in the hierarchy when hidden so the keyboard can reach it.
+  private var noteButton: some View {
+    let visible = isHovering || selectedID == item.id || isNoting
+    return Button {
+      withAnimation(.snappy(duration: 0.2)) {
+        isNoting.toggle()
+        if isNoting { isEditingEstimate = false }
       }
+    } label: {
+      Image(systemName: "square.and.pencil")
+        .font(.system(size: 10, weight: .semibold))
+        .frame(width: 20, height: 20)
+        .foregroundStyle(isNoting ? Palette.mint800 : Palette.ink3)
+        .background(isNoting ? Palette.mint200 : .clear, in: Circle())
+        .contentShape(Circle())
     }
+    .buttonStyle(.plain)
+    .help("记一条更新")
+    .accessibilityLabel("记一条更新")
+    // No bare-key shortcut: with one per row, and the quick-capture field on
+    // the same screen, a plain "e" would fire while you are typing.
+    .allowsHitTesting(visible)
+    .opacity(visible ? 1 : 0)
+    .animation(.easeOut(duration: 0.12), value: visible)
   }
 
   /// 时段 / 估时 / MIT, stacked. Fixed width so every row's text starts on the
@@ -367,11 +436,7 @@ private struct CallSheetRow: View {
         .font(Typo.label)
         .foregroundStyle(row.isLate ? Palette.mint600 : (isResolved ? Palette.ink3 : Palette.ink2))
         .monospacedDigit()
-      if let minutes = row.minutes ?? item.estimatedMinutes {
-        Text(DaySchedule.duration(minutes)).font(Typo.caption).foregroundStyle(Palette.ink3)
-      } else {
-        Text("没估时").font(Typo.caption).foregroundStyle(Palette.ink3)
-      }
+      estimateLabel
       if isMIT {
         Text("MIT")
           .font(Typo.caption)
@@ -382,6 +447,56 @@ private struct CallSheetRow: View {
       }
     }
     .frame(width: 96, alignment: .leading)
+  }
+
+  /// The duration under the time, and the way in to changing it. A button only
+  /// while the row is still open work: a finished row's estimate no longer
+  /// moves anything on the sheet.
+  @ViewBuilder private var estimateLabel: some View {
+    let text = (row.minutes ?? item.estimatedMinutes).map(DaySchedule.duration) ?? "没估时"
+    if isEditable {
+      Button {
+        withAnimation(.snappy(duration: 0.2)) {
+          isEditingEstimate.toggle()
+          if isEditingEstimate { isNoting = false }
+        }
+      } label: {
+        HStack(spacing: 2) {
+          Text(text)
+          Image(systemName: "stopwatch").font(.system(size: 9, weight: .medium))
+            .opacity(isHovering || isEditingEstimate ? 1 : 0)
+        }
+        .font(Typo.caption)
+        .foregroundStyle(isEditingEstimate ? Palette.mint600 : Palette.ink3)
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .help(item.estimatedMinutes == nil ? "这条没有估时，点一下自己填" : "点一下改估时")
+    } else {
+      Text(text).font(Typo.caption).foregroundStyle(Palette.ink3)
+    }
+  }
+
+  private func closeEditors() {
+    withAnimation(.snappy(duration: 0.2)) {
+      isNoting = false
+      isEditingEstimate = false
+    }
+    note = ""
+  }
+
+  private func sendNote() {
+    let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+    closeEditors()
+    Task {
+      let outcome = await state.planFeedback(
+        candidateID: item.id, rank: row.rank, event: "update", note: trimmed.isEmpty ? nil : trimmed
+      )
+      state.toast = switch outcome {
+      case .ok: "已记录"
+      case .failed(let why), .unsupported(let why): why
+      }
+    }
   }
 
   private var source: some View {
@@ -1031,12 +1146,14 @@ private struct EstimateChipStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
       .font(Typo.tabularCaption.weight(isCurrent ? .semibold : .regular))
-      .foregroundStyle(isCurrent ? .white : Palette.ink)
+      // mint800 on mint200, not white on moss: white on the light accent fill
+      // fails contrast — the same fix the prominent button got in the token pass.
+      .foregroundStyle(isCurrent ? Palette.mint800 : Palette.ink)
       .padding(.horizontal, Metrics.xs)
       .frame(height: 22)
       .background {
         RoundedRectangle(cornerRadius: 5, style: .continuous)
-          .fill(isCurrent ? Palette.moss : Palette.surfaceSunken)
+          .fill(isCurrent ? Palette.mint200 : Palette.surfaceSunken)
       }
       .opacity(configuration.isPressed ? 0.7 : 1)
       .contentShape(Rectangle())
