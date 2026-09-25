@@ -234,6 +234,44 @@ public enum MockData {
     TodoItem(id: "p4", text: "读半小时论文", kind: .habit, estimatedMinutes: 30),
   ]
 
+  /// Two days of history for previews: yesterday fully reviewed, and an older
+  /// day whose plan predates the structured format.
+  public static func dayHistory(date: String?) -> DayHistory {
+    let dates = ["2026-09-24", "2026-09-23", "2026-06-02"]
+    switch date ?? dates[0] {
+    case "2026-06-02":
+      return DayHistory(
+        date: "2026-06-02", dates: dates, today: "2026-09-25", hasPlan: true, items: [],
+        rawPlan: "## 早上\n\n- 回邮件\n- 写周报\n\n## 下午\n\n- 开会"
+      )
+    case "2026-09-23":
+      return DayHistory(date: "2026-09-23", dates: dates, today: "2026-09-25", hasPlan: false, items: [])
+    default:
+      return DayHistory(
+        date: "2026-09-24",
+        dates: dates,
+        today: "2026-09-25",
+        hasPlan: true,
+        generatedAt: Date(timeIntervalSince1970: 1_790_285_909),
+        items: [
+          TodoItem(id: "linear:DEMO-12", text: "把配置台面收敛为 owner-only", kind: .priority, state: .done, sourceRef: "DEMO-12", estimatedMinutes: 90),
+          TodoItem(id: "linear:DEMO-15", text: "回归测试跑一遍", kind: .priority, state: .partial, sourceRef: "DEMO-15", estimatedMinutes: 60),
+          TodoItem(id: "todo_inbox:1", text: "读半小时论文", kind: .priority, state: .deferred, estimatedMinutes: 30),
+          TodoItem(id: "todo_inbox:2", text: "整理本周投放数据", kind: .priority, state: .open, estimatedMinutes: 45),
+        ],
+        review: DayReview(
+          items: [
+            .init(id: "linear:DEMO-12", text: "把配置台面收敛为 owner-only", status: .done, evidence: "PR 已合并"),
+            .init(id: "linear:DEMO-15", text: "回归测试跑一遍", status: .progressed, evidence: "跑完一半，剩 UI 用例"),
+            .init(id: "todo_inbox:1", text: "读半小时论文", status: .open),
+            .init(id: "todo_inbox:2", text: "整理本周投放数据", status: .open),
+          ],
+          note: "上午的主线收掉了，下午被临时会议吃掉。"
+        )
+      )
+    }
+  }
+
   public static let teamToday: [TeamTodayEntry] = [
     TeamTodayEntry(
       id: "u_partner",

@@ -358,6 +358,16 @@ public final class LiveAppState: AppState {
     }
   }
 
+  public override func loadDayHistory(date: String?) async -> Result<DayHistory, DayHistoryError> {
+    guard let client else { return .failure(DayHistoryError("没有连接到服务。")) }
+    do {
+      return .success(try await client.dayHistory(date: date))
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      return .failure(DayHistoryError(reason))
+    }
+  }
+
   /// Send a corrected estimate as an `update` event carrying minutes.
   ///
   /// Not optimistic-and-forget like the ticks: the whole point of editing a

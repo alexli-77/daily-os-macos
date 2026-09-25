@@ -459,6 +459,14 @@ open class AppState {
   /// `nil` clears the estimate back to "unknown", which has to stay reachable —
   /// otherwise a mis-tap turns an honest blank into a wrong number that can
   /// never be taken back.
+  /// A past day's plan and review, for the 往日 view. `nil` asks for the most
+  /// recent day before today that has a plan. The shell answers from mock data
+  /// so previews and the demo have something to show; a live store asks the
+  /// service.
+  open func loadDayHistory(date: String?) async -> Result<DayHistory, DayHistoryError> {
+    .success(MockData.dayHistory(date: date))
+  }
+
   open func setPlanEstimate(candidateID: String, rank: Int, minutes: Int?) async -> ActionOutcome {
     guard let index = plan.firstIndex(where: { $0.id == candidateID }) else {
       return .failed("这条计划已经不在了。")
