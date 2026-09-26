@@ -798,8 +798,30 @@ check(DaySchedule.duration(120) == "2h" && DaySchedule.duration(90) == "1h30m"
       && DaySchedule.duration(45) == "45m", "时长按原型的紧凑写法")
 check(DaySchedule.clock(25 * 60) == "01:00", "跨过午夜要绕回去，不能打印 25:00")
 
+// MARK: - 往日
+//
+// 日期标签要按服务的"今天"算，跨月、跨年都不能错位；摘要要和那天结束时今天页的勾一致。
+
+check(DayLabel.text(for: "2026-09-24", today: "2026-09-25") == "昨天", "前一天叫昨天")
+check(DayLabel.text(for: "2026-09-23", today: "2026-09-25") == "前天", "前两天叫前天")
+check(DayLabel.text(for: "2026-09-22", today: "2026-09-25") == "9月22日 周二", "再往前写日期和星期")
+check(DayLabel.text(for: "2026-09-30", today: "2026-10-01") == "昨天", "跨月的昨天")
+check(DayLabel.text(for: "2025-12-31", today: "2026-01-01") == "昨天", "跨年的昨天")
+check(DayLabel.text(for: "2026-03-07", today: "2026-03-09") == "前天", "跨夏令时切换也按日历天算")
+check(DayLabel.text(for: "not-a-date", today: "2026-09-25") == "not-a-date", "认不出的日期原样显示，不崩")
+
+let pastDay = DayHistory(
+  date: "2026-09-24", dates: [], today: "2026-09-25", hasPlan: true,
+  items: [sheetItem("a", 30, .done), sheetItem("b", 30, .partial), sheetItem("c", 30, .deferred), sheetItem("d", 30)]
+)
+check(pastDay.summary == "4 条 · 完成 1 · 部分 1 · 顺延 1", "摘要按那天留下的状态计数: \(pastDay.summary)")
+check(DayHistory(date: "2026-09-24", dates: [], today: "2026-09-25", hasPlan: true, items: [sheetItem("a", nil)]).summary == "1 条 · 完成 0",
+      "没有部分和顺延就不写这两项")
+check(DayHistory(date: "2026-09-10", dates: [], today: "2026-09-25", hasPlan: false, items: []).summary == "这天没有计划",
+      "没计划和有计划但没条目要说得不一样")
+
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 回归集")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 往日, 回归集")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

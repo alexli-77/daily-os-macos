@@ -20,6 +20,7 @@ struct TodayScreen: View {
   /// and inbox ids are ledger ids, so they cannot collide.
   @State private var selectedTaskID: TodoItem.ID?
   @State private var showsExecution = false
+  @State private var showsPastDays = false
   /// The rail (我的待办 + 团队) sits beside the call sheet on a wide window and
   /// drops under it on a narrow one. This flag lets the user force the stacked
   /// form even when there is room — some people want the call sheet full-width.
@@ -68,6 +69,14 @@ struct TodayScreen: View {
           .help(railStacked ? "把「我的待办 / 团队」放回右侧" : "把「我的待办 / 团队」收到主列下方")
         }
         Button {
+          showsPastDays = true
+        } label: {
+          Image(systemName: "clock.arrow.circlepath")
+        }
+        .buttonStyle(MossButtonStyle(prominent: false))
+        .accessibilityLabel("往日")
+        .help("看前几天的计划和复盘")
+        Button {
           withAnimation(.snappy(duration: 0.2)) { showsExecution.toggle() }
         } label: {
           Image(systemName: "chart.bar.xaxis")
@@ -79,6 +88,7 @@ struct TodayScreen: View {
       }
     }
     .onReceive(clock) { now = $0 }
+    .sheet(isPresented: $showsPastDays) { PastDaysSheet() }
   }
 
   /// The day itself: the plan as a call sheet, optionally under the execution
