@@ -449,6 +449,11 @@ open class AppState {
     .unsupported("这一版没有连接到服务。")
   }
 
+  /// Put a capture on today's call sheet, with the estimate its slot needs.
+  open func addCaptureToPlan(_ id: TodoItem.ID, minutes: Int) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
   /// Correct one plan row's time estimate.
   ///
   /// Separate from `planFeedback` even though it travels on the same endpoint,
