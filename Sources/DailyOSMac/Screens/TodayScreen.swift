@@ -392,6 +392,18 @@ private struct CallSheetRow: View {
         if item.state == .partial {
           Text("做了一部分 · 时段按一半算").font(Typo.caption).foregroundStyle(Palette.ink3)
         }
+        if let note = item.note, !note.isEmpty {
+          // What 记一条更新 wrote. It used to vanish on save — the ledger kept
+          // it, nothing read it back — which made the control look like it had
+          // thrown the text away.
+          HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Image(systemName: "text.quote").font(.system(size: 9))
+            Text(note).fixedSize(horizontal: false, vertical: true)
+          }
+          .font(Typo.caption)
+          .foregroundStyle(Palette.ink3)
+          .padding(.top, 1)
+        }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
 
