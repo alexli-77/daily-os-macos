@@ -230,7 +230,7 @@ public enum MockData {
   public static let plan: [TodoItem] = [
     TodoItem(id: "p1", text: "把配置台面收敛为 owner-only", kind: .priority, due: now.addingTimeInterval(3600 * 5), state: .done, sourceRef: "DEMO-12", estimatedMinutes: 90),
     TodoItem(id: "p2", text: "周会 · 同步这一期的进展", kind: .schedule, due: now.addingTimeInterval(3600 * 2), estimatedMinutes: 45),
-    TodoItem(id: "p3", text: "回归测试跑一遍", kind: .priority, sourceRef: "DEMO-15", estimatedMinutes: 60),
+    TodoItem(id: "p3", text: "回归测试跑一遍", kind: .priority, sourceRef: "DEMO-15", estimatedMinutes: 60, note: "先跑了后端那套，macOS 的还没跑"),
     TodoItem(id: "p4", text: "读半小时论文", kind: .habit, estimatedMinutes: 30),
   ]
 

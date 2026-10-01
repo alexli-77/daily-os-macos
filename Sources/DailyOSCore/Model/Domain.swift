@@ -535,6 +535,11 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
   /// of work before the day starts rather than after it fails. Optional because
   /// habits and short captures do not carry one.
   public var estimatedMinutes: Int?
+  /// The last thing the user said about this row with 记一条更新.
+  ///
+  /// Kept on the item rather than in a second map beside it: a row that carries
+  /// its own note cannot be drawn with someone else's by a lookup that misses.
+  public var note: String?
 
   public init(
     id: String,
@@ -543,7 +548,8 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
     due: Date? = nil,
     state: TodoState = .open,
     sourceRef: String? = nil,
-    estimatedMinutes: Int? = nil
+    estimatedMinutes: Int? = nil,
+    note: String? = nil
   ) {
     self.id = id
     self.text = text
@@ -552,6 +558,7 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
     self.state = state
     self.sourceRef = sourceRef
     self.estimatedMinutes = estimatedMinutes
+    self.note = note
   }
 }
 
