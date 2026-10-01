@@ -1147,6 +1147,33 @@ private struct EstimateEditor: View {
   }
 }
 
+/// Pick how long a capture will take, on the way onto the call sheet.
+///
+/// The estimate is not optional here the way it is on a plan row: the sheet
+/// projects every later slot forward through the estimates, so a row arriving
+/// without one would push 预计结束 off from that point down. Same presets and
+/// same chips as `EstimateEditor`, so the two read as one control.
+private struct PlanEstimatePicker: View {
+  let onPick: (Int) -> Void
+  let onCancel: () -> Void
+
+  private static let presets = [15, 30, 45, 60, 90, 120]
+
+  var body: some View {
+    HStack(spacing: Metrics.xxs) {
+      Text("要花多久").mutedStyle(Typo.label)
+      ForEach(Self.presets, id: \.self) { minutes in
+        Button(Fmt.minutes(minutes)) { onPick(minutes) }
+          .buttonStyle(EstimateChipStyle(isCurrent: false))
+      }
+      Spacer(minLength: 0)
+      Button("取消", action: onCancel)
+        .buttonStyle(QuietButtonStyle(tone: .neutral))
+    }
+    .padding(.horizontal, Metrics.xs)
+  }
+}
+
 /// Small enough that six of them fit next to a label in half a window.
 /// `MossButtonStyle` is the right look and the wrong size here — its 28pt hit
 /// target and 12pt padding turn a row of presets into a toolbar.
@@ -1293,6 +1320,7 @@ private struct TodoRow: View {
 
   @State private var isRenaming = false
   @State private var draft = ""
+  @State private var isPlanning = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.xxs) {
@@ -1318,6 +1346,14 @@ private struct TodoRow: View {
         )
         .transition(.taskRow)
       }
+
+      if isPlanning {
+        PlanEstimatePicker(
+          onPick: addToPlan,
+          onCancel: { withAnimation(.snappy(duration: 0.2)) { isPlanning = false } }
+        )
+        .transition(.taskRow)
+      }
     }
   }
 
@@ -1325,6 +1361,14 @@ private struct TodoRow: View {
     var actions: [TaskAction] = []
     switch item.state {
     case .open:
+      actions.append(
+        TaskAction(id: "plan", label: "今天做", symbol: "calendar.badge.plus", key: "t") {
+          withAnimation(.snappy(duration: 0.2)) {
+            isPlanning.toggle()
+            if isPlanning { isRenaming = false }
+          }
+        }
+      )
       actions.append(
         TaskAction(id: "rename", label: "修改", symbol: "square.and.pencil", key: "e") {
           draft = item.text
@@ -1351,6 +1395,17 @@ private struct TodoRow: View {
       }
     )
     return actions
+  }
+
+  private func addToPlan(_ minutes: Int) {
+    withAnimation(.snappy(duration: 0.2)) { isPlanning = false }
+    Task {
+      let outcome = await state.addCaptureToPlan(item.id, minutes: minutes)
+      switch outcome {
+      case .ok(let message): state.toast = message ?? "已加到今天的计划"
+      case .failed(let why), .unsupported(let why): state.toast = why
+      }
+    }
   }
 }
 

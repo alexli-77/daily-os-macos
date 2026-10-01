@@ -328,6 +328,22 @@ public final class LiveAppState: AppState {
     write("改待办") { try await $0.renameTodo(id: id, text: trimmed) }
   }
 
+  /// Not optimistic, unlike the ticks: the row's slot is computed from every
+  /// estimate above it, so guessing the sheet locally would redraw the whole
+  /// clock and then correct it. A reload after the write is cheap by comparison.
+  public override func addCaptureToPlan(_ id: TodoItem.ID, minutes: Int) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      try await client.addCaptureToPlan(id: id, minutes: minutes)
+      await reload()
+      return .ok("已加到今天的计划")
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      lastActionError = reason
+      return .failed(reason)
+    }
+  }
+
   public override func planFeedback(
     candidateID: String,
     rank: Int,

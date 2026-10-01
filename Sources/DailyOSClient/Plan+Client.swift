@@ -135,6 +135,16 @@ extension DailyOSClient {
     try await post("/api/today/plan-order", body: Request(order: order))
   }
 
+  /// Put one of today's captures on the call sheet.
+  ///
+  /// `minutes` is required by the caller rather than optional here: the sheet
+  /// projects every later row's slot forward through the estimates, so a row
+  /// added without one would make 预计结束 wrong from that point down.
+  public func addCaptureToPlan(id: String, minutes: Int) async throws {
+    struct Request: Encodable { let id: String; let minutes: Int }
+    try await post("/api/today/plan-add", body: Request(id: id, minutes: minutes))
+  }
+
   /// Start a workflow now. `daily_plan`, `daily_review` or `weekly_review` —
   /// the service rejects anything else by name.
   ///
