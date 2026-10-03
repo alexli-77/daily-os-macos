@@ -214,6 +214,7 @@ public final class LiveAppState: AppState {
       self.plan = plan.items
       self.planStaleDate = plan.staleDate
       self.planGeneratedAt = plan.generatedAt
+      self.staleCaptures = plan.staleCaptures
       self.hasPlan = plan.hasPlan
       // Rhythm rides in the plan chunk: it shapes the same timeline and a failure
       // to read it is the same "today didn't load" story, not its own banner.
@@ -331,6 +332,19 @@ public final class LiveAppState: AppState {
   /// Not optimistic, unlike the ticks: the row's slot is computed from every
   /// estimate above it, so guessing the sheet locally would redraw the whole
   /// clock and then correct it. A reload after the write is cheap by comparison.
+  public override func abandonCaptures(_ ids: [String]) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      let count = try await client.abandonCaptures(ids: ids)
+      await reload()
+      return .ok(count == 0 ? "这些条目已经不在顺延中了" : "已放弃 \(count) 条，可在「已顺延」里找回")
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      lastActionError = reason
+      return .failed(reason)
+    }
+  }
+
   public override func addCaptureToPlan(_ id: TodoItem.ID, minutes: Int) async -> ActionOutcome {
     guard let client else { return .failed("没有连接到服务。") }
     do {
