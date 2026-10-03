@@ -520,6 +520,25 @@ public enum TodoState: String, Sendable {
   case deleted
 }
 
+/// A capture that has been carried long enough to be worth a decision.
+///
+/// Surfaced so a pile can be let go of in one action: carrying forever is the
+/// design, but without a way out the sheet fills with things nobody ever chose
+/// to drop — and each one still pushes every later row's time out by its
+/// estimate.
+public struct StaleCapture: Sendable, Equatable, Identifiable {
+  public let id: String
+  public let text: String
+  /// Whole days since it was written down.
+  public let days: Int
+
+  public init(id: String, text: String, days: Int) {
+    self.id = id
+    self.text = text
+    self.days = days
+  }
+}
+
 public struct TodoItem: Sendable, Equatable, Identifiable {
   public let id: String
   public var text: String

@@ -44,6 +44,9 @@ struct TodayPlanResponse: Decodable {
   let notes: [String: String]?
   /// candidateId → the day an unfinished capture was first written down.
   let carriedFrom: [String: String]?
+  struct Stale: Decodable { let id: String; let text: String; let days: Int }
+  /// Captures carried past the service's threshold, oldest first.
+  let staleCaptures: [Stale]?
   let today: String
 }
 
@@ -56,12 +59,15 @@ public struct TodayPlan: Sendable, Equatable {
   /// When the current plan was generated. Lets the badge say *which* day's plan
   /// is on screen and at what time, so "已更新" can't be mistaken for today's.
   public let generatedAt: Date?
+  /// Captures carried long enough to deserve a decision, oldest first.
+  public let staleCaptures: [StaleCapture]
 
-  public init(items: [TodoItem], staleDate: String?, hasPlan: Bool, generatedAt: Date? = nil) {
+  public init(items: [TodoItem], staleDate: String?, hasPlan: Bool, generatedAt: Date? = nil, staleCaptures: [StaleCapture] = []) {
     self.items = items
     self.staleDate = staleDate
     self.hasPlan = hasPlan
     self.generatedAt = generatedAt
+    self.staleCaptures = staleCaptures
   }
 }
 
@@ -97,7 +103,8 @@ extension DailyOSClient {
       items: items,
       staleDate: plan.stale ? plan.date : nil,
       hasPlan: true,
-      generatedAt: plan.generatedAt.flatMap(TodoWireDate.timestamp)
+      generatedAt: plan.generatedAt.flatMap(TodoWireDate.timestamp),
+      staleCaptures: (response.staleCaptures ?? []).map { StaleCapture(id: $0.id, text: $0.text, days: $0.days) }
     )
   }
 
@@ -150,6 +157,16 @@ extension DailyOSClient {
   public func addCaptureToPlan(id: String, minutes: Int) async throws {
     struct Request: Encodable { let id: String; let minutes: Int }
     try await post("/api/today/plan-add", body: Request(id: id, minutes: minutes))
+  }
+
+  /// Stop carrying these captures. Returns how many actually changed — ids that
+  /// were already closed are skipped rather than failing the batch, because the
+  /// list the user acted on may be a few seconds old.
+  public func abandonCaptures(ids: [String]) async throws -> Int {
+    struct Request: Encodable { let ids: [String] }
+    struct Response: Decodable { let abandoned: [String]? }
+    let response: Response = try await post("/api/todo-inbox/abandon", body: Request(ids: ids))
+    return response.abandoned?.count ?? 0
   }
 
   /// Start a workflow now. `daily_plan`, `daily_review` or `weekly_review` —

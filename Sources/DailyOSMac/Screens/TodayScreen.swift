@@ -170,6 +170,9 @@ private struct CallSheetPanel: View {
           if !schedule.lateRows.isEmpty {
             OverdueBanner(rows: schedule.lateRows, pushAll: pushLateToNow)
           }
+          if !state.staleCaptures.isEmpty {
+            StaleCaptureBanner(captures: state.staleCaptures, abandon: abandon)
+          }
           sheet
           SheetFooter(schedule: schedule)
         }
@@ -241,6 +244,16 @@ private struct CallSheetPanel: View {
   }
 
   private var isRunning: Bool { state.planRunStartedAt != nil }
+
+  private func abandon(_ ids: [String]) {
+    Task {
+      let outcome = await state.abandonCaptures(ids)
+      switch outcome {
+      case .ok(let message): state.toast = message ?? "已放弃"
+      case .failed(let why), .unsupported(let why): state.toast = why
+      }
+    }
+  }
 
   private func dropEdge(for index: Int) -> CallSheetRow.DropEdge? {
     guard let dropIndex else { return nil }
@@ -613,6 +626,93 @@ private struct NowLine: View {
 /// One banner rather than a badge per row: the question it answers — "how far
 /// behind am I" — is about the day, not about any single line, and three red
 /// marks scattered down a list do not add up to an answer on their own.
+/// 顺延太久的捕获，给一个一起放弃的出口。
+///
+/// Collapsed it is one line, because most days there is nothing to decide. Open
+/// it lists each one with its age and a checkbox: dropping the pile wholesale is
+/// usually wrong — one of them is the thing that actually matters — so the
+/// default is nothing selected and 全选 is one click away.
+///
+/// 放弃 shelves rather than deletes. Said on the button's help text, because a
+/// bulk action whose reach is unclear is one people avoid using.
+private struct StaleCaptureBanner: View {
+  let captures: [StaleCapture]
+  let abandon: ([String]) -> Void
+
+  @State private var isOpen = false
+  @State private var picked: Set<String> = []
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Metrics.xs) {
+      HStack(alignment: .top, spacing: Metrics.sm) {
+        Image(systemName: "calendar.badge.exclamationmark")
+          .font(.system(size: 15))
+          .foregroundStyle(Palette.ink3)
+        VStack(alignment: .leading, spacing: 2) {
+          // The smallest age, not the list's last element: "超过 N 天" has to be
+          // true of every row, and reading it off the ordering would quietly
+          // break if the service ever sorted them the other way.
+          Text("\(captures.count) 项顺延超过 \(captures.map(\.days).min() ?? 0) 天")
+            .font(Typo.label)
+            .foregroundStyle(Palette.ink)
+          Text("每天都在往后推，也在占时段。决定一下还做不做。")
+            .font(Typo.caption)
+            .foregroundStyle(Palette.ink2)
+        }
+        Spacer(minLength: Metrics.xs)
+        Button(isOpen ? "收起" : "处理一下") {
+          withAnimation(.snappy(duration: 0.2)) {
+            isOpen.toggle()
+            if !isOpen { picked = [] }
+          }
+        }
+        .buttonStyle(QuietButtonStyle())
+      }
+
+      if isOpen {
+        VStack(alignment: .leading, spacing: Metrics.xxs) {
+          ForEach(captures) { capture in
+            Toggle(isOn: binding(for: capture.id)) {
+              HStack(spacing: Metrics.xs) {
+                Text(capture.text).font(Typo.caption).foregroundStyle(Palette.ink)
+                Text("\(capture.days) 天").font(Typo.caption).foregroundStyle(Palette.ink3)
+              }
+            }
+            .toggleStyle(.checkbox)
+          }
+          HStack(spacing: Metrics.xs) {
+            Button(picked.count == captures.count ? "全不选" : "全选") {
+              picked = picked.count == captures.count ? [] : Set(captures.map(\.id))
+            }
+            .buttonStyle(QuietButtonStyle(tone: .neutral))
+            Spacer(minLength: 0)
+            Button("放弃选中的 \(picked.count) 项") {
+              abandon(Array(picked))
+              withAnimation(.snappy(duration: 0.2)) { isOpen = false }
+              picked = []
+            }
+            .buttonStyle(QuietButtonStyle())
+            .disabled(picked.isEmpty)
+            .help("不再顺延到明天。会移到「已顺延」，随时能恢复——不是删除。")
+          }
+          .padding(.top, 2)
+        }
+        .padding(.leading, 24)
+        .transition(.opacity)
+      }
+    }
+    .padding(Metrics.sm)
+    .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Metrics.radiusPaper, style: .continuous))
+  }
+
+  private func binding(for id: String) -> Binding<Bool> {
+    Binding(
+      get: { picked.contains(id) },
+      set: { isOn in if isOn { picked.insert(id) } else { picked.remove(id) } }
+    )
+  }
+}
+
 private struct OverdueBanner: View {
   let rows: [DaySchedule.Row]
   let pushAll: () -> Void
