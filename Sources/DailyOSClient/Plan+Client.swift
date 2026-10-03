@@ -42,6 +42,8 @@ struct TodayPlanResponse: Decodable {
   /// candidateId → the last note left on that row today. Absent before the
   /// service learned to return these, hence optional.
   let notes: [String: String]?
+  /// candidateId → the day an unfinished capture was first written down.
+  let carriedFrom: [String: String]?
   let today: String
 }
 
@@ -86,7 +88,8 @@ extension DailyOSClient {
           // service merges the newest ledger edit over the model's guess, so
           // this client never has to know an override mechanism exists.
           estimatedMinutes: todo.minutes,
-          note: response.notes?[todo.candidateId]
+          note: response.notes?[todo.candidateId],
+          carriedFrom: response.carriedFrom?[todo.candidateId]
         )
       }
 

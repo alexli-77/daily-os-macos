@@ -330,6 +330,28 @@ private struct CallSheetRow: View {
   private var isResolved: Bool { item.state == .done || item.state == .deferred }
   private var isMIT: Bool { isPlanRow && PlanImportance.forRank(row.rank) == .mit }
 
+  /// Fixed locale: the wire format is always `yyyy-MM-dd`, and a user whose
+  /// region formats dates differently must still parse it.
+  private static let dayFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter
+  }()
+
+  /// 昨天没做完 / 已顺延 N 天 — nil for anything captured today.
+  ///
+  /// Counted in whole days from the capture date, so it does not drift with the
+  /// time of day the row is looked at.
+  private var carriedLabel: String? {
+    guard let from = item.carriedFrom, !isResolved else { return nil }
+    let calendar = Calendar.current
+    guard let captured = Self.dayFormatter.date(from: from) else { return nil }
+    let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: captured), to: calendar.startOfDay(for: .now)).day ?? 0
+    if days <= 0 { return nil }
+    return days == 1 ? "昨天没做完" : "已顺延 \(days) 天"
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.xs) {
       mainLine
@@ -391,6 +413,12 @@ private struct CallSheetRow: View {
         }
         if item.state == .partial {
           Text("做了一部分 · 时段按一半算").font(Typo.caption).foregroundStyle(Palette.ink3)
+        }
+        if let carried = carriedLabel {
+          // A capture is written straight onto the sheet and stays until it is
+          // done. Saying which day it came from is what separates "still not
+          // done" from "new today" — without it a week-old row looks fresh.
+          Text(carried).font(Typo.caption).foregroundStyle(Palette.mint600)
         }
         if let note = item.note, !note.isEmpty {
           // What 记一条更新 wrote. It used to vanish on save — the ledger kept
@@ -1040,7 +1068,7 @@ private struct QuickCapturePanel: View {
     Panel {
       HStack(spacing: Metrics.xs) {
         Image(systemName: "square.and.pencil").foregroundStyle(Palette.inkMuted)
-        TextField("随手记一条…", text: $state.quickCaptureText)
+        TextField("记一条，直接进今天的通告单…", text: $state.quickCaptureText)
           .textFieldStyle(.plain)
           .font(Typo.body)
           .focused($focused)
@@ -1284,11 +1312,15 @@ private struct TodoPanel: View {
   @Binding var selectedID: TodoItem.ID?
   @State private var showsHistory = false
 
+  /// No longer a count of things waiting to be processed: a capture is already
+  /// on the sheet, so what is left here is what has not been finished yet.
+  private var subtitle: String { "\(state.openTodos.count) 项还没做完" }
+
   var body: some View {
-    Panel("我的待办", subtitle: "\(state.openTodos.count) 项未完成") {
+    Panel("我的待办", subtitle: subtitle) {
       VStack(spacing: 2) {
         if state.openTodos.isEmpty {
-          EmptyState(icon: "checkmark.circle", title: "都清完了", message: "收件箱是空的。")
+          EmptyState(icon: "checkmark.circle", title: "都清完了", message: "记下的事都做完了。")
         } else {
           ForEach(state.openTodos) { item in
             TodoRow(item: item, selectedID: $selectedID)

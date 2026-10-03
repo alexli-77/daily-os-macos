@@ -535,6 +535,12 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
   /// of work before the day starts rather than after it fails. Optional because
   /// habits and short captures do not carry one.
   public var estimatedMinutes: Int?
+  /// For a capture carried from an earlier day: the day it was written down.
+  ///
+  /// Present only while the capture is still unfinished — it is on today's sheet
+  /// *because* it was not done, and the row should say so rather than looking
+  /// like something new.
+  public var carriedFrom: String?
   /// The last thing the user said about this row with 记一条更新.
   ///
   /// Kept on the item rather than in a second map beside it: a row that carries
@@ -549,7 +555,8 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
     state: TodoState = .open,
     sourceRef: String? = nil,
     estimatedMinutes: Int? = nil,
-    note: String? = nil
+    note: String? = nil,
+    carriedFrom: String? = nil
   ) {
     self.id = id
     self.text = text
@@ -559,6 +566,7 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
     self.sourceRef = sourceRef
     self.estimatedMinutes = estimatedMinutes
     self.note = note
+    self.carriedFrom = carriedFrom
   }
 }
 
