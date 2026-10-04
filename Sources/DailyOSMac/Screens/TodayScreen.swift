@@ -21,7 +21,7 @@ struct TodayScreen: View {
   @State private var selectedTaskID: TodoItem.ID?
   @State private var showsExecution = false
   @State private var showsPastDays = false
-  /// The rail (我的待办 + 团队) sits beside the call sheet on a wide window and
+  /// The rail (随手记 + 记过的 + 团队) sits beside the call sheet on a wide window and
   /// drops under it on a narrow one. This flag lets the user force the stacked
   /// form even when there is room — some people want the call sheet full-width.
   @AppStorage("today.railStacked") private var railStacked = false
@@ -66,7 +66,7 @@ struct TodayScreen: View {
           .buttonStyle(MossButtonStyle(prominent: false))
           .accessibilityLabel(railStacked ? "并排侧栏" : "收起侧栏")
           .accessibilityAddTraits(railStacked ? [] : [.isSelected])
-          .help(railStacked ? "把「我的待办 / 团队」放回右侧" : "把「我的待办 / 团队」收到主列下方")
+          .help(railStacked ? "把「记过的 / 团队」放回右侧" : "把「记过的 / 团队」收到主列下方")
         }
         Button {
           showsPastDays = true
