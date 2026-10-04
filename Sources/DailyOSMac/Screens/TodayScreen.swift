@@ -101,8 +101,12 @@ struct TodayScreen: View {
     }
   }
 
-  /// 我的待办（随手记 + 列表）+ 团队今天. Secondary but always-glanceable, so it
-  /// rides alongside the plan rather than sinking to the bottom of one scroll.
+  /// 随手记 + 记过的 + 团队今天. Secondary but always-glanceable, so it rides
+  /// alongside the plan rather than sinking to the bottom of one scroll.
+  ///
+  /// The capture field stayed; the list under it did not. A capture now lands on
+  /// the call sheet, so a second list of the same open items would be the same
+  /// work shown twice — what is left here is what the sheet no longer carries.
   @ViewBuilder private var rail: some View {
     VStack(alignment: .leading, spacing: Metrics.md) {
       QuickCapturePanel()
@@ -1412,35 +1416,53 @@ private struct TodoPanel: View {
   @Binding var selectedID: TodoItem.ID?
   @State private var showsHistory = false
 
-  /// No longer a count of things waiting to be processed: a capture is already
-  /// on the sheet, so what is left here is what has not been finished yet.
-  private var subtitle: String { "\(state.openTodos.count) 项还没做完" }
+  /// Captures that are open but *not* on today's sheet.
+  ///
+  /// Normally empty: a capture goes onto the sheet as it is written, and the
+  /// morning run puts back any the model left out. It fills for one case —
+  /// something captured before today's plan exists, which has nothing to be
+  /// appended to yet. Those would otherwise be visible nowhere at all, so they
+  /// are surfaced here until the plan catches up.
+  private var notOnSheet: [TodoItem] {
+    let onSheet = Set(state.plan.map(\.id))
+    return state.openTodos.filter { !onSheet.contains("todo_inbox:\($0.id)") }
+  }
+
+  private var archived: [TodoItem] { state.doneTodos + state.deferredTodos }
 
   var body: some View {
-    Panel("我的待办", subtitle: subtitle) {
+    Panel("记过的", subtitle: "已完成和已顺延的都在这儿，随时能恢复") {
       VStack(spacing: 2) {
-        if state.openTodos.isEmpty {
-          EmptyState(icon: "checkmark.circle", title: "都清完了", message: "记下的事都做完了。")
-        } else {
-          ForEach(state.openTodos) { item in
+        if !notOnSheet.isEmpty {
+          Text("还没进今天的通告单")
+            .font(Typo.caption)
+            .foregroundStyle(Palette.mint600)
+            .frame(maxWidth: .infinity, alignment: .leading)
+          ForEach(notOnSheet) { item in
             TodoRow(item: item, selectedID: $selectedID)
               .transition(.taskRow)
           }
+          if !archived.isEmpty { PanelDivider() }
         }
 
-        if !state.doneTodos.isEmpty || !state.deferredTodos.isEmpty {
-          PanelDivider()
+        if archived.isEmpty {
+          if notOnSheet.isEmpty {
+            Text("还没有记过的事。")
+              .mutedStyle(Typo.caption)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
+        } else {
+          // One line until asked for. Capturing and doing both happen on the
+          // call sheet now; this is the place you come back to, not the place
+          // you work from, so it should not hold a column open all day.
           DisclosureGroup(isExpanded: $showsHistory) {
             VStack(spacing: 2) {
-              ForEach(state.doneTodos) { TodoRow(item: $0, selectedID: $selectedID) }
-              ForEach(state.deferredTodos) { TodoRow(item: $0, selectedID: $selectedID) }
+              ForEach(archived) { TodoRow(item: $0, selectedID: $selectedID) }
             }
           } label: {
-            Text("已完成 / 已顺延 · \(state.doneTodos.count + state.deferredTodos.count)")
-              .mutedStyle()
+            Text("已完成 / 已顺延 · \(archived.count)").mutedStyle()
           }
           .tint(Palette.inkMuted)
-          .padding(.top, Metrics.xs)
         }
       }
     }
