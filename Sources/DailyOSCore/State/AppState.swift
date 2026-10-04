@@ -259,9 +259,13 @@ open class AppState {
 
   /// What the Today header reports.
   ///
-  /// Counts the plan, not the inbox: the plan is what you said you would do
-  /// today, and progress against a list you keep adding to is not progress.
-  /// Captures land in 我的待办 and are counted there.
+  /// Counts the plan, which is now also where captures land.
+  ///
+  /// This used to count the plan *instead of* the inbox, on the grounds that
+  /// progress against a list you keep adding to is not progress. That split no
+  /// longer exists — a capture goes straight onto the sheet — so the denominator
+  /// does grow during the day, and finishing 3 of 5 then capturing one reads as
+  /// 3 of 6. That is the honest number: the work really did get bigger.
   public var dayProgress: DayProgress {
     let target = plan.count
     let done = plan.filter { $0.state == .done }.count
