@@ -66,6 +66,8 @@ open class AppState {
   /// When the plan currently on screen was generated. Drives the badge's
   /// "MM-dd HH:mm 生成" so a plan can never read as today's without saying when.
   public var planGeneratedAt: Date?
+  /// Captures carried long enough to be worth a decision, oldest first.
+  public var staleCaptures: [StaleCapture] = []
   /// False when no `daily_plan` has ever run, which wants a different empty
   /// state from "ran and produced nothing".
   public var hasPlan = true
@@ -451,6 +453,11 @@ open class AppState {
 
   /// Put a capture on today's call sheet, with the estimate its slot needs.
   open func addCaptureToPlan(_ id: TodoItem.ID, minutes: Int) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  /// Stop carrying these captures. Shelved, not deleted — 已顺延 still has them.
+  open func abandonCaptures(_ ids: [String]) async -> ActionOutcome {
     .unsupported("这一版没有连接到服务。")
   }
 
