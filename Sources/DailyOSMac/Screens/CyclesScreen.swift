@@ -698,9 +698,14 @@ private struct AlignedPriorities: View {
   let editable: Bool
 
   @AppStorage("cycles.alignmentExpanded") private var krExpanded = false
+  /// Read-only here: the inspector owns it. Needed to explain why two columns
+  /// did not fit — the drawer is 360pt of the same answer this view gives.
+  @AppStorage("cycles.showsOKR") private var showsOKR = false
   @State private var width: CGFloat = 0
 
-  private static let breakpoint: CGFloat = 820
+  /// 300 for the objective + a gap + ~440 of 要务 before the text starts
+  /// wrapping worse than it does today.
+  private static let breakpoint: CGFloat = 760
 
   private var objectives: [Objective] {
     // The same file the inspector shows: the current one, which is what this
@@ -735,6 +740,10 @@ private struct AlignedPriorities: View {
         }
       }
     }
+    // Must fill the panel before measuring it. Left to size itself, the stack is
+    // as wide as the stacked layout it is currently drawing — which is never the
+    // breakpoint, so it could never switch to two columns.
+    .frame(maxWidth: .infinity, alignment: .leading)
     .background(
       GeometryReader { proxy in
         Color.clear
@@ -763,6 +772,12 @@ private struct AlignedPriorities: View {
         .buttonStyle(QuietButtonStyle(tone: .neutral))
       }
       Spacer(minLength: 0)
+      // The drawer costs 360pt and answers the same question this view does, so
+      // on a narrow window it is the reason the two columns did not fit. Say so
+      // rather than silently stacking.
+      if width < Self.breakpoint && width > 0 && showsOKR {
+        Text("收起右侧 OKR 可以并排显示").mutedStyle(Typo.caption)
+      }
     }
   }
 
