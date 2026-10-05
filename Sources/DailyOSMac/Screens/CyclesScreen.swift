@@ -677,6 +677,146 @@ private struct CycleSectionPanel: View {
 // MARK: - Priorities
 
 /// 要务 in read mode: OKR-row groups, each item with its three status dots.
+/// 要务 beside the objectives they were planned under.
+///
+/// The cycle already groups its 要务 by objective title — that heading *is* the
+/// objective's own title, written by the service's `okrRowLabels`. So this is a
+/// join, not a new relationship, and the whole feature is a layout change.
+///
+/// Two columns when there is room, stacked when there is not: the 要务 text is
+/// already wrapping at full width, and halving it to make space for key results
+/// would trade the thing being read for its annotation.
+///
+/// Key results stay folded by default. The question "which objective does this
+/// cycle's work serve" is answered by the heading alone; "how is that objective
+/// doing" is a second, rarer question, and 7 objectives' worth of key results
+/// unfolded is a page you have to scroll past to reach the 要务.
+private struct AlignedPriorities: View {
+  @Environment(AppState.self) private var state
+  let cycle: Cycle
+  let doc: PrioritiesDocument
+  let editable: Bool
+
+  @AppStorage("cycles.alignmentExpanded") private var krExpanded = false
+  @State private var width: CGFloat = 0
+
+  private static let breakpoint: CGFloat = 820
+
+  private var objectives: [Objective] {
+    // The same file the inspector shows: the current one, which is what this
+    // cycle was planned against — unless it has been renamed since, which the
+    // alignment reports rather than papers over.
+    state.okrFiles.last?.objectives ?? []
+  }
+
+  private var result: CycleOkrAlignment.Result {
+    CycleOkrAlignment.align(objectives: objectives, priorities: doc)
+  }
+
+  var body: some View {
+    let alignment = result
+    VStack(alignment: .leading, spacing: Metrics.md) {
+      if !objectives.isEmpty {
+        header(alignment)
+      }
+      ForEach(alignment.rows) { row in
+        if width >= Self.breakpoint && !objectives.isEmpty {
+          HStack(alignment: .top, spacing: Metrics.md) {
+            objectiveColumn(row, wholly: alignment.isWhollyUnmatched)
+              .frame(width: 300, alignment: .leading)
+            prioritiesColumn(row)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
+        } else {
+          VStack(alignment: .leading, spacing: Metrics.xs) {
+            objectiveColumn(row, wholly: alignment.isWhollyUnmatched)
+            prioritiesColumn(row)
+          }
+        }
+      }
+    }
+    .background(
+      GeometryReader { proxy in
+        Color.clear
+          .onAppear { width = proxy.size.width }
+          .onChange(of: proxy.size.width) { width = proxy.size.width }
+      }
+    )
+  }
+
+  private func header(_ alignment: CycleOkrAlignment.Result) -> some View {
+    HStack(spacing: Metrics.xs) {
+      if alignment.isWhollyUnmatched {
+        // Said once rather than on all seven rows. A cycle planned before an OKR
+        // rename matches nothing, and a warning per row is just noise with no
+        // signal left in it.
+        Label("这一期的要务是按当时的 OKR 规划的，和现在的 OKR 文件对不上", systemImage: "exclamationmark.triangle")
+          .font(Typo.caption)
+          .foregroundStyle(Palette.inkMuted)
+      } else {
+        Button {
+          withAnimation(.snappy(duration: 0.2)) { krExpanded.toggle() }
+        } label: {
+          Label(krExpanded ? "收起 KR" : "展开 KR", systemImage: krExpanded ? "chevron.down" : "chevron.right")
+            .font(Typo.caption)
+        }
+        .buttonStyle(QuietButtonStyle(tone: .neutral))
+      }
+      Spacer(minLength: 0)
+    }
+  }
+
+  @ViewBuilder private func objectiveColumn(_ row: CycleOkrAlignment.Row, wholly: Bool) -> some View {
+    if let objective = row.objective {
+      VStack(alignment: .leading, spacing: Metrics.xxs) {
+        HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
+          Text(objective.id).font(Typo.mono).foregroundStyle(Palette.moss)
+          Text(objective.title).inkStyle(Typo.heading)
+          Spacer(minLength: Metrics.xs)
+          Text("\(Int(objective.progress * 100))%")
+            .font(Typo.tabularCaption)
+            .foregroundStyle(Palette.inkMuted)
+        }
+        if krExpanded {
+          ForEach(objective.keyResults) { KeyResultRow(kr: $0) }
+        } else if !objective.keyResults.isEmpty {
+          Text("\(objective.keyResults.count) KR").mutedStyle(Typo.caption)
+        }
+      }
+    } else {
+      VStack(alignment: .leading, spacing: Metrics.xxs) {
+        // Per-row only when some rows did match; a wholly-unmatched cycle says
+        // it once in the header instead.
+        if !wholly {
+          Label("不在当前 OKR 文件里", systemImage: "exclamationmark.triangle")
+            .font(Typo.caption)
+            .foregroundStyle(Palette.inkMuted)
+        }
+        if let heading = row.recordedHeading {
+          // The heading the cycle itself recorded. Without it an orphaned group
+          // loses the only record of which objective it was planned under.
+          Text(heading)
+            .font(Typo.caption)
+            .foregroundStyle(Palette.ink3)
+            .lineLimit(3)
+        }
+      }
+    }
+  }
+
+  @ViewBuilder private func prioritiesColumn(_ row: CycleOkrAlignment.Row) -> some View {
+    if let group = row.group, !group.items.isEmpty {
+      VStack(alignment: .leading, spacing: 0) {
+        ForEach(group.items) { item in
+          PriorityRow(cycle: cycle, item: item, editable: editable)
+        }
+      }
+    } else {
+      Text(PrioritiesDocument.emptyPlaceholder).mutedStyle()
+    }
+  }
+}
+
 private struct PrioritiesView: View {
   @Environment(AppState.self) private var state
   let cycle: Cycle
@@ -711,16 +851,7 @@ private struct PrioritiesView: View {
         if !doc.loose.isEmpty {
           itemList(doc.loose)
         }
-        ForEach(doc.groups) { group in
-          VStack(alignment: .leading, spacing: Metrics.xs) {
-            Text(group.title).inkStyle(Typo.heading)
-            if group.items.isEmpty {
-              Text(PrioritiesDocument.emptyPlaceholder).mutedStyle()
-            } else {
-              itemList(group.items)
-            }
-          }
-        }
+        AlignedPriorities(cycle: cycle, doc: doc, editable: editable)
       }
     }
   }

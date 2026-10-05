@@ -88,7 +88,10 @@ struct ObjectiveBlock: View {
   }
 }
 
-private struct KeyResultRow: View {
+/// Internal rather than private: the cycle screen's aligned view draws the same
+/// key results beside the 要务 planned under them, and a second copy of this
+/// row would be a second place for them to drift.
+struct KeyResultRow: View {
   let kr: KeyResult
 
   var body: some View {
