@@ -853,10 +853,9 @@ private struct AlignedPriorities: View {
           .buttonStyle(.plain)
           .help(isOpen ? "收起这个 O 的 KR" : "展开这个 O 的 KR")
           if isOpen {
-            // A sunken block rather than loose lines under the toggle: it is the
-            // same "here is the detail behind that" shape the rest of the app
-            // uses, and it keeps four key results from reading as four more
-            // objectives.
+            // Indented, not filled. A block of its own colour competed with the
+            // column rule next to it for the same job; the indent says "these
+            // belong to the objective above" on its own.
             VStack(alignment: .leading, spacing: Metrics.xxs) {
               ForEach(objective.keyResults) { kr in
                 HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
@@ -866,9 +865,8 @@ private struct AlignedPriorities: View {
                 .fixedSize(horizontal: false, vertical: true)
               }
             }
-            .padding(Metrics.xs)
+            .padding(.leading, Metrics.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Metrics.radiusPaper, style: .continuous))
             .padding(.top, Metrics.xxs)
             .transition(.opacity)
           }
@@ -900,7 +898,7 @@ private struct AlignedPriorities: View {
     if let group = row.group, !group.items.isEmpty {
       VStack(alignment: .leading, spacing: 0) {
         ForEach(group.items) { item in
-          PriorityRow(cycle: cycle, item: item, editable: editable)
+          PriorityRow(cycle: cycle, item: item, editable: editable, showsStatusBar: false)
         }
       }
     } else {
@@ -962,6 +960,12 @@ private struct PriorityRow: View {
   let cycle: Cycle
   let item: PriorityItem
   let editable: Bool
+  /// The 2pt status bar down the left edge. On by default — it is how the
+  /// single-column list has always shown a group's shape at a glance. Off in the
+  /// aligned table, where it lands a few points from the column rule and reads
+  /// as a second, shorter divider; the status it carries is already in the dots
+  /// at the head of the row.
+  var showsStatusBar = true
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
@@ -991,10 +995,12 @@ private struct PriorityRow: View {
     }
     .padding(.vertical, Metrics.xxs)
     .overlay(alignment: .leading) {
-      Rectangle()
-        .fill(item.status.map { Palette.foreground(for: $0.tone) } ?? Palette.line)
-        .frame(width: 2)
-        .offset(x: -Metrics.xs)
+      if showsStatusBar {
+        Rectangle()
+          .fill(item.status.map { Palette.foreground(for: $0.tone) } ?? Palette.line)
+          .frame(width: 2)
+          .offset(x: -Metrics.xs)
+      }
     }
   }
 }
