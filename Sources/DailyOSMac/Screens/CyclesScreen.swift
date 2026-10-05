@@ -754,10 +754,10 @@ private struct AlignedPriorities: View {
 
       if table {
         header
-        rule(heavy: true)
+          .padding(.bottom, Metrics.xs)
       }
       ForEach(Array(alignment.rows.enumerated()), id: \.element.id) { index, row in
-        if index > 0 { rule(heavy: false) }
+        if index > 0 { rowRule() }
         if table {
           HStack(alignment: .top, spacing: 0) {
             objectiveCell(row, wholly: alignment.isWhollyUnmatched)
@@ -794,28 +794,31 @@ private struct AlignedPriorities: View {
     )
   }
 
+  /// A sunken band, the way the rest of the app separates a strip from what it
+  /// labels (`PastDaysSheet`'s note, the estimate chips). A heavier rule under
+  /// plain text said the same thing twice and still read as a stray line.
   private var header: some View {
     HStack(alignment: .firstTextBaseline, spacing: 0) {
       Text("OKR")
-        .font(Typo.label)
-        .foregroundStyle(Palette.inkMuted)
+        .mutedStyle(Typo.label)
         .frame(width: Self.objectiveColumnWidth, alignment: .leading)
         .padding(.trailing, Metrics.sm)
-      Rectangle().fill(.clear).frame(width: Metrics.hairline)
+      Rectangle()
+        .fill(Palette.rule)
+        .frame(width: Metrics.hairline)
+        .padding(.vertical, -Metrics.xs)
       Text("本期要务")
-        .font(Typo.label)
-        .foregroundStyle(Palette.inkMuted)
+        .mutedStyle(Typo.label)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.leading, Metrics.sm)
     }
-    .padding(.bottom, Metrics.xs)
+    .padding(.horizontal, Metrics.xs)
+    .padding(.vertical, Metrics.xs)
+    .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Metrics.radiusPaper, style: .continuous))
   }
 
-  private func rule(heavy: Bool) -> some View {
-    Rectangle()
-      .fill(Palette.rule)
-      .frame(height: Metrics.hairline)
-      .opacity(heavy ? 1 : 0.6)
+  private func rowRule() -> some View {
+    Rectangle().fill(Palette.rule).frame(height: Metrics.hairline)
   }
 
   @ViewBuilder private func objectiveCell(_ row: CycleOkrAlignment.Row, wholly: Bool) -> some View {
@@ -835,16 +838,23 @@ private struct AlignedPriorities: View {
             withAnimation(.snappy(duration: 0.2)) { toggle(objective.id) }
           } label: {
             HStack(spacing: Metrics.xxs) {
-              Image(systemName: isOpen ? "chevron.down" : "chevron.right")
+              // Rotated rather than swapped, matching CycleGroupHeader — the
+              // turn is what makes it read as the same control in two states.
+              Image(systemName: "chevron.right")
                 .font(.system(size: 9, weight: .semibold))
+                .rotationEffect(.degrees(isOpen ? 90 : 0))
               Text("\(objective.keyResults.count) KR").font(Typo.caption)
             }
-            .foregroundStyle(Palette.inkMuted)
+            .foregroundStyle(isOpen ? Palette.mint600 : Palette.inkMuted)
             .contentShape(Rectangle())
           }
           .buttonStyle(.plain)
           .help(isOpen ? "收起这个 O 的 KR" : "展开这个 O 的 KR")
           if isOpen {
+            // A sunken block rather than loose lines under the toggle: it is the
+            // same "here is the detail behind that" shape the rest of the app
+            // uses, and it keeps four key results from reading as four more
+            // objectives.
             VStack(alignment: .leading, spacing: Metrics.xxs) {
               ForEach(objective.keyResults) { kr in
                 HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
@@ -854,6 +864,9 @@ private struct AlignedPriorities: View {
                 .fixedSize(horizontal: false, vertical: true)
               }
             }
+            .padding(Metrics.xs)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Metrics.radiusPaper, style: .continuous))
             .padding(.top, Metrics.xxs)
             .transition(.opacity)
           }
