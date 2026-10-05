@@ -60,6 +60,7 @@ public final class LiveAppState: AppState {
     todos = []
     okrFiles = []
     countdowns = []
+    countdownTimezone = ""
     runs = []
     artifacts = []
     schedules = []
@@ -245,7 +246,7 @@ public final class LiveAppState: AppState {
     }
 
     await load(.countdowns) {
-      self.countdowns = try await client.countdowns()
+      self.apply(try await client.countdowns())
     }
 
     await load(.service) {
@@ -357,10 +358,18 @@ public final class LiveAppState: AppState {
   // writes cannot change anything the other seven read — the service already
   // answers with the resolved list, which is the only thing that moved.
 
+  /// The list and the clock it was read off always land together — a footer
+  /// line qualifying one list over another list's counts would be worse than
+  /// no footer line.
+  private func apply(_ list: CountdownList) {
+    countdowns = list.items
+    countdownTimezone = list.timezone
+  }
+
   public override func saveCountdown(_ draft: CountdownDraft) async -> ActionOutcome {
     guard let client else { return .failed("没有连接到服务。") }
     do {
-      countdowns = try await client.saveCountdown(draft)
+      apply(try await client.saveCountdown(draft))
       markLoaded(.countdowns)
       return .ok(draft.id == nil ? "已记下" : "已更新")
     } catch {
@@ -373,7 +382,7 @@ public final class LiveAppState: AppState {
   public override func deleteCountdown(_ id: Countdown.ID) async -> ActionOutcome {
     guard let client else { return .failed("没有连接到服务。") }
     do {
-      countdowns = try await client.deleteCountdown(id: id)
+      apply(try await client.deleteCountdown(id: id))
       markLoaded(.countdowns)
       return .ok("已删除")
     } catch {

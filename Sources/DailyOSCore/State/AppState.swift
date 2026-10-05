@@ -34,6 +34,9 @@ open class AppState {
   /// Countdown days, already resolved against today by the service. Ordered as
   /// it sent them: pinned, then nearest, then what is behind.
   public var countdowns: [Countdown]
+  /// The clock those day counts were read off — the service's `user.timezone`.
+  /// Empty before the first read, and from a service too old to send it.
+  public var countdownTimezone: String = ""
   public var runs: [WorkflowRun]
   public var artifacts: [Artifact]
   public var schedules: [ScheduleEntry]
@@ -179,6 +182,7 @@ open class AppState {
     todos = MockData.todos
     okrFiles = MockData.okrFiles
     countdowns = MockData.countdowns
+    countdownTimezone = MockData.countdownTimezone
     runs = MockData.runs
     artifacts = MockData.artifacts
     schedules = MockData.schedules

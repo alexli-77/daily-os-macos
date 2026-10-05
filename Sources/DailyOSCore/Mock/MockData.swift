@@ -296,6 +296,10 @@ public enum MockData {
 
   // MARK: Countdown
 
+  /// The zone the counts below were resolved in — the same one the fixture's
+  /// 2026-04-01 day counts were computed against.
+  public static let countdownTimezone = "America/Toronto"
+
   /// Fixed dates rather than offsets from `.now`.
   ///
   /// The day counts below go stale, which is the correct trade: a fixture that

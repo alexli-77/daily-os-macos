@@ -32,6 +32,10 @@ struct CountdownDTO: Decodable {
 
 struct CountdownListResponse: Decodable {
   let today: String
+  /// The service's `user.timezone` — the clock `daysLeft` was read off.
+  /// Optional so an older service that does not send it costs the footer line
+  /// rather than the screen.
+  let timezone: String?
   let items: [CountdownDTO]
 }
 
@@ -51,13 +55,13 @@ private struct CountdownDeleteRequest: Encodable {
 }
 
 extension DailyOSClient {
-  public func countdowns() async throws -> [Countdown] {
+  public func countdowns() async throws -> CountdownList {
     let response: CountdownListResponse = try await get("/api/countdowns")
-    return response.items.map(Self.countdown)
+    return Self.list(response)
   }
 
   /// Returns the whole list as the service now holds it, not just the saved row.
-  public func saveCountdown(_ draft: CountdownDraft) async throws -> [Countdown] {
+  public func saveCountdown(_ draft: CountdownDraft) async throws -> CountdownList {
     let response: CountdownListResponse = try await post(
       "/api/countdowns/save",
       body: CountdownSaveRequest(
@@ -70,15 +74,19 @@ extension DailyOSClient {
         note: draft.note.trimmingCharacters(in: .whitespacesAndNewlines)
       )
     )
-    return response.items.map(Self.countdown)
+    return Self.list(response)
   }
 
-  public func deleteCountdown(id: String) async throws -> [Countdown] {
+  public func deleteCountdown(id: String) async throws -> CountdownList {
     let response: CountdownListResponse = try await post(
       "/api/countdowns/delete",
       body: CountdownDeleteRequest(id: id)
     )
-    return response.items.map(Self.countdown)
+    return Self.list(response)
+  }
+
+  private static func list(_ response: CountdownListResponse) -> CountdownList {
+    CountdownList(items: response.items.map(countdown), timezone: response.timezone ?? "")
   }
 
   /// An unrecognised direction or repeat reads as the quiet default rather than

@@ -43,6 +43,15 @@ struct CountdownScreen: View {
             }
           }
         }
+
+        // Which clock every number above was read off. Outside the panels
+        // because it qualifies all of them, and quiet because on most days it
+        // says nothing surprising — the day it is worth reading is the day you
+        // are somewhere else, and then it says that too.
+        if !state.countdownTimezone.isEmpty {
+          Text(CountdownZone.note(service: state.countdownTimezone))
+            .mutedStyle(Typo.caption)
+        }
       }
     } toolbar: {
       Button("记一个") { editing = CountdownDraft(date: CountdownDate.day(from: .now)) }

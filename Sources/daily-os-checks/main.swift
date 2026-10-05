@@ -879,6 +879,38 @@ check(forCard.map(\.id) == ["pinned-far", "near", "edge"], "置顶的 + 三十�
 check(Countdown.forCard([countdown("phd", -300, direction: .since)]).isEmpty, "不置顶的正数日不上卡片")
 check(Countdown.forCard([countdown("phd", -300, direction: .since, pinned: true)]).count == 1, "置顶的正数日上卡片")
 
+// Saying which clock the counts are on. Read at an instant, because a zone
+// that observes daylight saving is not one offset — Montreal is UTC-5 in
+// January and UTC-4 in July, and printing either year-round is a wrong fact
+// dressed as a precise one. China observes none, which is what makes the pair
+// below a 13-hour gap in winter and a 12-hour one in summer.
+let january = Date(timeIntervalSince1970: 1_767_225_600)  // 2026-01-01T00:00:00Z
+let july = Date(timeIntervalSince1970: 1_782_950_400)     // 2026-07-01T00:00:00Z
+let montreal = TimeZone(identifier: "America/Toronto")!
+let shanghai = TimeZone(identifier: "Asia/Shanghai")!
+
+check(CountdownZone.offset(montreal, at: january) == "UTC-5", "蒙特利尔冬天是 -5: \(CountdownZone.offset(montreal, at: january))")
+check(CountdownZone.offset(montreal, at: july) == "UTC-4", "夏令时要跟着变: \(CountdownZone.offset(montreal, at: july))")
+check(CountdownZone.offset(shanghai, at: january) == "UTC+8", "中国不过夏令时")
+check(CountdownZone.offset(shanghai, at: july) == "UTC+8", "全年都是 +8")
+check(CountdownZone.offset(TimeZone(identifier: "UTC")!, at: july) == "UTC", "零偏移不写 +0")
+check(CountdownZone.offset(TimeZone(identifier: "Asia/Kolkata")!, at: july) == "UTC+5:30", "半小时时区要写出分钟")
+
+check(CountdownZone.label("America/Toronto", at: july) == "America/Toronto（UTC-4）", "标签带上当下的偏移")
+check(CountdownZone.label("Mars/Olympus", at: july) == "Mars/Olympus", "认不出的时区只印名字，不编偏移")
+
+// The note mentions this machine only when the offset actually differs.
+check(CountdownZone.note(service: "America/Toronto", device: montreal, at: july) == "天数按 America/Toronto（UTC-4）计",
+      "同一个时钟就只说一句: \(CountdownZone.note(service: "America/Toronto", device: montreal, at: july))")
+check(CountdownZone.note(service: "America/Toronto", device: TimeZone(identifier: "America/New_York")!, at: july)
+        == "天数按 America/Toronto（UTC-4）计",
+      "名字不同但日界相同，不算在别处")
+check(CountdownZone.note(service: "America/Toronto", device: shanghai, at: july)
+        == "天数按 America/Toronto（UTC-4）计，这台电脑在 Asia/Shanghai（UTC+8）",
+      "人在中国、服务按蒙特利尔算，要说出来: \(CountdownZone.note(service: "America/Toronto", device: shanghai, at: july))")
+check(CountdownZone.note(service: "Mars/Olympus", device: shanghai, at: july) == "天数按 Mars/Olympus 计",
+      "认不出的时区不拿本机偏移去比")
+
 // The date picker's round trip. Pinned to UTC on both sides — reading a
 // calendar date in a western timezone and writing it back loses a day.
 check(CountdownDate.day(from: CountdownDate.date(from: "2026-04-24") ?? .distantPast) == "2026-04-24",

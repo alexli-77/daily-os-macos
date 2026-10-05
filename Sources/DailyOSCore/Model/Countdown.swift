@@ -247,6 +247,72 @@ extension CountdownGroup {
   }
 }
 
+/// A resolved list, with the clock its day counts were read off.
+///
+/// The zone travels with the numbers rather than being looked up separately,
+/// because it is what makes them meaningful: there is one `user.timezone` for
+/// the whole service, so a day count is always *somebody's*, and a client in
+/// another zone cannot work out whose from the numbers alone.
+public struct CountdownList: Sendable, Equatable {
+  public var items: [Countdown]
+  /// An IANA identifier — "America/Toronto".
+  public var timezone: String
+
+  public init(items: [Countdown], timezone: String) {
+    self.items = items
+    self.timezone = timezone
+  }
+}
+
+/// Saying out loud which clock the day counts are on.
+public enum CountdownZone {
+  /// "America/Toronto（UTC-4）". Falls back to the bare identifier when it
+  /// names no zone this machine knows — a newer tzdata entry should cost the
+  /// offset, not the line.
+  public static func label(_ identifier: String, at instant: Date = .now) -> String {
+    guard let zone = TimeZone(identifier: identifier) else { return identifier }
+    return "\(identifier)（\(offset(zone, at: instant))）"
+  }
+
+  /// "UTC+8", "UTC-4", "UTC+5:30", or plain "UTC" at zero.
+  ///
+  /// Read at an instant rather than stored, so a zone that observes daylight
+  /// saving reports what it is doing today. Montreal is UTC-5 in January and
+  /// UTC-4 in July; printing one of those year-round is a wrong fact dressed
+  /// as a precise one.
+  public static func offset(_ zone: TimeZone, at instant: Date = .now) -> String {
+    let seconds = zone.secondsFromGMT(for: instant)
+    if seconds == 0 { return "UTC" }
+    let minutes = abs(seconds) / 60
+    let sign = seconds < 0 ? "-" : "+"
+    let hours = minutes / 60
+    let remainder = minutes % 60
+    return remainder == 0
+      ? "UTC\(sign)\(hours)"
+      : "UTC\(sign)\(hours):\(String(format: "%02d", remainder))"
+  }
+
+  /// The line under the list.
+  ///
+  /// Mentions this machine only when its offset actually differs. The test is
+  /// the offset and not the identifier on purpose: `America/Toronto` and
+  /// `America/New_York` keep the same wall clock, and telling someone their
+  /// computer is "elsewhere" when every day boundary agrees is noise. A
+  /// differing offset is exactly the case where the count on screen is not the
+  /// count they would compute by looking out the window.
+  public static func note(service identifier: String, device: TimeZone = .current, at instant: Date = .now) -> String {
+    guard let service = TimeZone(identifier: identifier) else { return "天数按 \(identifier) 计" }
+    // No space before 计: past the guard above the label always ends in a
+    // full-width paren, which carries the separation itself. The fallback
+    // branch, where it does not, keeps its space.
+    let serviceLabel = label(identifier, at: instant)
+    guard service.secondsFromGMT(for: instant) != device.secondsFromGMT(for: instant) else {
+      return "天数按 \(serviceLabel)计"
+    }
+    return "天数按 \(serviceLabel)计，这台电脑在 \(label(device.identifier, at: instant))"
+  }
+}
+
 // MARK: - Wire dates
 
 /// `YYYY-MM-DD` ↔ `Date`, for the one place a date picker needs the other form.
