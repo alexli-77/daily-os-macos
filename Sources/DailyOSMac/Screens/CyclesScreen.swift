@@ -754,24 +754,16 @@ private struct AlignedPriorities: View {
 
       if table {
         header
-          .padding(.bottom, Metrics.xs)
+        rowRule()
       }
       ForEach(Array(alignment.rows.enumerated()), id: \.element.id) { index, row in
         if index > 0 { rowRule() }
         if table {
-          HStack(alignment: .top, spacing: 0) {
+          columns {
             objectiveCell(row, wholly: alignment.isWhollyUnmatched)
-              .frame(width: Self.objectiveColumnWidth, alignment: .leading)
-              .padding(.trailing, Metrics.sm)
-            // Full-height, so the two columns read as columns rather than as two
-            // stacks that happen to sit beside each other.
-            Rectangle().fill(Palette.rule).frame(width: Metrics.hairline)
+          } right: {
             prioritiesCell(row)
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .padding(.leading, Metrics.sm)
           }
-          .fixedSize(horizontal: false, vertical: true)
-          .padding(.vertical, Metrics.sm)
         } else {
           VStack(alignment: .leading, spacing: Metrics.xs) {
             objectiveCell(row, wholly: alignment.isWhollyUnmatched)
@@ -794,27 +786,37 @@ private struct AlignedPriorities: View {
     )
   }
 
-  /// A sunken band, the way the rest of the app separates a strip from what it
-  /// labels (`PastDaysSheet`'s note, the estimate chips). A heavier rule under
-  /// plain text said the same thing twice and still read as a stray line.
-  private var header: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 0) {
-      Text("OKR")
-        .mutedStyle(Typo.label)
+  /// The one place the column geometry is stated. The header used to build its
+  /// own, and a band's horizontal inset moved its rule 8pt off the rows' —
+  /// visible as a kink where the two met. Sharing the layout makes that
+  /// impossible rather than merely fixed.
+  ///
+  /// The vertical padding is inside the cells, so the rule spans it and runs
+  /// unbroken from the top of a row to the bottom of it.
+  private func columns<L: View, R: View>(
+    @ViewBuilder left: () -> L,
+    @ViewBuilder right: () -> R
+  ) -> some View {
+    HStack(alignment: .top, spacing: 0) {
+      left()
+        .padding(.vertical, Metrics.sm)
         .frame(width: Self.objectiveColumnWidth, alignment: .leading)
         .padding(.trailing, Metrics.sm)
-      Rectangle()
-        .fill(Palette.rule)
-        .frame(width: Metrics.hairline)
-        .padding(.vertical, -Metrics.xs)
-      Text("本期要务")
-        .mutedStyle(Typo.label)
+      Rectangle().fill(Palette.rule).frame(width: Metrics.hairline)
+      right()
+        .padding(.vertical, Metrics.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.leading, Metrics.sm)
     }
-    .padding(.horizontal, Metrics.xs)
-    .padding(.vertical, Metrics.xs)
-    .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Metrics.radiusPaper, style: .continuous))
+    .fixedSize(horizontal: false, vertical: true)
+  }
+
+  private var header: some View {
+    columns {
+      Text("OKR").mutedStyle(Typo.label)
+    } right: {
+      Text("本期要务").mutedStyle(Typo.label)
+    }
   }
 
   private func rowRule() -> some View {
