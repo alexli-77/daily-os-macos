@@ -703,9 +703,9 @@ private struct AlignedPriorities: View {
   @AppStorage("cycles.showsOKR") private var showsOKR = false
   @State private var width: CGFloat = 0
 
-  /// 300 for the objective + a gap + ~440 of 要务 before the text starts
+  /// 240 for the objective + a gap + ~440 of 要务 before the text starts
   /// wrapping worse than it does today.
-  private static let breakpoint: CGFloat = 760
+  private static let breakpoint: CGFloat = 700
 
   private var objectives: [Objective] {
     // The same file the inspector shows: the current one, which is what this
@@ -728,7 +728,7 @@ private struct AlignedPriorities: View {
         if width >= Self.breakpoint && !objectives.isEmpty {
           HStack(alignment: .top, spacing: Metrics.md) {
             objectiveColumn(row, wholly: alignment.isWhollyUnmatched)
-              .frame(width: 300, alignment: .leading)
+              .frame(width: 240, alignment: .leading)
             prioritiesColumn(row)
               .frame(maxWidth: .infinity, alignment: .leading)
           }
@@ -787,13 +787,20 @@ private struct AlignedPriorities: View {
         HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
           Text(objective.id).font(Typo.mono).foregroundStyle(Palette.moss)
           Text(objective.title).inkStyle(Typo.heading)
-          Spacer(minLength: Metrics.xs)
-          Text("\(Int(objective.progress * 100))%")
-            .font(Typo.tabularCaption)
-            .foregroundStyle(Palette.inkMuted)
         }
+        // Text only — no bars, no percentages, no health pills. This column is
+        // here to say *which* objective the 要务 serve; how far along it is is a
+        // different question with its own screen. Carrying the OKR screen's row
+        // here made the left column taller and heavier than the 要务 beside it,
+        // which is the thing the user actually came to read.
         if krExpanded {
-          ForEach(objective.keyResults) { KeyResultRow(kr: $0) }
+          ForEach(objective.keyResults) { kr in
+            HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
+              Text(kr.id).font(Typo.mono).foregroundStyle(Palette.ink3)
+              Text(kr.title).font(Typo.caption).foregroundStyle(Palette.ink3)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+          }
         } else if !objective.keyResults.isEmpty {
           Text("\(objective.keyResults.count) KR").mutedStyle(Typo.caption)
         }
