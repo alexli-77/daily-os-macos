@@ -697,7 +697,10 @@ private struct AlignedPriorities: View {
   let doc: PrioritiesDocument
   let editable: Bool
 
-  @AppStorage("cycles.alignmentExpanded") private var krExpanded = false
+  /// Which objectives have their key results open, as a comma-joined list of
+  /// ids. One flag for the whole table meant opening any objective's key results
+  /// opened all seven, which is the page you then have to scroll past.
+  @AppStorage("cycles.alignmentExpandedIDs") private var expandedIDsRaw = ""
   /// Read-only here: the inspector owns it. Needed to explain why two columns
   /// did not fit — the drawer is 360pt of the same answer this view gives.
   @AppStorage("cycles.showsOKR") private var showsOKR = false
@@ -706,6 +709,17 @@ private struct AlignedPriorities: View {
   /// 240 for the objective + a gap + ~440 of 要务 before the text starts
   /// wrapping worse than it does today.
   private static let breakpoint: CGFloat = 700
+  private static let objectiveColumnWidth: CGFloat = 240
+
+  private var expandedIDs: Set<String> {
+    Set(expandedIDsRaw.split(separator: ",").map(String.init).filter { !$0.isEmpty })
+  }
+
+  private func toggle(_ id: String) {
+    var ids = expandedIDs
+    if ids.contains(id) { ids.remove(id) } else { ids.insert(id) }
+    expandedIDsRaw = ids.sorted().joined(separator: ",")
+  }
 
   private var objectives: [Objective] {
     // The same file the inspector shows: the current one, which is what this
@@ -720,23 +734,50 @@ private struct AlignedPriorities: View {
 
   var body: some View {
     let alignment = result
-    VStack(alignment: .leading, spacing: Metrics.md) {
-      if !objectives.isEmpty {
-        header(alignment)
+    let table = width >= Self.breakpoint && !objectives.isEmpty
+    VStack(alignment: .leading, spacing: 0) {
+      if alignment.isWhollyUnmatched {
+        // Said once rather than on all seven rows. A cycle planned before an OKR
+        // rename matches nothing, and a warning per row is noise with no signal
+        // left in it.
+        Label("这一期的要务是按当时的 OKR 规划的，和现在的 OKR 文件对不上", systemImage: "exclamationmark.triangle")
+          .font(Typo.caption)
+          .foregroundStyle(Palette.inkMuted)
+          .padding(.bottom, Metrics.sm)
+      } else if !table && showsOKR && width > 0 {
+        // The drawer costs 360pt and answers the same question this view does,
+        // so on a narrow window it is the reason the columns did not fit.
+        Text("收起右侧 OKR 可以并排显示")
+          .mutedStyle(Typo.caption)
+          .padding(.bottom, Metrics.sm)
       }
-      ForEach(alignment.rows) { row in
-        if width >= Self.breakpoint && !objectives.isEmpty {
-          HStack(alignment: .top, spacing: Metrics.md) {
-            objectiveColumn(row, wholly: alignment.isWhollyUnmatched)
-              .frame(width: 240, alignment: .leading)
-            prioritiesColumn(row)
+
+      if table {
+        header
+        rule(heavy: true)
+      }
+      ForEach(Array(alignment.rows.enumerated()), id: \.element.id) { index, row in
+        if index > 0 { rule(heavy: false) }
+        if table {
+          HStack(alignment: .top, spacing: 0) {
+            objectiveCell(row, wholly: alignment.isWhollyUnmatched)
+              .frame(width: Self.objectiveColumnWidth, alignment: .leading)
+              .padding(.trailing, Metrics.sm)
+            // Full-height, so the two columns read as columns rather than as two
+            // stacks that happen to sit beside each other.
+            Rectangle().fill(Palette.rule).frame(width: Metrics.hairline)
+            prioritiesCell(row)
               .frame(maxWidth: .infinity, alignment: .leading)
+              .padding(.leading, Metrics.sm)
           }
+          .fixedSize(horizontal: false, vertical: true)
+          .padding(.vertical, Metrics.sm)
         } else {
           VStack(alignment: .leading, spacing: Metrics.xs) {
-            objectiveColumn(row, wholly: alignment.isWhollyUnmatched)
-            prioritiesColumn(row)
+            objectiveCell(row, wholly: alignment.isWhollyUnmatched)
+            prioritiesCell(row)
           }
+          .padding(.vertical, Metrics.sm)
         }
       }
     }
@@ -753,62 +794,75 @@ private struct AlignedPriorities: View {
     )
   }
 
-  private func header(_ alignment: CycleOkrAlignment.Result) -> some View {
-    HStack(spacing: Metrics.xs) {
-      if alignment.isWhollyUnmatched {
-        // Said once rather than on all seven rows. A cycle planned before an OKR
-        // rename matches nothing, and a warning per row is just noise with no
-        // signal left in it.
-        Label("这一期的要务是按当时的 OKR 规划的，和现在的 OKR 文件对不上", systemImage: "exclamationmark.triangle")
-          .font(Typo.caption)
-          .foregroundStyle(Palette.inkMuted)
-      } else {
-        Button {
-          withAnimation(.snappy(duration: 0.2)) { krExpanded.toggle() }
-        } label: {
-          Label(krExpanded ? "收起 KR" : "展开 KR", systemImage: krExpanded ? "chevron.down" : "chevron.right")
-            .font(Typo.caption)
-        }
-        .buttonStyle(QuietButtonStyle(tone: .neutral))
-      }
-      Spacer(minLength: 0)
-      // The drawer costs 360pt and answers the same question this view does, so
-      // on a narrow window it is the reason the two columns did not fit. Say so
-      // rather than silently stacking.
-      if width < Self.breakpoint && width > 0 && showsOKR {
-        Text("收起右侧 OKR 可以并排显示").mutedStyle(Typo.caption)
-      }
+  private var header: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 0) {
+      Text("OKR")
+        .font(Typo.label)
+        .foregroundStyle(Palette.inkMuted)
+        .frame(width: Self.objectiveColumnWidth, alignment: .leading)
+        .padding(.trailing, Metrics.sm)
+      Rectangle().fill(.clear).frame(width: Metrics.hairline)
+      Text("本期要务")
+        .font(Typo.label)
+        .foregroundStyle(Palette.inkMuted)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, Metrics.sm)
     }
+    .padding(.bottom, Metrics.xs)
   }
 
-  @ViewBuilder private func objectiveColumn(_ row: CycleOkrAlignment.Row, wholly: Bool) -> some View {
+  private func rule(heavy: Bool) -> some View {
+    Rectangle()
+      .fill(Palette.rule)
+      .frame(height: Metrics.hairline)
+      .opacity(heavy ? 1 : 0.6)
+  }
+
+  @ViewBuilder private func objectiveCell(_ row: CycleOkrAlignment.Row, wholly: Bool) -> some View {
     if let objective = row.objective {
+      let isOpen = expandedIDs.contains(objective.id)
       VStack(alignment: .leading, spacing: Metrics.xxs) {
         HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
           Text(objective.id).font(Typo.mono).foregroundStyle(Palette.moss)
           Text(objective.title).inkStyle(Typo.heading)
         }
-        // Text only — no bars, no percentages, no health pills. This column is
-        // here to say *which* objective the 要务 serve; how far along it is is a
-        // different question with its own screen. Carrying the OKR screen's row
-        // here made the left column taller and heavier than the 要务 beside it,
-        // which is the thing the user actually came to read.
-        if krExpanded {
-          ForEach(objective.keyResults) { kr in
-            HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
-              Text(kr.id).font(Typo.mono).foregroundStyle(Palette.ink3)
-              Text(kr.title).font(Typo.caption).foregroundStyle(Palette.ink3)
+        // Text only — no bars, no percentages, no health pills. This column says
+        // *which* objective the 要务 serve; how far along it is has its own screen.
+        if objective.keyResults.isEmpty {
+          Text("没有 KR").mutedStyle(Typo.caption)
+        } else {
+          Button {
+            withAnimation(.snappy(duration: 0.2)) { toggle(objective.id) }
+          } label: {
+            HStack(spacing: Metrics.xxs) {
+              Image(systemName: isOpen ? "chevron.down" : "chevron.right")
+                .font(.system(size: 9, weight: .semibold))
+              Text("\(objective.keyResults.count) KR").font(Typo.caption)
             }
-            .fixedSize(horizontal: false, vertical: true)
+            .foregroundStyle(Palette.inkMuted)
+            .contentShape(Rectangle())
           }
-        } else if !objective.keyResults.isEmpty {
-          Text("\(objective.keyResults.count) KR").mutedStyle(Typo.caption)
+          .buttonStyle(.plain)
+          .help(isOpen ? "收起这个 O 的 KR" : "展开这个 O 的 KR")
+          if isOpen {
+            VStack(alignment: .leading, spacing: Metrics.xxs) {
+              ForEach(objective.keyResults) { kr in
+                HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
+                  Text(kr.id).font(Typo.mono).foregroundStyle(Palette.ink3)
+                  Text(kr.title).font(Typo.caption).foregroundStyle(Palette.ink3)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+              }
+            }
+            .padding(.top, Metrics.xxs)
+            .transition(.opacity)
+          }
         }
       }
     } else {
       VStack(alignment: .leading, spacing: Metrics.xxs) {
-        // Per-row only when some rows did match; a wholly-unmatched cycle says
-        // it once in the header instead.
+        // Per-row only when some rows did match; a wholly-unmatched cycle says it
+        // once at the top instead.
         if !wholly {
           Label("不在当前 OKR 文件里", systemImage: "exclamationmark.triangle")
             .font(Typo.caption)
@@ -821,12 +875,13 @@ private struct AlignedPriorities: View {
             .font(Typo.caption)
             .foregroundStyle(Palette.ink3)
             .lineLimit(3)
+            .fixedSize(horizontal: false, vertical: true)
         }
       }
     }
   }
 
-  @ViewBuilder private func prioritiesColumn(_ row: CycleOkrAlignment.Row) -> some View {
+  @ViewBuilder private func prioritiesCell(_ row: CycleOkrAlignment.Row) -> some View {
     if let group = row.group, !group.items.isEmpty {
       VStack(alignment: .leading, spacing: 0) {
         ForEach(group.items) { item in
