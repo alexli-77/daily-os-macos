@@ -294,6 +294,59 @@ public enum MockData {
     TodoItem(id: "t4", text: "重新看一遍日历冲突规则", kind: .priority, state: .deferred),
   ]
 
+  // MARK: Countdown
+
+  /// Fixed dates rather than offsets from `.now`.
+  ///
+  /// The day counts below go stale, which is the correct trade: a fixture that
+  /// recomputes itself against today would render differently every morning and
+  /// could never be compared against a screenshot. These numbers are what the
+  /// service would have answered on 2026-04-01.
+  public static let countdowns: [Countdown] = [
+    Countdown(
+      id: "cd_defence",
+      title: "开题报告",
+      date: "2026-04-24",
+      pinned: true,
+      note: "跟 Benoit 约在他回欧洲之前",
+      occurrence: "2026-04-24",
+      daysLeft: 23
+    ),
+    Countdown(
+      id: "cd_phd",
+      title: "读博",
+      date: "2025-05-01",
+      direction: .since,
+      pinned: true,
+      occurrence: "2025-05-01",
+      daysLeft: -335
+    ),
+    Countdown(
+      id: "cd_flight",
+      title: "回国的机票",
+      date: "2026-04-06",
+      occurrence: "2026-04-06",
+      daysLeft: 5
+    ),
+    Countdown(
+      id: "cd_birthday",
+      title: "妈妈生日",
+      date: "1966-07-20",
+      recurrence: .yearly,
+      occurrence: "2026-07-20",
+      daysLeft: 110,
+      ordinal: 60
+    ),
+    Countdown(
+      id: "cd_icse",
+      title: "ICSE 投稿",
+      date: "2026-03-13",
+      note: "这一轮没赶上，下一轮是九月",
+      occurrence: "2026-03-13",
+      daysLeft: -19
+    ),
+  ]
+
   // MARK: OKR
 
   public static let okrFiles: [OkrFile] = [

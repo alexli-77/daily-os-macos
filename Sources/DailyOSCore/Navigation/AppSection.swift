@@ -15,6 +15,7 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
   case today
   case cycles
   case okr
+  case countdown
   case runs
   case artifacts
   case schedules
@@ -27,6 +28,7 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
     case .today: "今天"
     case .cycles: "周期"
     case .okr: "OKR"
+    case .countdown: "倒数日"
     case .runs: "运行"
     case .artifacts: "产物"
     case .schedules: "排程"
@@ -39,6 +41,7 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
     case .today: "sun.horizon"
     case .cycles: "calendar.badge.clock"
     case .okr: "target"
+    case .countdown: "hourglass"
     case .runs: "waveform.path.ecg"
     case .artifacts: "shippingbox"
     case .schedules: "clock.arrow.circlepath"
@@ -46,22 +49,29 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
     }
   }
 
-  /// ⌘1…⌘6. Settings keeps the platform-standard ⌘, instead. Chat is no longer a
+  /// ⌘1…⌘7. Settings keeps the platform-standard ⌘, instead. Chat is no longer a
   /// section — it lives in the top-right drop-down panel (⌘⇧C), not the sidebar.
+  ///
+  /// Adding 倒数日 in the middle pushed 运行/产物/排程 from ⌘4/5/6 to ⌘5/6/7. The
+  /// alternative was to hand the new section ⌘7 and leave the others alone,
+  /// which keeps three months of muscle memory at the price of a sidebar whose
+  /// order and whose shortcuts disagree forever. The order is the thing people
+  /// actually read off the screen.
   public var shortcut: KeyEquivalent? {
     switch self {
     case .today: "1"
     case .cycles: "2"
     case .okr: "3"
-    case .runs: "4"
-    case .artifacts: "5"
-    case .schedules: "6"
+    case .countdown: "4"
+    case .runs: "5"
+    case .artifacts: "6"
+    case .schedules: "7"
     case .settings: nil
     }
   }
 
   /// The sidebar groups. Work you do, then work the machine did, then config.
-  public static let workGroup: [AppSection] = [.today, .cycles, .okr]
+  public static let workGroup: [AppSection] = [.today, .cycles, .okr, .countdown]
   public static let systemGroup: [AppSection] = [.runs, .artifacts, .schedules]
 
   /// The iOS tabs. Everything in `systemGroup` plus settings lives behind

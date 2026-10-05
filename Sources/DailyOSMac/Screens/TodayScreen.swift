@@ -38,6 +38,10 @@ struct TodayScreen: View {
   var body: some View {
     ScreenScaffold("今天", subtitle: subtitle) {
       let sideBySide = contentWidth >= Self.railBreakpoint && !railStacked
+      // Above the split rather than inside a column: it is one line about the
+      // day, the same line the morning card opened with, and it belongs to the
+      // whole screen rather than to the call sheet.
+      CountdownStrip()
       Group {
         if sideBySide {
           HStack(alignment: .top, spacing: Metrics.md) {
