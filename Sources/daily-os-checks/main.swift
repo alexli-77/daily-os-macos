@@ -922,8 +922,77 @@ check(CountdownDate.day(from: CountdownDate.date(from: "2026-04-24") ?? .distant
 check(CountdownDate.heading("2026-04-24").contains("4月24日"), "长日期按日历日渲染: \(CountdownDate.heading("2026-04-24"))")
 check(CountdownDate.heading("not-a-date") == "not-a-date", "认不出的日期原样显示")
 
+
+// MARK: - 周期要务与 OKR 对齐
+//
+// The join key is the group heading, which the service writes from the
+// objective's own title. What matters here is the failure mode: a cycle planned
+// before an OKR rename must still show every 要务 it recorded. This vault has
+// real ones — cycles up to 2026-08-24 say `工作-技术专家。完成 AI 工程…` where
+// the current file says `工作 · 技术专家`.
+
+func okrObjective(_ id: String, _ title: String, krs: Int = 1) -> Objective {
+  Objective(
+    id: id,
+    title: title,
+    keyResults: (1...max(krs, 1)).map { KeyResult(id: "\(id)-KR\($0)", title: "KR\($0)", priority: nil, progress: 0, health: nil) }
+  )
+}
+
+/// Built from markdown, the way a cycle file actually arrives — so these checks
+/// exercise the parser's own heading handling rather than a hand-made document.
+func okrPriorities(_ groups: [(String, Int)]) -> PrioritiesDocument {
+  let body = groups
+    .map { title, count in (["### \(title)"] + (0..<count).map { "- 任务 \($0)" }).joined(separator: "\n") }
+    .joined(separator: "\n\n")
+  return PrioritiesDocument(markdown: body)
+}
+
+let alignedCurrent = CycleOkrAlignment.align(
+  objectives: [okrObjective("O1", "工作 · 技术专家", krs: 4), okrObjective("O2", "金钱 · 家庭理财规划师", krs: 3)],
+  priorities: okrPriorities([("工作 · 技术专家", 4), ("金钱 · 家庭理财规划师", 2)])
+)
+check(alignedCurrent.rows.count == 2, "两个 O 两条要务组，对出两行")
+check(alignedCurrent.rows.allSatisfy { $0.objective != nil }, "标题一致时全部匹配上")
+check(!alignedCurrent.isWhollyUnmatched, "匹配上了就不是整期失配")
+
+// The rename case. Every group is orphaned, and every 要务 still has a row.
+let renamed = CycleOkrAlignment.align(
+  objectives: [okrObjective("O1", "工作 · 技术专家")],
+  priorities: okrPriorities([("工作-技术专家。完成 AI 工程职业/研究路径的季度验证。", 4)])
+)
+check(renamed.isWhollyUnmatched, "改过 OKR 标题的旧周期是整期失配")
+check(renamed.rows.contains { $0.isOrphanedGroup && $0.group?.items.count == 4 }, "失配的组照样带着它的 4 条要务")
+check(renamed.rows.contains { $0.recordedHeading?.hasPrefix("工作-技术专家") == true }, "失配时留着周期当时记的标题")
+check(renamed.rows.contains { $0.objective?.id == "O1" && $0.hasNoPriorities }, "没被认领的 O 也要有一行")
+
+// An objective nobody planned under — O7 配偶 this cycle.
+let emptyObjective = CycleOkrAlignment.align(
+  objectives: [okrObjective("O1", "工作 · 技术专家"), okrObjective("O7", "配偶 · 伙伴")],
+  priorities: okrPriorities([("工作 · 技术专家", 2)])
+)
+check(emptyObjective.rows.count == 2, "有 O 没要务也占一行")
+check(emptyObjective.rows.last?.objective?.id == "O7" && emptyObjective.rows.last?.hasNoPriorities == true,
+      "没要务的 O 排在后面")
+check(!emptyObjective.isWhollyUnmatched, "有一个对上就不算整期失配")
+
+// Long titles: the cycle file stores them through shortLabel, the OKR file whole.
+let longTitle = String(repeating: "工", count: 80)
+check(CycleOkrAlignment.shortLabel(longTitle).count == 61, "超长标题截到 60 加省略号")
+let truncated = CycleOkrAlignment.align(
+  objectives: [okrObjective("O1", longTitle)],
+  priorities: okrPriorities([(CycleOkrAlignment.shortLabel(longTitle), 1)])
+)
+check(truncated.rows.first?.objective?.id == "O1", "截断过的标题也要能匹配回原 O")
+
+check(CycleOkrAlignment.align(objectives: [], priorities: okrPriorities([])).rows.isEmpty,
+      "两边都空就没有行")
+check(!CycleOkrAlignment.align(objectives: [okrObjective("O1", "工作 · 技术专家")],
+                               priorities: okrPriorities([])).isWhollyUnmatched,
+      "空周期不算失配，它没东西可失配")
+
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 往日, 倒数日, 回归集")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 往日, 倒数日, 要务与 OKR 对齐, 回归集")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

@@ -677,6 +677,236 @@ private struct CycleSectionPanel: View {
 // MARK: - Priorities
 
 /// 要务 in read mode: OKR-row groups, each item with its three status dots.
+/// 要务 beside the objectives they were planned under.
+///
+/// The cycle already groups its 要务 by objective title — that heading *is* the
+/// objective's own title, written by the service's `okrRowLabels`. So this is a
+/// join, not a new relationship, and the whole feature is a layout change.
+///
+/// Two columns when there is room, stacked when there is not: the 要务 text is
+/// already wrapping at full width, and halving it to make space for key results
+/// would trade the thing being read for its annotation.
+///
+/// Key results stay folded by default. The question "which objective does this
+/// cycle's work serve" is answered by the heading alone; "how is that objective
+/// doing" is a second, rarer question, and 7 objectives' worth of key results
+/// unfolded is a page you have to scroll past to reach the 要务.
+private struct AlignedPriorities: View {
+  @Environment(AppState.self) private var state
+  let cycle: Cycle
+  let doc: PrioritiesDocument
+  let editable: Bool
+
+  /// Which objectives have their key results open, as a comma-joined list of
+  /// ids. One flag for the whole table meant opening any objective's key results
+  /// opened all seven, which is the page you then have to scroll past.
+  @AppStorage("cycles.alignmentExpandedIDs") private var expandedIDsRaw = ""
+  /// Read-only here: the inspector owns it. Needed to explain why two columns
+  /// did not fit — the drawer is 360pt of the same answer this view gives.
+  @AppStorage("cycles.showsOKR") private var showsOKR = false
+  @State private var width: CGFloat = 0
+
+  /// 240 for the objective + a gap + ~440 of 要务 before the text starts
+  /// wrapping worse than it does today.
+  private static let breakpoint: CGFloat = 700
+  private static let objectiveColumnWidth: CGFloat = 240
+
+  private var expandedIDs: Set<String> {
+    Set(expandedIDsRaw.split(separator: ",").map(String.init).filter { !$0.isEmpty })
+  }
+
+  private func toggle(_ id: String) {
+    var ids = expandedIDs
+    if ids.contains(id) { ids.remove(id) } else { ids.insert(id) }
+    expandedIDsRaw = ids.sorted().joined(separator: ",")
+  }
+
+  private var objectives: [Objective] {
+    // The same file the inspector shows: the current one, which is what this
+    // cycle was planned against — unless it has been renamed since, which the
+    // alignment reports rather than papers over.
+    state.okrFiles.last?.objectives ?? []
+  }
+
+  private var result: CycleOkrAlignment.Result {
+    CycleOkrAlignment.align(objectives: objectives, priorities: doc)
+  }
+
+  var body: some View {
+    let alignment = result
+    let table = width >= Self.breakpoint && !objectives.isEmpty
+    VStack(alignment: .leading, spacing: 0) {
+      if alignment.isWhollyUnmatched {
+        // Said once rather than on all seven rows. A cycle planned before an OKR
+        // rename matches nothing, and a warning per row is noise with no signal
+        // left in it.
+        Label("这一期的要务是按当时的 OKR 规划的，和现在的 OKR 文件对不上", systemImage: "exclamationmark.triangle")
+          .font(Typo.caption)
+          .foregroundStyle(Palette.inkMuted)
+          .padding(.bottom, Metrics.sm)
+      } else if !table && showsOKR && width > 0 {
+        // The drawer costs 360pt and answers the same question this view does,
+        // so on a narrow window it is the reason the columns did not fit.
+        Text("收起右侧 OKR 可以并排显示")
+          .mutedStyle(Typo.caption)
+          .padding(.bottom, Metrics.sm)
+      }
+
+      if table {
+        header
+        rowRule()
+      }
+      ForEach(Array(alignment.rows.enumerated()), id: \.element.id) { index, row in
+        if index > 0 { rowRule() }
+        if table {
+          columns {
+            objectiveCell(row, wholly: alignment.isWhollyUnmatched)
+          } right: {
+            prioritiesCell(row)
+          }
+        } else {
+          VStack(alignment: .leading, spacing: Metrics.xs) {
+            objectiveCell(row, wholly: alignment.isWhollyUnmatched)
+            prioritiesCell(row)
+          }
+          .padding(.vertical, Metrics.sm)
+        }
+      }
+    }
+    // Must fill the panel before measuring it. Left to size itself, the stack is
+    // as wide as the stacked layout it is currently drawing — which is never the
+    // breakpoint, so it could never switch to two columns.
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      GeometryReader { proxy in
+        Color.clear
+          .onAppear { width = proxy.size.width }
+          .onChange(of: proxy.size.width) { width = proxy.size.width }
+      }
+    )
+  }
+
+  /// The one place the column geometry is stated. The header used to build its
+  /// own, and a band's horizontal inset moved its rule 8pt off the rows' —
+  /// visible as a kink where the two met. Sharing the layout makes that
+  /// impossible rather than merely fixed.
+  ///
+  /// The vertical padding is inside the cells, so the rule spans it and runs
+  /// unbroken from the top of a row to the bottom of it.
+  private func columns<L: View, R: View>(
+    @ViewBuilder left: () -> L,
+    @ViewBuilder right: () -> R
+  ) -> some View {
+    HStack(alignment: .top, spacing: 0) {
+      left()
+        .padding(.vertical, Metrics.sm)
+        .frame(width: Self.objectiveColumnWidth, alignment: .leading)
+        .padding(.trailing, Metrics.sm)
+      Rectangle().fill(Palette.rule).frame(width: Metrics.hairline)
+      right()
+        .padding(.vertical, Metrics.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, Metrics.sm)
+    }
+    .fixedSize(horizontal: false, vertical: true)
+  }
+
+  private var header: some View {
+    columns {
+      Text("OKR").mutedStyle(Typo.label)
+    } right: {
+      Text("本期要务").mutedStyle(Typo.label)
+    }
+  }
+
+  private func rowRule() -> some View {
+    Rectangle().fill(Palette.rule).frame(height: Metrics.hairline)
+  }
+
+  @ViewBuilder private func objectiveCell(_ row: CycleOkrAlignment.Row, wholly: Bool) -> some View {
+    if let objective = row.objective {
+      let isOpen = expandedIDs.contains(objective.id)
+      VStack(alignment: .leading, spacing: Metrics.xxs) {
+        HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
+          Text(objective.id).font(Typo.mono).foregroundStyle(Palette.moss)
+          Text(objective.title).inkStyle(Typo.heading)
+        }
+        // Text only — no bars, no percentages, no health pills. This column says
+        // *which* objective the 要务 serve; how far along it is has its own screen.
+        if objective.keyResults.isEmpty {
+          Text("没有 KR").mutedStyle(Typo.caption)
+        } else {
+          Button {
+            withAnimation(.snappy(duration: 0.2)) { toggle(objective.id) }
+          } label: {
+            HStack(spacing: Metrics.xxs) {
+              // Rotated rather than swapped, matching CycleGroupHeader — the
+              // turn is what makes it read as the same control in two states.
+              Image(systemName: "chevron.right")
+                .font(.system(size: 9, weight: .semibold))
+                .rotationEffect(.degrees(isOpen ? 90 : 0))
+              Text("\(objective.keyResults.count) KR").font(Typo.caption)
+            }
+            .foregroundStyle(isOpen ? Palette.mint600 : Palette.inkMuted)
+            .contentShape(Rectangle())
+          }
+          .buttonStyle(.plain)
+          .help(isOpen ? "收起这个 O 的 KR" : "展开这个 O 的 KR")
+          if isOpen {
+            // Indented, not filled. A block of its own colour competed with the
+            // column rule next to it for the same job; the indent says "these
+            // belong to the objective above" on its own.
+            VStack(alignment: .leading, spacing: Metrics.xxs) {
+              ForEach(objective.keyResults) { kr in
+                HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
+                  Text(kr.id).font(Typo.mono).foregroundStyle(Palette.ink3)
+                  Text(kr.title).font(Typo.caption).foregroundStyle(Palette.ink3)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+              }
+            }
+            .padding(.leading, Metrics.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, Metrics.xxs)
+            .transition(.opacity)
+          }
+        }
+      }
+    } else {
+      VStack(alignment: .leading, spacing: Metrics.xxs) {
+        // Per-row only when some rows did match; a wholly-unmatched cycle says it
+        // once at the top instead.
+        if !wholly {
+          Label("不在当前 OKR 文件里", systemImage: "exclamationmark.triangle")
+            .font(Typo.caption)
+            .foregroundStyle(Palette.inkMuted)
+        }
+        if let heading = row.recordedHeading {
+          // The heading the cycle itself recorded. Without it an orphaned group
+          // loses the only record of which objective it was planned under.
+          Text(heading)
+            .font(Typo.caption)
+            .foregroundStyle(Palette.ink3)
+            .lineLimit(3)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+    }
+  }
+
+  @ViewBuilder private func prioritiesCell(_ row: CycleOkrAlignment.Row) -> some View {
+    if let group = row.group, !group.items.isEmpty {
+      VStack(alignment: .leading, spacing: 0) {
+        ForEach(group.items) { item in
+          PriorityRow(cycle: cycle, item: item, editable: editable, showsStatusBar: false)
+        }
+      }
+    } else {
+      Text(PrioritiesDocument.emptyPlaceholder).mutedStyle()
+    }
+  }
+}
+
 private struct PrioritiesView: View {
   @Environment(AppState.self) private var state
   let cycle: Cycle
@@ -711,16 +941,7 @@ private struct PrioritiesView: View {
         if !doc.loose.isEmpty {
           itemList(doc.loose)
         }
-        ForEach(doc.groups) { group in
-          VStack(alignment: .leading, spacing: Metrics.xs) {
-            Text(group.title).inkStyle(Typo.heading)
-            if group.items.isEmpty {
-              Text(PrioritiesDocument.emptyPlaceholder).mutedStyle()
-            } else {
-              itemList(group.items)
-            }
-          }
-        }
+        AlignedPriorities(cycle: cycle, doc: doc, editable: editable)
       }
     }
   }
@@ -739,6 +960,12 @@ private struct PriorityRow: View {
   let cycle: Cycle
   let item: PriorityItem
   let editable: Bool
+  /// The 2pt status bar down the left edge. On by default — it is how the
+  /// single-column list has always shown a group's shape at a glance. Off in the
+  /// aligned table, where it lands a few points from the column rule and reads
+  /// as a second, shorter divider; the status it carries is already in the dots
+  /// at the head of the row.
+  var showsStatusBar = true
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
@@ -768,10 +995,12 @@ private struct PriorityRow: View {
     }
     .padding(.vertical, Metrics.xxs)
     .overlay(alignment: .leading) {
-      Rectangle()
-        .fill(item.status.map { Palette.foreground(for: $0.tone) } ?? Palette.line)
-        .frame(width: 2)
-        .offset(x: -Metrics.xs)
+      if showsStatusBar {
+        Rectangle()
+          .fill(item.status.map { Palette.foreground(for: $0.tone) } ?? Palette.line)
+          .frame(width: 2)
+          .offset(x: -Metrics.xs)
+      }
     }
   }
 }
