@@ -34,9 +34,14 @@ open class AppState {
   /// Countdown days, already resolved against today by the service. Ordered as
   /// it sent them: pinned, then nearest, then what is behind.
   public var countdowns: [Countdown]
-  /// The clock those day counts were read off — the service's `user.timezone`.
-  /// Empty before the first read, and from a service too old to send it.
+  /// The clock those day counts were read off — normally this machine's, since
+  /// the client reports its own zone on every countdown call. Empty before the
+  /// first read, and from a service too old to send it back.
   public var countdownTimezone: String = ""
+  /// The clock the morning Feishu card counts in. Same as `countdownTimezone`
+  /// at home; different only while the person is somewhere else, which is the
+  /// one case the screen says so.
+  public var countdownCardTimezone: String = ""
   public var runs: [WorkflowRun]
   public var artifacts: [Artifact]
   public var schedules: [ScheduleEntry]
@@ -183,6 +188,7 @@ open class AppState {
     okrFiles = MockData.okrFiles
     countdowns = MockData.countdowns
     countdownTimezone = MockData.countdownTimezone
+    countdownCardTimezone = MockData.countdownTimezone
     runs = MockData.runs
     artifacts = MockData.artifacts
     schedules = MockData.schedules

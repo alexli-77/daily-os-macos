@@ -61,6 +61,7 @@ public final class LiveAppState: AppState {
     okrFiles = []
     countdowns = []
     countdownTimezone = ""
+    countdownCardTimezone = ""
     runs = []
     artifacts = []
     schedules = []
@@ -364,6 +365,7 @@ public final class LiveAppState: AppState {
   private func apply(_ list: CountdownList) {
     countdowns = list.items
     countdownTimezone = list.timezone
+    countdownCardTimezone = list.cardTimezone
   }
 
   public override func saveCountdown(_ draft: CountdownDraft) async -> ActionOutcome {

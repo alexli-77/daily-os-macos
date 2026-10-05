@@ -899,17 +899,21 @@ check(CountdownZone.offset(TimeZone(identifier: "Asia/Kolkata")!, at: july) == "
 check(CountdownZone.label("America/Toronto", at: july) == "America/Toronto（UTC-4）", "标签带上当下的偏移")
 check(CountdownZone.label("Mars/Olympus", at: july) == "Mars/Olympus", "认不出的时区只印名字，不编偏移")
 
-// The note mentions this machine only when the offset actually differs.
-check(CountdownZone.note(service: "America/Toronto", device: montreal, at: july) == "天数按 America/Toronto（UTC-4）计",
-      "同一个时钟就只说一句: \(CountdownZone.note(service: "America/Toronto", device: montreal, at: july))")
-check(CountdownZone.note(service: "America/Toronto", device: TimeZone(identifier: "America/New_York")!, at: july)
+// The counts follow this machine; the note mentions the card's zone only when
+// the offset actually differs — which is to say, only while you are away.
+check(CountdownZone.note(counting: "America/Toronto", card: "America/Toronto", at: july)
         == "天数按 America/Toronto（UTC-4）计",
-      "名字不同但日界相同，不算在别处")
-check(CountdownZone.note(service: "America/Toronto", device: shanghai, at: july)
-        == "天数按 America/Toronto（UTC-4）计，这台电脑在 Asia/Shanghai（UTC+8）",
-      "人在中国、服务按蒙特利尔算，要说出来: \(CountdownZone.note(service: "America/Toronto", device: shanghai, at: july))")
-check(CountdownZone.note(service: "Mars/Olympus", device: shanghai, at: july) == "天数按 Mars/Olympus 计",
-      "认不出的时区不拿本机偏移去比")
+      "在家时只说一句: \(CountdownZone.note(counting: "America/Toronto", card: "America/Toronto", at: july))")
+check(CountdownZone.note(counting: "America/Toronto", card: "America/New_York", at: july)
+        == "天数按 America/Toronto（UTC-4）计",
+      "名字不同但日界相同，不提")
+check(CountdownZone.note(counting: "Asia/Shanghai", card: "America/Toronto", at: july)
+        == "天数按 Asia/Shanghai（UTC+8）计，早上的卡片按 America/Toronto（UTC-4）算",
+      "人在中国：屏幕跟本机，卡片还按配置的时区: \(CountdownZone.note(counting: "Asia/Shanghai", card: "America/Toronto", at: july))")
+check(CountdownZone.note(counting: "Mars/Olympus", card: "America/Toronto", at: july) == "天数按 Mars/Olympus 计",
+      "认不出的时区不拿去比偏移")
+check(CountdownZone.note(counting: "Asia/Shanghai", card: "", at: july) == "天数按 Asia/Shanghai（UTC+8）计",
+      "老服务不回 cardTimezone，就只说一句")
 
 // The date picker's round trip. Pinned to UTC on both sides — reading a
 // calendar date in a western timezone and writing it back loses a day.

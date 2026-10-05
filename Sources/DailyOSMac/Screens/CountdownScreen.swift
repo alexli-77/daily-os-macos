@@ -49,7 +49,7 @@ struct CountdownScreen: View {
         // says nothing surprising — the day it is worth reading is the day you
         // are somewhere else, and then it says that too.
         if !state.countdownTimezone.isEmpty {
-          Text(CountdownZone.note(service: state.countdownTimezone))
+          Text(CountdownZone.note(counting: state.countdownTimezone, card: state.countdownCardTimezone))
             .mutedStyle(Typo.caption)
         }
       }

@@ -247,20 +247,25 @@ extension CountdownGroup {
   }
 }
 
-/// A resolved list, with the clock its day counts were read off.
+/// A resolved list, with the clocks involved in it.
 ///
-/// The zone travels with the numbers rather than being looked up separately,
-/// because it is what makes them meaningful: there is one `user.timezone` for
-/// the whole service, so a day count is always *somebody's*, and a client in
-/// another zone cannot work out whose from the numbers alone.
+/// The zones travel with the numbers rather than being looked up separately,
+/// because they are what make them meaningful: a day count is always
+/// *somebody's*, and nothing in the numbers says whose.
 public struct CountdownList: Sendable, Equatable {
   public var items: [Countdown]
-  /// An IANA identifier — "America/Toronto".
+  /// The zone these counts were read off. Normally this machine's, because the
+  /// client reports it on every call — an IANA identifier, "Asia/Shanghai".
   public var timezone: String
+  /// The zone the morning Feishu card counts in: the service's configured
+  /// `user.timezone`. Equal to `timezone` at home, and the one thing still
+  /// worth saying out loud when it is not.
+  public var cardTimezone: String
 
-  public init(items: [Countdown], timezone: String) {
+  public init(items: [Countdown], timezone: String, cardTimezone: String) {
     self.items = items
     self.timezone = timezone
+    self.cardTimezone = cardTimezone
   }
 }
 
@@ -292,24 +297,31 @@ public enum CountdownZone {
       : "UTC\(sign)\(hours):\(String(format: "%02d", remainder))"
   }
 
-  /// The line under the list.
+  /// The line under the list: which clock the numbers above are on, and — only
+  /// when it differs — which clock the morning card will be on.
   ///
-  /// Mentions this machine only when its offset actually differs. The test is
-  /// the offset and not the identifier on purpose: `America/Toronto` and
-  /// `America/New_York` keep the same wall clock, and telling someone their
-  /// computer is "elsewhere" when every day boundary agrees is noise. A
-  /// differing offset is exactly the case where the count on screen is not the
-  /// count they would compute by looking out the window.
-  public static func note(service identifier: String, device: TimeZone = .current, at instant: Date = .now) -> String {
-    guard let service = TimeZone(identifier: identifier) else { return "天数按 \(identifier) 计" }
-    // No space before 计: past the guard above the label always ends in a
-    // full-width paren, which carries the separation itself. The fallback
-    // branch, where it does not, keeps its space.
-    let serviceLabel = label(identifier, at: instant)
-    guard service.secondsFromGMT(for: instant) != device.secondsFromGMT(for: instant) else {
-      return "天数按 \(serviceLabel)计"
+  /// The counts follow this machine, because the app reports its own zone on
+  /// every call. The card cannot: it is sent on a schedule keyed to the
+  /// configured zone, and there is nobody to ask at 08:00. So the one thing
+  /// left worth disclosing is the gap between the two, which opens only while
+  /// the person is somewhere else.
+  ///
+  /// The test is the offset and not the identifier on purpose:
+  /// `America/Toronto` and `America/New_York` keep the same wall clock, and
+  /// warning about a difference when every day boundary agrees is noise.
+  public static func note(counting identifier: String, card cardIdentifier: String, at instant: Date = .now) -> String {
+    guard let counting = TimeZone(identifier: identifier) else { return "天数按 \(identifier) 计" }
+    // No space before 计: past that guard the label always ends in a full-width
+    // paren, which carries the separation itself. The fallback above, where it
+    // does not, keeps its space.
+    let countingLabel = "天数按 \(label(identifier, at: instant))计"
+    guard
+      let card = TimeZone(identifier: cardIdentifier),
+      card.secondsFromGMT(for: instant) != counting.secondsFromGMT(for: instant)
+    else {
+      return countingLabel
     }
-    return "天数按 \(serviceLabel)计，这台电脑在 \(label(device.identifier, at: instant))"
+    return "\(countingLabel)，早上的卡片按 \(label(cardIdentifier, at: instant))算"
   }
 }
 

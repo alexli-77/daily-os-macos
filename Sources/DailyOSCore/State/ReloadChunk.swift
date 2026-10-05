@@ -99,6 +99,7 @@ extension AppState {
       // The zone is part of the same answer. Keeping it would leave a footer
       // line qualifying counts that are no longer on screen.
       countdownTimezone = ""
+      countdownCardTimezone = ""
     case .service:
       // Degraded rather than stopped, which is what a disconnect sets: the
       // connection was probed a moment ago and answered. Something behind this
