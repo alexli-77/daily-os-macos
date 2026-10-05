@@ -820,8 +820,110 @@ check(DayHistory(date: "2026-09-24", dates: [], today: "2026-09-25", hasPlan: tr
 check(DayHistory(date: "2026-09-10", dates: [], today: "2026-09-25", hasPlan: false, items: []).summary == "这天没有计划",
       "没计划和有计划但没条目要说得不一样")
 
+// MARK: - 倒数日
+//
+// The day counts come resolved from the service, so what is testable here is
+// only the presentation of one: how a count reads, which band a row falls into,
+// and which rows are worth a line on Today. That last one is a hand-kept
+// duplicate of `cardCountdowns` in the service — these checks are what make the
+// duplication survivable.
+
+func countdown(
+  _ id: String,
+  _ daysLeft: Int,
+  direction: Countdown.Direction = .until,
+  recurrence: Countdown.Recurrence = .none,
+  pinned: Bool = false,
+  ordinal: Int? = nil
+) -> Countdown {
+  Countdown(
+    id: id, title: id, date: "2026-01-01", direction: direction, recurrence: recurrence,
+    pinned: pinned, occurrence: "2026-01-01", daysLeft: daysLeft, ordinal: ordinal
+  )
+}
+
+check(countdown("a", 23).daysLabel == "还有 23 天", "倒数读作「还有」")
+check(countdown("a", 0).daysLabel == "就是今天", "当天不说天数")
+check(countdown("a", -9).daysLabel == "已过去 9 天", "过期的截止日读作「已过去」")
+check(countdown("a", -517, direction: .since).daysLabel == "已经 517 天", "正数日不是逾期，读作「已经」")
+check(countdown("a", 110, recurrence: .yearly, ordinal: 60).ordinalLabel == "第 60 年", "周年序数")
+check(countdown("a", 110).ordinalLabel == nil, "不重复的条目没有周年")
+
+// Colour only at the near edge: three days red, a week amber, the rest plain.
+check(countdown("a", 2).tone == .danger, "三天以内是红的")
+check(countdown("a", 7).tone == .warn, "一周以内是黄的")
+check(countdown("a", 8).tone == .neutral, "再远就不上色")
+check(countdown("a", -2).tone == .neutral, "过去的不上色")
+check(countdown("a", -2, direction: .since).tone == .neutral, "正数日从不上色")
+
+let bands = CountdownGroup.group([
+  countdown("pinned", 400, pinned: true),
+  countdown("soon", 5),
+  countdown("phd", -300, direction: .since),
+  countdown("gone", -19),
+])
+check(bands.map(\.kind) == [.pinned, .running, .past], "三段：置顶 / 进行中 / 已经过去")
+check(bands[1].items.map(\.id) == ["soon", "phd"], "正数日算进行中，它在往上数: \(bands[1].items.map(\.id))")
+check(bands[2].items.map(\.id) == ["gone"], "只有过了期的一次性事件算过去")
+check(CountdownGroup.group([countdown("soon", 5)]).map(\.kind) == [.running], "空的段不出现")
+
+// The strip's filter, which has to keep agreeing with the service's.
+let forCard = Countdown.forCard([
+  countdown("pinned-far", 400, pinned: true),
+  countdown("near", 9),
+  countdown("edge", 30),
+  countdown("far", 31),
+  countdown("gone", -1),
+])
+check(forCard.map(\.id) == ["pinned-far", "near", "edge"], "置顶的 + 三十天内的，最多三条: \(forCard.map(\.id))")
+check(Countdown.forCard([countdown("phd", -300, direction: .since)]).isEmpty, "不置顶的正数日不上卡片")
+check(Countdown.forCard([countdown("phd", -300, direction: .since, pinned: true)]).count == 1, "置顶的正数日上卡片")
+
+// Saying which clock the counts are on. Read at an instant, because a zone
+// that observes daylight saving is not one offset — Montreal is UTC-5 in
+// January and UTC-4 in July, and printing either year-round is a wrong fact
+// dressed as a precise one. China observes none, which is what makes the pair
+// below a 13-hour gap in winter and a 12-hour one in summer.
+let january = Date(timeIntervalSince1970: 1_767_225_600)  // 2026-01-01T00:00:00Z
+let july = Date(timeIntervalSince1970: 1_782_950_400)     // 2026-07-01T00:00:00Z
+let montreal = TimeZone(identifier: "America/Toronto")!
+let shanghai = TimeZone(identifier: "Asia/Shanghai")!
+
+check(CountdownZone.offset(montreal, at: january) == "UTC-5", "蒙特利尔冬天是 -5: \(CountdownZone.offset(montreal, at: january))")
+check(CountdownZone.offset(montreal, at: july) == "UTC-4", "夏令时要跟着变: \(CountdownZone.offset(montreal, at: july))")
+check(CountdownZone.offset(shanghai, at: january) == "UTC+8", "中国不过夏令时")
+check(CountdownZone.offset(shanghai, at: july) == "UTC+8", "全年都是 +8")
+check(CountdownZone.offset(TimeZone(identifier: "UTC")!, at: july) == "UTC", "零偏移不写 +0")
+check(CountdownZone.offset(TimeZone(identifier: "Asia/Kolkata")!, at: july) == "UTC+5:30", "半小时时区要写出分钟")
+
+check(CountdownZone.label("America/Toronto", at: july) == "America/Toronto（UTC-4）", "标签带上当下的偏移")
+check(CountdownZone.label("Mars/Olympus", at: july) == "Mars/Olympus", "认不出的时区只印名字，不编偏移")
+
+// The counts follow this machine; the note mentions the card's zone only when
+// the offset actually differs — which is to say, only while you are away.
+check(CountdownZone.note(counting: "America/Toronto", card: "America/Toronto", at: july)
+        == "天数按 America/Toronto（UTC-4）计",
+      "在家时只说一句: \(CountdownZone.note(counting: "America/Toronto", card: "America/Toronto", at: july))")
+check(CountdownZone.note(counting: "America/Toronto", card: "America/New_York", at: july)
+        == "天数按 America/Toronto（UTC-4）计",
+      "名字不同但日界相同，不提")
+check(CountdownZone.note(counting: "Asia/Shanghai", card: "America/Toronto", at: july)
+        == "天数按 Asia/Shanghai（UTC+8）计，早上的卡片按 America/Toronto（UTC-4）算",
+      "人在中国：屏幕跟本机，卡片还按配置的时区: \(CountdownZone.note(counting: "Asia/Shanghai", card: "America/Toronto", at: july))")
+check(CountdownZone.note(counting: "Mars/Olympus", card: "America/Toronto", at: july) == "天数按 Mars/Olympus 计",
+      "认不出的时区不拿去比偏移")
+check(CountdownZone.note(counting: "Asia/Shanghai", card: "", at: july) == "天数按 Asia/Shanghai（UTC+8）计",
+      "老服务不回 cardTimezone，就只说一句")
+
+// The date picker's round trip. Pinned to UTC on both sides — reading a
+// calendar date in a western timezone and writing it back loses a day.
+check(CountdownDate.day(from: CountdownDate.date(from: "2026-04-24") ?? .distantPast) == "2026-04-24",
+      "日期串往返不掉一天")
+check(CountdownDate.heading("2026-04-24").contains("4月24日"), "长日期按日历日渲染: \(CountdownDate.heading("2026-04-24"))")
+check(CountdownDate.heading("not-a-date") == "not-a-date", "认不出的日期原样显示")
+
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 往日, 回归集")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 往日, 倒数日, 回归集")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

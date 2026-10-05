@@ -31,7 +31,7 @@ public final class LiveAppState: AppState {
   /// a new section in one and not the other would either mark a live screen as
   /// fixture or claim a fixture screen is live, and neither shows up until
   /// someone reconnects.
-  private static let liveSections: Set<AppSection> = [.today, .cycles, .okr, .artifacts, .settings]
+  private static let liveSections: Set<AppSection> = [.today, .cycles, .okr, .countdown, .artifacts, .settings]
 
   public init(connection: ServiceConnection) {
     self.connection = connection
@@ -59,6 +59,9 @@ public final class LiveAppState: AppState {
     planRunStartedAt = nil
     todos = []
     okrFiles = []
+    countdowns = []
+    countdownTimezone = ""
+    countdownCardTimezone = ""
     runs = []
     artifacts = []
     schedules = []
@@ -243,6 +246,10 @@ public final class LiveAppState: AppState {
       self.okrFiles = try await client.okrFiles()
     }
 
+    await load(.countdowns) {
+      self.apply(try await client.countdowns())
+    }
+
     await load(.service) {
       self.service = try await client.serviceStatus()
     }
@@ -343,6 +350,60 @@ public final class LiveAppState: AppState {
       lastActionError = reason
       return .failed(reason)
     }
+  }
+
+  // MARK: Countdowns
+  //
+  // All three take the list straight out of the response instead of calling
+  // `reload()` after the write. A full reload is eight endpoints, and these
+  // writes cannot change anything the other seven read — the service already
+  // answers with the resolved list, which is the only thing that moved.
+
+  /// The list and the clock it was read off always land together — a footer
+  /// line qualifying one list over another list's counts would be worse than
+  /// no footer line.
+  private func apply(_ list: CountdownList) {
+    countdowns = list.items
+    countdownTimezone = list.timezone
+    countdownCardTimezone = list.cardTimezone
+  }
+
+  public override func saveCountdown(_ draft: CountdownDraft) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      apply(try await client.saveCountdown(draft))
+      markLoaded(.countdowns)
+      return .ok(draft.id == nil ? "已记下" : "已更新")
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      lastActionError = reason
+      return .failed(reason)
+    }
+  }
+
+  public override func deleteCountdown(_ id: Countdown.ID) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      apply(try await client.deleteCountdown(id: id))
+      markLoaded(.countdowns)
+      return .ok("已删除")
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      lastActionError = reason
+      return .failed(reason)
+    }
+  }
+
+  public override func toggleCountdownPin(_ id: Countdown.ID) async -> ActionOutcome {
+    guard let item = countdowns.first(where: { $0.id == id }) else {
+      return .failed("这条倒数日已经不在了。")
+    }
+    var draft = CountdownDraft(editing: item)
+    draft.pinned.toggle()
+    let outcome = await saveCountdown(draft)
+    // `saveCountdown` says 已更新, which is true but not what was asked for.
+    guard case .ok = outcome else { return outcome }
+    return .ok(draft.pinned ? "已置顶，会出现在早上的卡片里" : "已取消置顶")
   }
 
   public override func addCaptureToPlan(_ id: TodoItem.ID, minutes: Int) async -> ActionOutcome {

@@ -31,6 +31,17 @@ open class AppState {
   public var teamTodaySync: TeamSyncState?
   public var todos: [TodoItem]
   public var okrFiles: [OkrFile]
+  /// Countdown days, already resolved against today by the service. Ordered as
+  /// it sent them: pinned, then nearest, then what is behind.
+  public var countdowns: [Countdown]
+  /// The clock those day counts were read off — normally this machine's, since
+  /// the client reports its own zone on every countdown call. Empty before the
+  /// first read, and from a service too old to send it back.
+  public var countdownTimezone: String = ""
+  /// The clock the morning Feishu card counts in. Same as `countdownTimezone`
+  /// at home; different only while the person is somewhere else, which is the
+  /// one case the screen says so.
+  public var countdownCardTimezone: String = ""
   public var runs: [WorkflowRun]
   public var artifacts: [Artifact]
   public var schedules: [ScheduleEntry]
@@ -175,6 +186,9 @@ open class AppState {
     teamTodaySync = MockData.teamSync
     todos = MockData.todos
     okrFiles = MockData.okrFiles
+    countdowns = MockData.countdowns
+    countdownTimezone = MockData.countdownTimezone
+    countdownCardTimezone = MockData.countdownTimezone
     runs = MockData.runs
     artifacts = MockData.artifacts
     schedules = MockData.schedules
@@ -462,6 +476,27 @@ open class AppState {
 
   /// Stop carrying these captures. Shelved, not deleted — 已顺延 still has them.
   open func abandonCaptures(_ ids: [String]) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  /// Create a countdown, or update the one carrying `id`.
+  ///
+  /// Deliberately not optimistic. Every other write here paints the change
+  /// first and reconciles after, because the user already knows what they did —
+  /// but the day count is the point of this row and only the service can work
+  /// it out. Painting a guess would mean the number visibly corrects itself a
+  /// moment later, which is worse than waiting for it.
+  open func saveCountdown(_ draft: CountdownDraft) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  open func deleteCountdown(_ id: Countdown.ID) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  /// Pin or unpin, which is the one edit worth its own one-tap path: pinning is
+  /// how an entry gets onto the morning card.
+  open func toggleCountdownPin(_ id: Countdown.ID) async -> ActionOutcome {
     .unsupported("这一版没有连接到服务。")
   }
 

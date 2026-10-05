@@ -30,6 +30,7 @@ struct SectionView: View {
     case .today: TodayScreen()
     case .cycles: CyclesScreen()
     case .okr: OKRScreen()
+    case .countdown: CountdownScreen()
     case .runs: RunsScreen()
     case .artifacts: ArtifactsScreen()
     case .schedules: SchedulesScreen()

@@ -16,6 +16,7 @@ public enum ReloadChunk: String, CaseIterable, Sendable {
   case teamToday = "团队今天"
   case artifacts = "产物"
   case okr = "OKR"
+  case countdowns = "倒数日"
   case service = "服务状态"
 
   /// What a failure line calls it. "周期读取失败：…" is actionable; a bare
@@ -93,6 +94,12 @@ extension AppState {
       selectedArtifactID = nil
     case .okr:
       okrFiles = []
+    case .countdowns:
+      countdowns = []
+      // The zone is part of the same answer. Keeping it would leave a footer
+      // line qualifying counts that are no longer on screen.
+      countdownTimezone = ""
+      countdownCardTimezone = ""
     case .service:
       // Degraded rather than stopped, which is what a disconnect sets: the
       // connection was probed a moment ago and answered. Something behind this
