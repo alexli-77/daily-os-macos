@@ -180,7 +180,6 @@ struct GenerateCycleReviewResponse: Decodable {
 enum RetroScaffold {
   static let body = """
     😄状态
-    情绪/精力/外部压力：
     情绪：
     精力：
     外部压力：
