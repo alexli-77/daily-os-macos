@@ -221,9 +221,8 @@ private struct PastPlanRow: View {
           .font(Typo.caption).foregroundStyle(Palette.ink3)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
-      if let ref = item.sourceRef {
-        Text(ref).font(Typo.caption).foregroundStyle(Palette.ink2)
-      }
+      let source = PlanSource(candidateID: item.id, sourceRef: item.sourceRef)
+      Text(source.label).font(Typo.caption).foregroundStyle(source.isIssue ? Palette.ink2 : Palette.ink3)
     }
     .padding(.vertical, Metrics.sm)
   }
