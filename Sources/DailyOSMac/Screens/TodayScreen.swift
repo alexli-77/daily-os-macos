@@ -570,18 +570,15 @@ private struct CallSheetRow: View {
     }
   }
 
+  /// Linear key / 要务 / 随手记 — see `PlanSource`. Only an issue key is
+  /// styled as a reference; the others are categories, not links.
   private var source: some View {
-    Group {
-      if let ref = item.sourceRef {
-        Text(ref)
-          .font(Typo.caption)
-          .foregroundStyle(Palette.ink2)
-          .underline(true, pattern: .dot)
-      } else {
-        Text("日程").font(Typo.caption).foregroundStyle(Palette.ink3)
-      }
-    }
-    .frame(width: 100, alignment: .trailing)
+    let source = PlanSource(candidateID: item.id, sourceRef: item.sourceRef)
+    return Text(source.label)
+      .font(Typo.caption)
+      .foregroundStyle(source.isIssue ? Palette.ink2 : Palette.ink3)
+      .underline(source.isIssue, pattern: .dot)
+      .frame(width: 100, alignment: .trailing)
   }
 
   private func set(_ target: TodoState) {

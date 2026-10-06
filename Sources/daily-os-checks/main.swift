@@ -991,8 +991,21 @@ check(!CycleOkrAlignment.align(objectives: [okrObjective("O1", "工作 · 技术
                                priorities: okrPriorities([])).isWhollyUnmatched,
       "空周期不算失配，它没东西可失配")
 
+// MARK: - 计划来源列
+//
+// 以前除了带 Linear 引用的行，全都显示「日程」；而计划行从来不带引用，所以每一行都是「日程」。
+
+check(PlanSource(candidateID: "linear:ABC-12").label == "ABC-12" && PlanSource(candidateID: "linear:ABC-12").isIssue,
+      "Linear 行显示 issue 编号，并当成引用")
+check(PlanSource(candidateID: "weekly:3:a1b2c3d4").label == "要务", "周期要务行显示「要务」")
+check(PlanSource(candidateID: "todo_inbox:todo-1").label == "随手记", "随手记行显示「随手记」")
+check(PlanSource(candidateID: "vault:notes/a.md").label == "笔记", "vault 行显示「笔记」")
+check(!PlanSource(candidateID: "weekly:0:x").isIssue, "要务不是链接，不加下划线")
+check(PlanSource(candidateID: "p1", sourceRef: "DEMO-12").label == "DEMO-12", "已经带引用的行照旧用引用")
+check(PlanSource(candidateID: "something-else").label == "日程", "认不出的前缀才回到「日程」")
+
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 往日, 倒数日, 要务与 OKR 对齐, 回归集")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 回归集")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")
