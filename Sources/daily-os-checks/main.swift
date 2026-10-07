@@ -803,6 +803,46 @@ check(chain.rows[0].start == 10 * 60 && chain.rows[0].end == 10 * 60 + 45, "45 �
 check(chain.rows[1].start == 15 * 60, "1 小时的任务跨过首尾相接的三个固定块，排到 15:00")
 check(chain.fixedBlocks.map(\.id) == ["m1", "l", "m2"], "三个固定块都按顺序放置")
 
+// 钉住的行（LEO-331）：待在用户放的钟点，自动排的行绕开它，就像绕开吃饭
+func pinnedItem(_ id: String, _ minutes: Int?, at start: Int, _ state: TodoState = .open) -> TodoItem {
+  TodoItem(id: id, text: id, kind: .priority, state: state, estimatedMinutes: minutes, pinnedStart: start)
+}
+let pinned = DaySchedule.build(
+  items: [sheetItem("a", 45), pinnedItem("p", 60, at: 14 * 60), sheetItem("b", 45), sheetItem("c", 30)],
+  startMinute: 13 * 60, nowMinute: 13 * 60)
+check(pinned.rows[1].start == 14 * 60 && pinned.rows[1].end == 15 * 60, "钉住的行在 14:00–15:00，不管它排第几")
+check(pinned.rows[0].start == 13 * 60, "自动排的第一行从起点开始")
+check(pinned.rows[2].start == 15 * 60, "13:45 起放不下 45 分钟，绕到钉住的行之后")
+check(pinned.rows[3].start == 15 * 60 + 45, "后面的行接着往下排")
+check(pinned.endOfDay == 16 * 60 + 15, "预计结束算到最后一行")
+let pinnedNoEstimate = DaySchedule.build(items: [pinnedItem("p", nil, at: 9 * 60)], startMinute: 8 * 60, nowMinute: 8 * 60)
+check(pinnedNoEstimate.rows[0].end == 9 * 60 + 30, "钉住但没估时的行按 30 分钟占位")
+let pinnedLate = DaySchedule.build(
+  items: [sheetItem("a", 30), pinnedItem("p", 60, at: 20 * 60)],
+  startMinute: 9 * 60, nowMinute: 9 * 60)
+check(pinnedLate.endOfDay == 21 * 60, "钉在晚上的行把预计结束拉到 21:00")
+let pinnedDeferred = DaySchedule.build(
+  items: [pinnedItem("p", 60, at: 9 * 60, .deferred), sheetItem("a", 60)],
+  startMinute: 9 * 60, nowMinute: 9 * 60)
+check(pinnedDeferred.rows[0].start == nil && pinnedDeferred.rows[1].start == 9 * 60, "顺延的行钉住了也不占时间")
+let pinnedOnLunch = DaySchedule.build(
+  items: [pinnedItem("p", 30, at: 12 * 60 + 15), sheetItem("a", 60)],
+  startMinute: 11 * 60 + 30, nowMinute: 11 * 60, meals: [lunch])
+check(pinnedOnLunch.rows[0].start == 12 * 60 + 15, "用户可以把任务钉在午餐上，照放不误")
+check(pinnedOnLunch.rows[1].start == 13 * 60, "自动排的行绕开午餐和钉住的行，从 13:00 开始")
+
+// 重叠的块并排：一组互相重叠的块按最忙时刻的数量分列，不重叠的占满宽度
+let columns = TimelineColumns.assign([
+  .init(id: "meet", start: 9 * 60, end: 10 * 60),
+  .init(id: "task", start: 9 * 60 + 30, end: 10 * 60 + 30),
+  .init(id: "next", start: 10 * 60, end: 11 * 60),
+  .init(id: "alone", start: 12 * 60, end: 13 * 60),
+])
+check(columns["meet"] == .init(column: 0, count: 2) && columns["task"] == .init(column: 1, count: 2), "9:00 的会和 9:30 的任务左右分开")
+check(columns["next"] == .init(column: 0, count: 2), "10:00 开始的块用回左边那一列（会议已经结束）")
+check(columns["alone"] == .init(column: 0, count: 1), "不和任何块重叠的占满宽度")
+check(TimelineColumns.assign([.init(id: "a", start: 60, end: 120), .init(id: "b", start: 120, end: 180)])["b"]?.count == 1, "首尾相接不算重叠")
+
 // 没有餐块时行为和以前完全一样（默认参数护栏）
 let noMeal = DaySchedule.build(items: [sheetItem("a", 60), sheetItem("b", 60)], startMinute: t0, nowMinute: noon)
 check(noMeal.fixedBlocks.isEmpty && noMeal.rows[1].start == t0 + 60, "不传餐块时和旧的零间隙顺推一致")
@@ -1019,7 +1059,7 @@ check(PlanSource(candidateID: "p1", sourceRef: "DEMO-12").label == "DEMO-12", "�
 check(PlanSource(candidateID: "something-else").label == "日程", "认不出的前缀才回到「日程」")
 
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 回归集")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 回归集")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

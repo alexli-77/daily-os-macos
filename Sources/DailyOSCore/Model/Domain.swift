@@ -565,6 +565,9 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
   /// Kept on the item rather than in a second map beside it: a row that carries
   /// its own note cannot be drawn with someone else's by a lookup that misses.
   public var note: String?
+  /// Where the user pinned this row on today's timeline, minutes from midnight
+  /// (LEO-331). Nil = laid out automatically from order and estimate.
+  public var pinnedStart: Int?
 
   public init(
     id: String,
@@ -575,7 +578,8 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
     sourceRef: String? = nil,
     estimatedMinutes: Int? = nil,
     note: String? = nil,
-    carriedFrom: String? = nil
+    carriedFrom: String? = nil,
+    pinnedStart: Int? = nil
   ) {
     self.id = id
     self.text = text
@@ -586,6 +590,7 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
     self.estimatedMinutes = estimatedMinutes
     self.note = note
     self.carriedFrom = carriedFrom
+    self.pinnedStart = pinnedStart
   }
 }
 

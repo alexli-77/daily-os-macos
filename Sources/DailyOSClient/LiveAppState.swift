@@ -492,6 +492,31 @@ public final class LiveAppState: AppState {
     }
   }
 
+  public override func placePlanItem(_ id: TodoItem.ID, rank: Int, start: Int?) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    let hadEstimate = plan.first(where: { $0.id == id })?.estimatedMinutes != nil
+    let outcome = await super.placePlanItem(id, rank: rank, start: start)
+    guard case .ok = outcome else { return outcome }
+    do {
+      if let start {
+        // The default 30 minutes has to reach the ledger too, or the next
+        // reload would hand back a pinned row with no length.
+        if !hadEstimate {
+          try await client.recordPlanFeedback(candidateID: id, rank: rank, event: "update", note: nil, minutes: 30)
+        }
+        try await client.recordPlanFeedback(candidateID: id, rank: rank, event: "place", note: nil, start: DaySchedule.clock(start))
+        return .ok("已放到 \(DaySchedule.clock(start))")
+      }
+      try await client.recordPlanFeedback(candidateID: id, rank: rank, event: "unplace", note: nil)
+      return .ok("已取消固定，回到自动排")
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      lastActionError = reason
+      await reload()
+      return .failed(reason)
+    }
+  }
+
   /// Persist the order the user just dragged into place.
   ///
   /// The rows have already moved — `movePlanItem` runs on the drop, before this

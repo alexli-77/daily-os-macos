@@ -33,6 +33,8 @@ struct TodayPlanResponse: Decodable {
     /// whenever the model declined to guess. Optional the whole way down so
     /// "no estimate" stays distinguishable from "zero minutes".
     let minutes: Int?
+    /// "HH:mm" when the user pinned the row to a time today (LEO-331).
+    let start: String?
   }
 
   let plan: Plan?
@@ -95,7 +97,8 @@ extension DailyOSClient {
           // this client never has to know an override mechanism exists.
           estimatedMinutes: todo.minutes,
           note: response.notes?[todo.candidateId],
-          carriedFrom: response.carriedFrom?[todo.candidateId]
+          carriedFrom: response.carriedFrom?[todo.candidateId],
+          pinnedStart: todo.start.flatMap(DayStart.minute(fromClock:))
         )
       }
 
@@ -124,7 +127,8 @@ extension DailyOSClient {
     rank: Int,
     event: String,
     note: String?,
-    minutes: Int? = nil
+    minutes: Int? = nil,
+    start: String? = nil
   ) async throws {
     struct Request: Encodable {
       let candidateId: String
@@ -132,10 +136,12 @@ extension DailyOSClient {
       let event: String
       let note: String?
       let minutes: Int?
+      /// "HH:mm", on `place` only.
+      let start: String?
     }
     try await post(
       "/api/today/todo-feedback",
-      body: Request(candidateId: candidateID, rank: rank, event: event, note: note, minutes: minutes)
+      body: Request(candidateId: candidateID, rank: rank, event: event, note: note, minutes: minutes, start: start)
     )
   }
 

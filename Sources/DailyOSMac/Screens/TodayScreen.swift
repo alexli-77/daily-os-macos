@@ -158,7 +158,9 @@ private struct CallSheetPanel: View {
   @Binding var selectedID: TodoItem.ID?
 
   @State private var isStarting = false
-  @State private var dropIndex: Int?
+  /// A drag in progress on the timeline, so the block can follow the pointer
+  /// (snapped) before anything is sent.
+  @State private var drag: TimelineDrag?
 
   var body: some View {
     Panel("今天的通告单", subtitle: subtitle) {
@@ -196,72 +198,165 @@ private struct CallSheetPanel: View {
             : "再跑一次 daily_plan：会花模型额度，跑完还会往飞书发一条。")
       }
     }
-    .onChange(of: state.plan.map(\.id)) { dropIndex = nil }
   }
 
   /// The day on a clock (LEO-330): every hour is the same height, so a block's
-  /// height *is* its length and a 15-minute break is a sliver. Tasks sit at the
-  /// slots the schedule projects from order + estimates; meals, routines and
-  /// fixed meetings sit at their own wall-clock times. Dragging a task still
-  /// reorders the plan, and the slots follow.
+  /// height *is* its length and a 15-minute break is a sliver. Meals, routines
+  /// and fixed meetings sit at their own wall-clock times.
+  ///
+  /// Tasks can be dragged anywhere on it (LEO-331): the start snaps to the half
+  /// hour and the row is pinned there; rows nobody has moved are still laid out
+  /// from order + estimate around everything fixed. Dragging the bottom edge
+  /// changes the length in 15-minute steps. Overlapping blocks share the width.
   @ViewBuilder private var sheet: some View {
     let range = timelineRange
+    let origin = range.lowerBound
+    let blocks = state.planMealBlocks.filter { $0.end > range.lowerBound && $0.start < range.upperBound }
     let slotted = schedule.rows.enumerated().filter { $0.element.start != nil && $0.element.end != nil }
     let unslotted = schedule.rows.enumerated().filter { $0.element.start == nil || $0.element.end == nil }
+    let columns = TimelineColumns.assign(
+      blocks.map { .init(id: "block:\($0.id)", start: $0.start, end: $0.end) }
+        + slotted.map { .init(id: "row:\($0.element.id)", start: shownStart($0.element), end: shownEnd($0.element)) }
+    )
     VStack(alignment: .leading, spacing: Metrics.sm) {
-      ZStack(alignment: .topLeading) {
-        HourGrid(range: range)
-        ForEach(state.planMealBlocks.filter { $0.end > range.lowerBound && $0.start < range.upperBound }) { block in
-          FixedBlockView(block: block)
-            .timelineSlot(start: block.start, end: block.end, origin: range.lowerBound)
-        }
-        ForEach(slotted, id: \.element.id) { index, row in
-          taskRow(index: index, row: row)
-            .timelineSlot(start: row.start ?? 0, end: row.end ?? 0, origin: range.lowerBound)
-        }
-        if !schedule.isClear && range.contains(schedule.now) {
-          NowMarker(minute: schedule.now)
-            .offset(y: Timeline.y(schedule.now, from: range.lowerBound) - Timeline.labelHeight / 2)
+      GeometryReader { geo in
+        let lane = max(geo.size.width - Timeline.gutter, 1)
+        ZStack(alignment: .topLeading) {
+          HourGrid(range: range)
+          ForEach(blocks) { block in
+            FixedBlockView(block: block)
+              .timelineSlot(start: block.start, end: block.end, origin: origin, lane: lane, placement: columns["block:\(block.id)"])
+          }
+          ForEach(slotted, id: \.element.id) { index, row in
+            taskBlock(index: index, row: row, origin: origin, compact: (columns["row:\(row.id)"]?.count ?? 1) > 1)
+              .timelineSlot(start: shownStart(row), end: shownEnd(row), origin: origin, lane: lane, placement: columns["row:\(row.id)"])
+          }
+          // A row coming in from below the timeline has no block on it yet;
+          // show where it would land.
+          if let drag, drag.kind == .move, let row = unslotted.first(where: { $0.element.id == drag.id })?.element {
+            DropGhost(text: row.item.text)
+              .timelineSlot(start: drag.value, end: drag.value + (row.item.estimatedMinutes ?? 30), origin: origin, lane: lane, placement: nil)
+          }
+          if !schedule.isClear && range.contains(schedule.now) {
+            NowMarker(minute: schedule.now)
+              .offset(y: Timeline.y(schedule.now, from: origin) - Timeline.labelHeight / 2)
+          }
         }
       }
-      .frame(
-        maxWidth: .infinity,
-        minHeight: Timeline.y(range.upperBound, from: range.lowerBound),
-        alignment: .topLeading
-      )
+      .frame(height: Timeline.y(range.upperBound, from: origin))
       if !unslotted.isEmpty {
-        // Deferred rows and rows with no estimate have no slot to sit in. They
-        // stay draggable — dropping one into the day gives it a place in line.
+        // Deferred rows and rows with no estimate have no slot to sit in.
+        // Dragging one up onto the timeline pins it there (30 minutes if it had
+        // no estimate).
         VStack(alignment: .leading, spacing: Metrics.xxs) {
-          Text("没排进时间轴").font(Typo.caption).foregroundStyle(Palette.ink3)
+          Text("没排进时间轴 · 拖到上面的钟点就排进去").font(Typo.caption).foregroundStyle(Palette.ink3)
           ForEach(unslotted, id: \.element.id) { index, row in
-            taskRow(index: index, row: row)
+            taskBlock(index: index, row: row, origin: origin)
           }
         }
         .padding(.leading, Timeline.gutter)
       }
       if schedule.isClear { ClearState(schedule: schedule) }
     }
+    .coordinateSpace(name: Timeline.space)
   }
 
-  private func taskRow(index: Int, row: DaySchedule.Row) -> some View {
-    CallSheetRow(
+  private func taskBlock(index: Int, row: DaySchedule.Row, origin: Int, compact: Bool = false) -> some View {
+    let isDragging = drag?.id == row.id
+    let canResize = row.start != nil && (row.item.state == .open || row.item.state == .partial)
+    return CallSheetRow(
       row: row,
       isPlanRow: index < state.plan.count,
       selectedID: $selectedID,
-      dropEdge: dropEdge(for: index)
+      onUnpin: row.item.pinnedStart == nil ? nil : { unpin(row) },
+      compact: compact
     )
+    .overlay(alignment: .bottom) {
+      if canResize { ResizeHandle(onChanged: { resize(row, by: $0) }, onEnded: { commitResize(row) }) }
+    }
+    .overlay(alignment: .topTrailing) {
+      if isDragging, let drag { DragReadout(drag: drag) }
+    }
+    .opacity(isDragging && drag?.kind == .move ? 0.85 : 1)
     .transition(.taskRow)
-    .onDrag { NSItemProvider(object: row.item.id as NSString) }
-    .onDrop(
-      of: [.text],
-      delegate: PlanDropDelegate(index: index, dropIndex: $dropIndex, onDrop: move)
+    .gesture(
+      DragGesture(minimumDistance: 4, coordinateSpace: .named(Timeline.space))
+        .onChanged { value in move(row, value: value, origin: origin) }
+        .onEnded { _ in commitMove(row) }
     )
+  }
+
+  /// Where a row is drawn: its slot, or where it is being dragged to.
+  private func shownStart(_ row: DaySchedule.Row) -> Int {
+    if let drag, drag.id == row.id, drag.kind == .move { return drag.value }
+    return row.start ?? 0
+  }
+
+  private func shownEnd(_ row: DaySchedule.Row) -> Int {
+    let start = shownStart(row)
+    if let drag, drag.id == row.id, drag.kind == .resize { return start + drag.value }
+    return start + ((row.end ?? 0) - (row.start ?? 0))
+  }
+
+  private func move(_ row: DaySchedule.Row, value: DragGesture.Value, origin: Int) {
+    let raw: Int
+    if let start = row.start {
+      raw = start + Int((value.translation.height / Timeline.pointsPerMinute).rounded())
+    } else {
+      // From below the timeline: the pointer is the start.
+      raw = origin + Int((value.location.y / Timeline.pointsPerMinute).rounded())
+    }
+    drag = TimelineDrag(id: row.id, kind: .move, value: TimelineDrag.snap(raw, step: 30))
+  }
+
+  private func commitMove(_ row: DaySchedule.Row) {
+    guard let drag, drag.id == row.id, drag.kind == .move else { return }
+    self.drag = nil
+    // Let go where it already was: nothing to pin.
+    guard drag.value != row.start else { return }
+    Task {
+      let outcome = await state.placePlanItem(row.id, rank: row.rank, start: drag.value)
+      switch outcome {
+      case .ok(let message): state.toast = message ?? "已放到 \(DaySchedule.clock(drag.value))"
+      case .failed(let why), .unsupported(let why): state.toast = why
+      }
+    }
+  }
+
+  private func resize(_ row: DaySchedule.Row, by height: CGFloat) {
+    let base = (row.end ?? 0) - (row.start ?? 0)
+    let raw = base + Int((height / Timeline.pointsPerMinute).rounded())
+    drag = TimelineDrag(id: row.id, kind: .resize, value: max(15, TimelineDrag.snap(raw, step: 15)))
+  }
+
+  private func commitResize(_ row: DaySchedule.Row) {
+    guard let drag, drag.id == row.id, drag.kind == .resize else { return }
+    self.drag = nil
+    guard drag.value != (row.end ?? 0) - (row.start ?? 0) else { return }
+    // A partial row is drawn at half its estimate; what is stored is the whole.
+    let estimate = row.item.state == .partial ? drag.value * 2 : drag.value
+    Task {
+      let outcome = await state.setPlanEstimate(candidateID: row.id, rank: row.rank, minutes: estimate)
+      switch outcome {
+      case .ok(let message): state.toast = message ?? "已改为 \(DaySchedule.duration(estimate))"
+      case .failed(let why), .unsupported(let why): state.toast = why
+      }
+    }
+  }
+
+  private func unpin(_ row: DaySchedule.Row) {
+    Task {
+      let outcome = await state.placePlanItem(row.id, rank: row.rank, start: nil)
+      switch outcome {
+      case .ok(let message): state.toast = message ?? "已取消固定"
+      case .failed(let why), .unsupported(let why): state.toast = why
+      }
+    }
   }
 
   private var subtitle: String {
     let start = DayStart.resolve(generatedAt: state.planGeneratedAt, workStart: state.planWorkStartMinute)
-    return "从 \(DaySchedule.clock(start)) 起按估时顺推，绕开固定日程 · 拖动换顺序，时段跟着重算"
+    return "拖到任意钟点（吸附到半点），拖下边缘改时长 · 没拖过的从 \(DaySchedule.clock(start)) 起按估时自动排"
   }
 
   /// Whole hours from the first thing on the day to the last, so the earliest
@@ -286,31 +381,6 @@ private struct CallSheetPanel: View {
     }
   }
 
-  private func dropEdge(for index: Int) -> CallSheetRow.DropEdge? {
-    guard let dropIndex else { return nil }
-    if dropIndex == index { return .top }
-    if dropIndex == index + 1 && index == schedule.rows.count - 1 { return .bottom }
-    return nil
-  }
-
-  /// Reorder inside the plan only.
-  ///
-  /// Inbox captures live in a different ledger with a different id space and no
-  /// concept of rank; letting one be dragged into the middle of the plan would
-  /// produce an order the service cannot store and that vanishes on reload.
-  private func move(from id: String, to index: Int) {
-    guard state.plan.contains(where: { $0.id == id }) else {
-      state.toast = "随手记的条目排在计划后面，暂时不能拖进计划里。"
-      return
-    }
-    let order = withAnimation(.snappy(duration: 0.28)) {
-      state.movePlanItem(id, before: min(index, state.plan.count))
-    }
-    Task {
-      if case .failed(let why) = await state.savePlanOrder(order) { state.toast = why }
-    }
-  }
-
   /// Move every late row to the end of the plan, in the order they were late.
   ///
   /// Only the order changes — a late row stays `open`. The banner's offer is
@@ -322,6 +392,11 @@ private struct CallSheetPanel: View {
       state.plan.contains { $0.id == id }
     }
     guard !ids.isEmpty else { return }
+    // A late row the user pinned would stay where it was; release it so it
+    // follows the others to the end of the queue.
+    for row in schedule.lateRows where row.item.pinnedStart != nil {
+      Task { _ = await state.placePlanItem(row.id, rank: row.rank, start: nil) }
+    }
     var order = state.plan.map(\.id)
     withAnimation(.snappy(duration: 0.28)) {
       for id in ids { order = state.movePlanItem(id, before: state.plan.count) }
@@ -350,7 +425,6 @@ private struct CallSheetPanel: View {
 
 /// 时段 | 圆圈 | 任务 | 来源
 private struct CallSheetRow: View {
-  enum DropEdge { case top, bottom }
 
   @Environment(AppState.self) private var state
   let row: DaySchedule.Row
@@ -358,7 +432,13 @@ private struct CallSheetRow: View {
   /// status. See `RowActionBar.allowed`.
   let isPlanRow: Bool
   @Binding var selectedID: TodoItem.ID?
-  var dropEdge: DropEdge?
+  /// Set when the row is pinned to a time; releases it to automatic layout.
+  var onUnpin: (() -> Void)?
+  /// Sharing the width with an overlapping block. The fixed-width pieces — the
+  /// source column, and the hover controls that keep their space while
+  /// invisible — would leave the task text no room at all, so the source goes
+  /// and the controls only take space while they are showing.
+  var compact = false
 
   @State private var isHovering = false
   // Restored after the call-sheet rewrite dropped them (74ef388): the old
@@ -431,11 +511,6 @@ private struct CallSheetRow: View {
     .contentShape(Rectangle())
     .onHover { isHovering = $0 }
     .onTapGesture { selectedID = item.id }
-    .overlay(alignment: dropEdge == .bottom ? .bottom : .top) {
-      if dropEdge != nil {
-        Capsule().fill(Palette.mint400).frame(height: 2).transition(.opacity)
-      }
-    }
     .confirmationDialog("删除这一条？", isPresented: $isConfirmingDelete) {
       Button("删除", role: .destructive, action: remove)
       Button("取消", role: .cancel) {}
@@ -464,7 +539,8 @@ private struct CallSheetRow: View {
           .font(Typo.body.weight(.medium))
           .foregroundStyle(tint.ink)
           .strikethrough(isResolved, color: Palette.ink3)
-          .fixedSize(horizontal: false, vertical: true)
+          .lineLimit(compact ? 2 : nil)
+          .fixedSize(horizontal: false, vertical: !compact)
         HStack(spacing: Metrics.xs) {
           estimateLabel
           if isMIT {
@@ -506,20 +582,37 @@ private struct CallSheetRow: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
 
-      if isEditable {
-        noteButton
+      if !compact || isHovering || selectedID == item.id {
+        if isEditable {
+          noteButton
+        }
+
+        RowActionBar(
+          state: item.state,
+          isVisible: isHovering || selectedID == item.id,
+          allowed: isPlanRow ? [.done, .partial, .deferred, .open] : [.done, .deferred, .open],
+          set: set
+        )
+
+        deleteButton
       }
 
-      RowActionBar(
-        state: item.state,
-        isVisible: isHovering || selectedID == item.id,
-        allowed: isPlanRow ? [.done, .partial, .deferred, .open] : [.done, .deferred, .open],
-        set: set
-      )
+      if let onUnpin {
+        Button(action: onUnpin) {
+          Image(systemName: "pin.fill")
+            .font(.system(size: 9, weight: .semibold))
+            .frame(width: 20, height: 20)
+            .foregroundStyle(tint.ink.opacity(0.8))
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help("固定在这个钟点 · 点一下取消固定，回到自动排")
+        .accessibilityLabel("取消固定")
+      }
 
-      deleteButton
-
-      source
+      if !compact {
+        source
+      }
     }
   }
 
@@ -600,6 +693,8 @@ private struct CallSheetRow: View {
   private var slot: some View {
     Text(row.start.map(DaySchedule.clock) ?? "—")
       .font(Typo.caption)
+      .lineLimit(1)
+      .fixedSize()
       .foregroundStyle(row.isLate ? Palette.mint600 : tint.ink.opacity(0.8))
       .monospacedDigit()
       .frame(width: 40, alignment: .leading)
@@ -700,6 +795,8 @@ private enum Timeline {
   /// The hour column.
   static let gutter: CGFloat = 52
   static let labelHeight: CGFloat = 14
+  /// The coordinate space drags are measured in: the top of the timeline.
+  static let space = "today.timeline"
 
   static func y(_ minute: Int, from origin: Int) -> CGFloat {
     CGFloat(minute - origin) * pointsPerMinute
@@ -708,12 +805,95 @@ private enum Timeline {
 
 private extension View {
   /// Place a block on the clock: offset to its start, exactly as tall as its
-  /// length (less a hairline gap), content clipped like a calendar's.
-  func timelineSlot(start: Int, end: Int, origin: Int) -> some View {
-    frame(height: max(Timeline.y(end, from: start) - 2, 12), alignment: .top)
+  /// length (less a hairline gap), content clipped like a calendar's. Blocks
+  /// that overlap split the lane into side-by-side columns.
+  func timelineSlot(start: Int, end: Int, origin: Int, lane: CGFloat, placement: TimelineColumns.Placement?) -> some View {
+    let count = CGFloat(placement?.count ?? 1)
+    let column = CGFloat(placement?.column ?? 0)
+    return frame(width: max(lane / count - (count > 1 ? 2 : 0), 24), height: max(Timeline.y(end, from: start) - 2, 12), alignment: .top)
+      // Opaque under the tint, so the hour rules do not run through blocks.
+      .background(Palette.page)
       .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-      .padding(.leading, Timeline.gutter)
-      .offset(y: Timeline.y(start, from: origin) + 1)
+      .offset(x: Timeline.gutter + column * lane / count, y: Timeline.y(start, from: origin) + 1)
+  }
+}
+
+/// A move or a resize in progress. `value` is the snapped start for a move and
+/// the snapped length for a resize, in minutes.
+private struct TimelineDrag: Equatable {
+  enum Kind { case move, resize }
+  let id: String
+  let kind: Kind
+  let value: Int
+
+  /// Nearest multiple of `step`, kept inside the day.
+  static func snap(_ minute: Int, step: Int) -> Int {
+    let snapped = Int((Double(minute) / Double(step)).rounded()) * step
+    return min(max(snapped, 0), 24 * 60 - step)
+  }
+}
+
+/// The strip along a block's bottom edge that drags its length.
+private struct ResizeHandle: View {
+  let onChanged: (CGFloat) -> Void
+  let onEnded: () -> Void
+  @State private var isHovering = false
+
+  var body: some View {
+    Rectangle()
+      .fill(Color.clear)
+      .frame(height: 6)
+      .frame(maxWidth: .infinity)
+      .overlay(alignment: .center) {
+        Capsule().fill(Palette.ink3.opacity(isHovering ? 0.5 : 0)).frame(width: 28, height: 3)
+      }
+      .contentShape(Rectangle())
+      .onHover { inside in
+        isHovering = inside
+        if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
+      }
+      .gesture(
+        DragGesture(minimumDistance: 1, coordinateSpace: .named(Timeline.space))
+          .onChanged { onChanged($0.translation.height) }
+          .onEnded { _ in onEnded() }
+      )
+      .help("拖动改时长，15 分钟一档")
+  }
+}
+
+/// The time a drag would land on, shown on the block while it moves.
+private struct DragReadout: View {
+  let drag: TimelineDrag
+
+  var body: some View {
+    Text(drag.kind == .move ? "放到 \(DaySchedule.clock(drag.value))" : DaySchedule.duration(drag.value))
+      .font(Typo.caption.weight(.semibold))
+      .monospacedDigit()
+      .foregroundStyle(Palette.mint800)
+      .padding(.horizontal, Metrics.xs)
+      .padding(.vertical, 2)
+      .background(Palette.mint200, in: Capsule())
+      .padding(Metrics.xxs)
+  }
+}
+
+/// Where a row dragged up from below the timeline would land.
+private struct DropGhost: View {
+  let text: String
+
+  var body: some View {
+    Text(text)
+      .font(Typo.body.weight(.medium))
+      .foregroundStyle(Palette.mint800)
+      .padding(.horizontal, Metrics.sm)
+      .padding(.vertical, Metrics.xs)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      .background(Palette.mint100.opacity(0.7))
+      .overlay {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+          .strokeBorder(Palette.mint600, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+      }
+      .allowsHitTesting(false)
   }
 }
 
@@ -1452,40 +1632,6 @@ private struct QuickCapturePanel: View {
   }
 }
 
-
-private struct PlanDropDelegate: DropDelegate {
-  let index: Int
-  @Binding var dropIndex: Int?
-  let onDrop: (String, Int) -> Void
-
-  func dropEntered(info: DropInfo) {
-    withAnimation(.snappy(duration: 0.18)) { dropIndex = index }
-  }
-
-  func dropExited(info: DropInfo) {
-    // Only if this row still owns the line. Enter on the next row fires before
-    // exit on this one, so clearing unconditionally would erase a line that
-    // belongs to whatever the cursor has already moved onto.
-    if dropIndex == index {
-      withAnimation(.snappy(duration: 0.18)) { dropIndex = nil }
-    }
-  }
-
-  func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
-
-  func performDrop(info: DropInfo) -> Bool {
-    let destination = index
-    guard let provider = info.itemProviders(for: [.text]).first else { return false }
-    _ = provider.loadObject(ofClass: NSString.self) { value, _ in
-      guard let id = value as? String else { return }
-      Task { @MainActor in
-        dropIndex = nil
-        onDrop(id, destination)
-      }
-    }
-    return true
-  }
-}
 
 /// What the panel says between pressing 生成计划 and the plan existing.
 ///
