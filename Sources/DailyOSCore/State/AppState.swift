@@ -455,7 +455,8 @@ open class AppState {
   /// The last failure from a service action, for a screen to show inline.
   public var lastActionError: String?
 
-  /// Record feedback against one plan row: `complete` / `defer` / `update`.
+  /// Record feedback against one plan row: `complete` / `defer` / `update`, or
+  /// `remove` to take it off today's sheet.
   ///
   /// `rank` is part of the ledger key, not decoration — the feedback exists to
   /// tell the scorer how a ranked list performed, and an event without the rank

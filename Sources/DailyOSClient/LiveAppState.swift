@@ -435,11 +435,15 @@ public final class LiveAppState: AppState {
       case "partial": plan[index].state = .partial
       case "defer": plan[index].state = .deferred
       case "reopen": plan[index].state = .open
+      case "remove": plan.remove(at: index)
       default: break
       }
     }
     do {
       try await client.recordPlanFeedback(candidateID: candidateID, rank: rank, event: event, note: note)
+      // Removing a capture's row deletes the capture service-side (LEO-329);
+      // reload so 随手记 stops listing it.
+      if event == "remove" && candidateID.hasPrefix("todo_inbox:") { await reload() }
       return .ok(nil)
     } catch {
       let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
