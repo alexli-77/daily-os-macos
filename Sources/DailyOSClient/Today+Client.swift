@@ -48,25 +48,17 @@ struct StatePayload: Decodable {
 /// file the Today screen never reads.
 struct RhythmPayload: Decodable {
   let workingHours: ClockRangePayload?
-  let mealBlocks: [MealBlockPayload]?
   /// Today's routines and fixed meetings, already narrowed to today by the
   /// service. Absent on a service older than LEO-330.
   let fixedBlocks: [FixedBlockPayload]?
 
   enum CodingKeys: String, CodingKey {
     case workingHours = "working_hours"
-    case mealBlocks = "meal_blocks"
     case fixedBlocks = "fixed_blocks"
   }
 }
 
 struct ClockRangePayload: Decodable {
-  let start: String
-  let end: String
-}
-
-struct MealBlockPayload: Decodable {
-  let label: String
   let start: String
   let end: String
 }
@@ -271,12 +263,8 @@ extension DailyOSClient {
     let payload: StatePayload = try await get(statePath)
     guard let rhythm = payload.rhythm else { return (nil, []) }
     let workStart = rhythm.workingHours.flatMap { DayStart.minute(fromClock: $0.start) }
-    let meals: [DaySchedule.FixedBlock] = (rhythm.mealBlocks ?? []).compactMap { block in
-      guard let start = DayStart.minute(fromClock: block.start),
-            let end = DayStart.minute(fromClock: block.end),
-            end > start else { return nil }
-      return DaySchedule.FixedBlock(id: "meal:\(block.label):\(block.start)", label: block.label, start: start, end: end)
-    }
+    // Meals are not drawn as fixed blocks any more: the service puts them on
+    // today's sheet as rows the user can move, resize, tick or delete (LEO-332).
     let fixed: [DaySchedule.FixedBlock] = (rhythm.fixedBlocks ?? []).compactMap { block in
       guard let start = DayStart.minute(fromClock: block.start),
             let end = DayStart.minute(fromClock: block.end),
@@ -290,7 +278,7 @@ extension DailyOSClient {
         note: block.note.flatMap { $0.isEmpty ? nil : $0 }
       )
     }
-    return (workStart, (meals + fixed).sorted { $0.start < $1.start })
+    return (workStart, fixed.sorted { $0.start < $1.start })
   }
 
   private var statePath: String { "/api/state" }

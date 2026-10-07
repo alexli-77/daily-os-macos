@@ -30,6 +30,9 @@ public struct PlanSource: Sendable, Equatable {
       self.init(label: "随手记", isIssue: false)
     case "vault":
       self.init(label: "笔记", isIssue: false)
+    case "rhythm":
+      // Meal rows the service adds to today's sheet (LEO-332).
+      self.init(label: "作息", isIssue: false)
     default:
       self.init(label: "日程", isIssue: false)
     }

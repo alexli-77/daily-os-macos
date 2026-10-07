@@ -87,8 +87,9 @@ open class AppState {
   /// `user.rhythm.working_hours.start` (minutes from midnight). `nil` falls back
   /// to the plan timestamp — see `DayStart`.
   public var planWorkStartMinute: Int?
-  /// Fixed bands the schedule flows tasks around — meals (`user.rhythm.meal_blocks`)
-  /// and today's routines and meetings (`fixed_blocks`) — in start order.
+  /// Fixed bands the schedule flows tasks around — today's routines and
+  /// meetings (`fixed_blocks`) — in start order. Meals are no longer here: the
+  /// service puts them on the sheet as rows (LEO-332).
   public var planMealBlocks: [DaySchedule.FixedBlock] = []
 
   /// When this app started a `daily_plan` run that has not produced a plan yet.
@@ -539,6 +540,16 @@ open class AppState {
     }
     plan[index].pinnedStart = start
     if start != nil && plan[index].estimatedMinutes == nil { plan[index].estimatedMinutes = 30 }
+    return .ok(nil)
+  }
+
+  /// Rewrite a plan row's text for today (LEO-332). Applied locally first; a
+  /// live store also records it.
+  open func editPlanText(candidateID: String, rank: Int, text: String) async -> ActionOutcome {
+    guard let index = plan.firstIndex(where: { $0.id == candidateID }) else {
+      return .failed("这条计划已经不在了。")
+    }
+    plan[index].text = text
     return .ok(nil)
   }
 
