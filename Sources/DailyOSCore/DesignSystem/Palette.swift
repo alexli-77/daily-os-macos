@@ -216,6 +216,23 @@ public enum Palette {
     Color(light: Color(hex: 0xA85843), dark: Color(hex: 0xD99A82)),
   ]
 
+  /// The colours a user can give a plan row (LEO-334), in picker order. The
+  /// names are the wire values the service stores.
+  public static let rowColorNames = ["red", "orange", "yellow", "green", "blue", "purple", "gray"]
+
+  public static func rowColor(_ name: String) -> Color? {
+    switch name {
+    case "red": q1
+    case "orange": Color(light: Color(hex: 0xC2671F), dark: Color(hex: 0xE59A5C))
+    case "yellow": Color(light: Color(hex: 0x9C800E), dark: Color(hex: 0xDCC25A))
+    case "green": Color(light: Color(hex: 0x2E7D4F), dark: Color(hex: 0x6CC08F))
+    case "blue": series[1]
+    case "purple": series[3]
+    case "gray": ink3
+    default: nil
+    }
+  }
+
   /// Wraps, so a seventh item is drawn rather than dropped.
   public static func series(_ index: Int) -> Color {
     series[((index % series.count) + series.count) % series.count]

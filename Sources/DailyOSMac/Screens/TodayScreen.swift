@@ -446,13 +446,12 @@ private struct CallSheetRow: View {
   // the call sheet is *more* dependent on the estimate than the list was —
   // every slot below a row is pushed by it.
   @State private var isEditingEstimate = false
-  @State private var isNoting = false
-  @State private var note = ""
   @State private var isConfirmingDelete = false
-  /// Rewriting the row's text in place (LEO-332).
-  @State private var isEditingText = false
-  @State private var draftText = ""
-  @FocusState private var textFocused: Bool
+  /// The row editor (LEO-334): click the text, edit text / colour / an update.
+  @State private var isEditingRow = false
+  @State private var editText = ""
+  @State private var editColor: String?
+  @State private var editNote = ""
 
   private var item: TodoItem { row.item }
   private var isEditable: Bool { item.state == .open || item.state == .partial }
@@ -486,27 +485,60 @@ private struct CallSheetRow: View {
   }
 
   private var tint: BlockTint {
-    isResolved ? .resolved : BlockTint.forTask(candidateID: item.id)
+    if isResolved { return .resolved }
+    return item.colorTag.flatMap(BlockTint.named) ?? BlockTint.forTask(candidateID: item.id)
+  }
+
+  /// The right-hand column is the same width on every row, so every title
+  /// wraps at the same place (LEO-334). Sized for the widest case: the hover
+  /// controls, the estimate, MIT, the pin and a Linear key.
+  private static let trailingWidth: CGFloat = 300
+
+  /// One line for the row's state, kept right under the title.
+  private var statusText: (text: String, color: Color)? {
+    if row.isLate { return ("已过时段 · 还没更新", Palette.mint600) }
+    if item.state == .deferred { return ("顺到明天", Palette.ink3) }
+    if item.state == .partial { return ("做了一部分 · 时段按一半算", Palette.ink3) }
+    // A capture is written straight onto the sheet and stays until it is done.
+    // Saying which day it came from is what separates "still not done" from
+    // "new today" — without it a week-old row looks fresh.
+    if let carried = carriedLabel { return (carried, Palette.mint600) }
+    return nil
+  }
+
+  /// Half-hour blocks are 46pt: a title line and the status line only fit
+  /// with the padding tightened.
+  private var verticalPadding: CGFloat {
+    (row.minutes ?? 60) <= 30 && row.start != nil ? Metrics.xxs : Metrics.xs
+  }
+
+  /// As many title lines as the block has room for once the status line is
+  /// kept, at most two (LEO-334). A long title used to push the status line out
+  /// of the block, where it was clipped away.
+  private var titleLines: Int {
+    guard row.start != nil, let minutes = row.minutes else { return 2 }
+    let inside = CGFloat(minutes) * Timeline.pointsPerMinute - 2 - 2 * verticalPadding
+    let reserved: CGFloat = statusText == nil ? 0 : 16
+    return max(1, min(2, Int((inside - reserved) / 18)))
   }
 
   var body: some View {
     mainLine
     .padding(.horizontal, Metrics.sm)
-    .padding(.vertical, Metrics.xs)
+    .padding(.vertical, verticalPadding)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .background(tint.fill)
     // Popovers, not inline editors: on the timeline a block is exactly as tall
     // as its slot, and an editor growing inside it would be clipped away.
-    .popover(isPresented: noteBinding, arrowEdge: .bottom) {
-      InlineField(
-        placeholder: "记一条更新（可留空）",
-        text: $note,
-        confirm: "记下",
-        onConfirm: sendNote,
-        onCancel: closeEditors
+    .popover(isPresented: rowEditorBinding, arrowEdge: .trailing) {
+      RowEditor(
+        text: $editText,
+        color: $editColor,
+        note: $editNote,
+        autoColor: BlockTint.forTask(candidateID: item.id).ink,
+        onCancel: { isEditingRow = false },
+        onSave: saveEdits
       )
-      .padding(Metrics.sm)
-      .frame(width: 320)
     }
     .popover(isPresented: estimateBinding, arrowEdge: .bottom) {
       EstimateEditor(item: item, rank: row.rank) {
@@ -527,12 +559,13 @@ private struct CallSheetRow: View {
     }
   }
 
-  private var noteBinding: Binding<Bool> {
-    Binding(get: { isNoting && isEditable }, set: { if !$0 { closeEditors() } })
+  /// Clicking away saves, like Calendar; 取消 closes without going through here.
+  private var rowEditorBinding: Binding<Bool> {
+    Binding(get: { isEditingRow }, set: { if !$0 && isEditingRow { saveEdits() } })
   }
 
   private var estimateBinding: Binding<Bool> {
-    Binding(get: { isEditingEstimate && isEditable }, set: { if !$0 { closeEditors() } })
+    Binding(get: { isEditingEstimate && isEditable }, set: { if !$0 { isEditingEstimate = false } })
   }
 
   private var mainLine: some View {
@@ -544,20 +577,8 @@ private struct CallSheetRow: View {
 
       VStack(alignment: .leading, spacing: 2) {
         title
-        if row.isLate {
-          Text("已过时段 · 还没更新").font(Typo.caption).foregroundStyle(Palette.mint600)
-        }
-        if item.state == .deferred {
-          Text("顺到明天").font(Typo.caption).foregroundStyle(Palette.ink3)
-        }
-        if item.state == .partial {
-          Text("做了一部分 · 时段按一半算").font(Typo.caption).foregroundStyle(Palette.ink3)
-        }
-        if let carried = carriedLabel {
-          // A capture is written straight onto the sheet and stays until it is
-          // done. Saying which day it came from is what separates "still not
-          // done" from "new today" — without it a week-old row looks fresh.
-          Text(carried).font(Typo.caption).foregroundStyle(Palette.mint600)
+        if let status = statusText {
+          Text(status.text).font(Typo.caption).foregroundStyle(status.color).lineLimit(1)
         }
         if let note = item.note, !note.isEmpty {
           // What 记一条更新 wrote. It used to vanish on save — the ledger kept
@@ -574,11 +595,16 @@ private struct CallSheetRow: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
 
-      if !compact || isHovering || selectedID == item.id {
-        if isEditable {
-          noteButton
-        }
+      trailing
+        .frame(width: compact ? nil : Self.trailingWidth, alignment: .topTrailing)
+    }
+  }
 
+  /// Controls, estimate, MIT, pin and source, packed against the right edge so
+  /// nothing floats in the middle of the row (LEO-334).
+  private var trailing: some View {
+    HStack(alignment: .top, spacing: Metrics.xs) {
+      if !compact || isHovering || selectedID == item.id {
         // No ✓: the circle on the left is complete. 恢复未做 only once there is
         // something to undo — on an untouched row it was a lit button that did
         // nothing (LEO-332).
@@ -622,6 +648,7 @@ private struct CallSheetRow: View {
 
       if !compact {
         source
+          .padding(.top, 2)
       }
     }
   }
@@ -632,76 +659,48 @@ private struct CallSheetRow: View {
     return states
   }
 
-  /// The row's text. Click it to rewrite it in place: Return or clicking away
-  /// saves, Escape cancels. The edit is today's wording for this row; a Linear
-  /// issue or cycle priority keeps its own (LEO-332).
-  @ViewBuilder private var title: some View {
-    if isEditingText {
-      TextField("这一条要做什么", text: $draftText, axis: .vertical)
-        .textFieldStyle(.plain)
-        .font(Typo.label)
-        .foregroundStyle(Palette.ink)
-        .lineLimit(1...3)
-        .focused($textFocused)
-        .onSubmit(saveText)
-        .onExitCommand { isEditingText = false }
-        .onChange(of: textFocused) { _, focused in if !focused && isEditingText { saveText() } }
-        .onAppear { textFocused = true }
-    } else {
-      Text(item.text)
-        .font(Typo.label)
-        .foregroundStyle(tint.ink)
-        .strikethrough(isResolved, color: Palette.ink3)
-        .lineLimit(compact ? 2 : nil)
-        .fixedSize(horizontal: false, vertical: !compact)
-        .contentShape(Rectangle())
-        .onTapGesture {
-          selectedID = item.id
-          draftText = item.text
-          isEditingText = true
-        }
-        .help("点一下改这一条")
-    }
+  /// The row's text, at most as many lines as the block has room for. Click it
+  /// to open the row editor (LEO-334).
+  private var title: some View {
+    Text(item.text)
+      .font(Typo.label)
+      .foregroundStyle(tint.ink)
+      .strikethrough(isResolved, color: Palette.ink3)
+      .lineLimit(titleLines)
+      .truncationMode(.tail)
+      // Without this the stack hands the title less height than its lines need
+      // and a two-line title collapses to one.
+      .fixedSize(horizontal: false, vertical: true)
+      .contentShape(Rectangle())
+      .onTapGesture(perform: openEditor)
+      .help("点一下编辑这一条")
   }
 
-  private func saveText() {
-    isEditingText = false
-    let text = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty, text != item.text else { return }
+  private func openEditor() {
+    selectedID = item.id
+    editText = item.text
+    editColor = item.colorTag
+    editNote = ""
+    isEditingRow = true
+  }
+
+  /// Sends only what changed, as one `update`. The edit is today's version of
+  /// this row; a Linear issue or cycle priority keeps its own (LEO-332).
+  private func saveEdits() {
+    isEditingRow = false
+    let text = editText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let note = editNote.trimmingCharacters(in: .whitespacesAndNewlines)
+    let newText = !text.isEmpty && text != item.text ? text : nil
+    let newColor = editColor != item.colorTag ? (editColor ?? "auto") : nil
+    let newNote = note.isEmpty ? nil : note
+    guard newText != nil || newColor != nil || newNote != nil else { return }
     Task {
-      let outcome = await state.editPlanText(candidateID: item.id, rank: row.rank, text: text)
+      let outcome = await state.updatePlanRow(candidateID: item.id, rank: row.rank, text: newText, color: newColor, note: newNote)
       switch outcome {
       case .ok(let message): state.toast = message ?? "已改好"
       case .failed(let why), .unsupported(let why): state.toast = why
       }
     }
-  }
-
-  /// 更新 — same look as the state buttons beside it, same fade-in, and like
-  /// them it stays in the hierarchy when hidden so the keyboard can reach it.
-  private var noteButton: some View {
-    let visible = isHovering || selectedID == item.id || isNoting
-    return Button {
-      withAnimation(.snappy(duration: 0.2)) {
-        isNoting.toggle()
-        if isNoting { isEditingEstimate = false }
-      }
-    } label: {
-      Image(systemName: "square.and.pencil")
-        .font(.system(size: 10, weight: .semibold))
-        .frame(width: 20, height: 20)
-        .foregroundStyle(isNoting ? Palette.mint800 : Palette.ink3)
-        .background(isNoting ? Palette.mint200 : .clear, in: Circle())
-        .contentShape(Circle())
-    }
-    .buttonStyle(.plain)
-    .help("记一条更新")
-    .accessibilityLabel("记一条更新")
-    // No bare-key shortcut: with one per row, and the quick-capture field on
-    // the same screen, a plain "e" would fire while you are typing.
-    .allowsHitTesting(visible)
-    .opacity(visible ? 1 : 0)
-    .animation(.easeOut(duration: 0.12), value: visible)
   }
 
   /// 删除 — fades in with the other row controls. Asks first: for a capture it
@@ -769,10 +768,7 @@ private struct CallSheetRow: View {
     let text = (row.minutes ?? item.estimatedMinutes).map(DaySchedule.duration) ?? "没估时"
     if isEditable {
       Button {
-        withAnimation(.snappy(duration: 0.2)) {
-          isEditingEstimate.toggle()
-          if isEditingEstimate { isNoting = false }
-        }
+        withAnimation(.snappy(duration: 0.2)) { isEditingEstimate.toggle() }
       } label: {
         HStack(spacing: 2) {
           Text(text)
@@ -790,28 +786,6 @@ private struct CallSheetRow: View {
     }
   }
 
-  private func closeEditors() {
-    withAnimation(.snappy(duration: 0.2)) {
-      isNoting = false
-      isEditingEstimate = false
-    }
-    note = ""
-  }
-
-  private func sendNote() {
-    let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
-    closeEditors()
-    Task {
-      let outcome = await state.planFeedback(
-        candidateID: item.id, rank: row.rank, event: "update", note: trimmed.isEmpty ? nil : trimmed
-      )
-      state.toast = switch outcome {
-      case .ok: "已记录"
-      case .failed(let why), .unsupported(let why): why
-      }
-    }
-  }
-
   /// Linear key / 要务 / 随手记 — see `PlanSource`. Only an issue key is
   /// styled as a reference; the others are categories, not links.
   private var source: some View {
@@ -820,7 +794,8 @@ private struct CallSheetRow: View {
       .font(Typo.caption)
       .foregroundStyle(source.isIssue ? Palette.ink2 : Palette.ink3)
       .underline(source.isIssue, pattern: .dot)
-      .frame(width: 100, alignment: .trailing)
+      .lineLimit(1)
+      .fixedSize()
   }
 
   private func set(_ target: TodoState) {
@@ -845,6 +820,90 @@ private struct CallSheetRow: View {
     } else {
       state.setTodo(item.id, to: target)
     }
+  }
+}
+
+// MARK: - Row editor
+
+/// What clicking a row's text opens (LEO-334), after Calendar's event popover:
+/// the text, a colour for today, and an update to leave on the row.
+private struct RowEditor: View {
+  @Binding var text: String
+  /// Nil = coloured by source.
+  @Binding var color: String?
+  @Binding var note: String
+  /// The colour the row has when none is chosen, for the 按来源 swatch.
+  let autoColor: Color
+  let onCancel: () -> Void
+  let onSave: () -> Void
+
+  /// Matches the service's cap and the daily_plan prompt's rule.
+  static let maxLength = 40
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Metrics.sm) {
+      VStack(alignment: .trailing, spacing: 2) {
+        TextField("这一条要做什么", text: $text, axis: .vertical)
+          .textFieldStyle(.plain)
+          .font(Typo.bodyStrong)
+          .lineLimit(1...4)
+          .onChange(of: text) { _, new in
+            if new.count > Self.maxLength { text = String(new.prefix(Self.maxLength)) }
+          }
+        Text("\(text.count)/\(Self.maxLength)")
+          .font(Typo.caption)
+          .monospacedDigit()
+          .foregroundStyle(text.count >= Self.maxLength ? Palette.warn : Palette.ink3)
+      }
+      .padding(Metrics.sm)
+      .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+      VStack(alignment: .leading, spacing: Metrics.xxs) {
+        Text("颜色 · 只对今天").font(Typo.caption).foregroundStyle(Palette.ink3)
+        HStack(spacing: Metrics.xs) {
+          swatch(autoColor, selected: color == nil, label: "按来源") { color = nil }
+          ForEach(Palette.rowColorNames, id: \.self) { name in
+            swatch(Palette.rowColor(name) ?? Palette.ink3, selected: color == name, label: name) { color = name }
+          }
+        }
+      }
+
+      VStack(alignment: .leading, spacing: Metrics.xxs) {
+        Text("添加更新").font(Typo.caption).foregroundStyle(Palette.ink3)
+        TextField("做到哪一步了、卡在哪（可留空）", text: $note, axis: .vertical)
+          .textFieldStyle(.roundedBorder)
+          .lineLimit(1...3)
+      }
+
+      HStack {
+        Spacer()
+        Button("取消", action: onCancel)
+          .buttonStyle(QuietButtonStyle(tone: .neutral))
+          .keyboardShortcut(.cancelAction)
+        Button("保存", action: onSave)
+          .buttonStyle(MossButtonStyle(prominent: true))
+          .keyboardShortcut(.defaultAction)
+      }
+    }
+    .padding(Metrics.md)
+    .frame(width: 340)
+  }
+
+  private func swatch(_ fill: Color, selected: Bool, label: String, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      Circle()
+        .fill(fill)
+        .frame(width: 18, height: 18)
+        .overlay {
+          Circle().strokeBorder(Palette.ink, lineWidth: selected ? 2 : 0).padding(-3)
+        }
+        .padding(3)
+        .contentShape(Circle())
+    }
+    .buttonStyle(.plain)
+    .help(label)
+    .accessibilityLabel(label)
+    .accessibilityAddTraits(selected ? [.isSelected] : [])
   }
 }
 
@@ -1031,6 +1090,11 @@ struct BlockTint {
     // Meal rows (`rhythm:`) and anything unknown.
     default: .routine
     }
+  }
+
+  /// A colour the user picked for the row today (LEO-334).
+  static func named(_ name: String) -> BlockTint? {
+    Palette.rowColor(name).map { BlockTint(fill: $0.opacity(0.16), ink: $0) }
   }
 
   static func forBlock(_ kind: DaySchedule.FixedBlock.Kind) -> BlockTint {
