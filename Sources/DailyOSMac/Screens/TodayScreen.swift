@@ -113,6 +113,7 @@ struct TodayScreen: View {
   /// work shown twice — what is left here is what the sheet no longer carries.
   @ViewBuilder private var rail: some View {
     VStack(alignment: .leading, spacing: Metrics.md) {
+      DayTimePanel(schedule: schedule, blocks: state.planMealBlocks)
       QuickCapturePanel()
       TodoPanel(selectedID: $selectedTaskID)
       TeamTodayPanel()
@@ -198,57 +199,79 @@ private struct CallSheetPanel: View {
     .onChange(of: state.plan.map(\.id)) { dropIndex = nil }
   }
 
+  /// The day on a clock (LEO-330): every hour is the same height, so a block's
+  /// height *is* its length and a 15-minute break is a sliver. Tasks sit at the
+  /// slots the schedule projects from order + estimates; meals, routines and
+  /// fixed meetings sit at their own wall-clock times. Dragging a task still
+  /// reorders the plan, and the slots follow.
   @ViewBuilder private var sheet: some View {
-    VStack(spacing: 0) {
-      ForEach(Array(schedule.rows.enumerated()), id: \.element.id) { index, row in
-        // Meal / break bands sit at their wall-clock time, before the task the
-        // schedule pushed past them. Display-only — they are not in `rows`, so
-        // drag indices and the now-line are untouched.
-        ForEach(mealsBefore(rowIndex: index)) { meal in
-          MealRow(block: meal)
-          Rectangle().fill(Palette.rule).frame(height: Metrics.hairline)
+    let range = timelineRange
+    let slotted = schedule.rows.enumerated().filter { $0.element.start != nil && $0.element.end != nil }
+    let unslotted = schedule.rows.enumerated().filter { $0.element.start == nil || $0.element.end == nil }
+    VStack(alignment: .leading, spacing: Metrics.sm) {
+      ZStack(alignment: .topLeading) {
+        HourGrid(range: range)
+        ForEach(state.planMealBlocks.filter { $0.end > range.lowerBound && $0.start < range.upperBound }) { block in
+          FixedBlockView(block: block)
+            .timelineSlot(start: block.start, end: block.end, origin: range.lowerBound)
         }
-        if index == schedule.nowIndex && !schedule.isClear {
-          NowLine(minute: schedule.now)
+        ForEach(slotted, id: \.element.id) { index, row in
+          taskRow(index: index, row: row)
+            .timelineSlot(start: row.start ?? 0, end: row.end ?? 0, origin: range.lowerBound)
         }
-        CallSheetRow(
-          row: row,
-          isPlanRow: index < state.plan.count,
-          selectedID: $selectedID,
-          dropEdge: dropEdge(for: index)
-        )
-        .transition(.taskRow)
-        .onDrag { NSItemProvider(object: row.item.id as NSString) }
-        .onDrop(
-          of: [.text],
-          delegate: PlanDropDelegate(index: index, dropIndex: $dropIndex, onDrop: move)
-        )
-        if index < schedule.rows.count - 1 {
-          Rectangle().fill(Palette.rule).frame(height: Metrics.hairline)
+        if !schedule.isClear && range.contains(schedule.now) {
+          NowMarker(minute: schedule.now)
+            .offset(y: Timeline.y(schedule.now, from: range.lowerBound) - Timeline.labelHeight / 2)
         }
       }
-      // The line belongs after the last row when the whole day is behind you.
-      if schedule.nowIndex >= schedule.rows.count && !schedule.isClear {
-        NowLine(minute: schedule.now)
+      .frame(
+        maxWidth: .infinity,
+        minHeight: Timeline.y(range.upperBound, from: range.lowerBound),
+        alignment: .topLeading
+      )
+      if !unslotted.isEmpty {
+        // Deferred rows and rows with no estimate have no slot to sit in. They
+        // stay draggable — dropping one into the day gives it a place in line.
+        VStack(alignment: .leading, spacing: Metrics.xxs) {
+          Text("没排进时间轴").font(Typo.caption).foregroundStyle(Palette.ink3)
+          ForEach(unslotted, id: \.element.id) { index, row in
+            taskRow(index: index, row: row)
+          }
+        }
+        .padding(.leading, Timeline.gutter)
       }
       if schedule.isClear { ClearState(schedule: schedule) }
     }
   }
 
-  private var subtitle: String {
-    let start = DayStart.resolve(generatedAt: state.planGeneratedAt, workStart: state.planWorkStartMinute)
-    return "从 \(DaySchedule.clock(start)) 起按估时顺推 · 拖动换顺序，时段跟着重算"
+  private func taskRow(index: Int, row: DaySchedule.Row) -> some View {
+    CallSheetRow(
+      row: row,
+      isPlanRow: index < state.plan.count,
+      selectedID: $selectedID,
+      dropEdge: dropEdge(for: index)
+    )
+    .transition(.taskRow)
+    .onDrag { NSItemProvider(object: row.item.id as NSString) }
+    .onDrop(
+      of: [.text],
+      delegate: PlanDropDelegate(index: index, dropIndex: $dropIndex, onDrop: move)
+    )
   }
 
-  /// Meals that belong immediately before task row `rowIndex` — those starting
-  /// after the previous timed row and before this one. Each band lands in exactly
-  /// one slot: a later row's previous-start floor excludes it.
-  private func mealsBefore(rowIndex: Int) -> [DaySchedule.FixedBlock] {
-    guard let thisStart = schedule.rows[rowIndex].start else { return [] }
-    let prevStart = schedule.rows[..<rowIndex].last(where: { $0.start != nil })?.start
-    return schedule.fixedBlocks.filter { meal in
-      meal.start < thisStart && (prevStart.map { meal.start >= $0 } ?? true)
-    }
+  private var subtitle: String {
+    let start = DayStart.resolve(generatedAt: state.planGeneratedAt, workStart: state.planWorkStartMinute)
+    return "从 \(DaySchedule.clock(start)) 起按估时顺推，绕开固定日程 · 拖动换顺序，时段跟着重算"
+  }
+
+  /// Whole hours from the first thing on the day to the last, so the earliest
+  /// routine and the projected end both fit.
+  private var timelineRange: ClosedRange<Int> {
+    let starts = state.planMealBlocks.map(\.start) + schedule.rows.compactMap(\.start)
+    let ends = state.planMealBlocks.map(\.end) + schedule.rows.compactMap(\.end)
+    let lower = max(0, (starts.min() ?? schedule.now) / 60 * 60)
+    let upper = min(24 * 60, ((ends.max() ?? lower) + 59) / 60 * 60)
+    return lower...max(upper, lower + 60)
   }
 
   private var isRunning: Bool { state.planRunStartedAt != nil }
@@ -374,31 +397,37 @@ private struct CallSheetRow: View {
     return days == 1 ? "昨天没做完" : "已顺延 \(days) 天"
   }
 
+  private var tint: BlockTint {
+    isResolved ? .resolved : BlockTint.forTask(candidateID: item.id)
+  }
+
   var body: some View {
-    VStack(alignment: .leading, spacing: Metrics.xs) {
-      mainLine
-      if isNoting && isEditable {
-        // Inline rather than a dialog: a modal for one optional sentence is
-        // heavier than the sentence.
-        InlineField(
-          placeholder: "记一条更新（可留空）",
-          text: $note,
-          confirm: "记下",
-          onConfirm: sendNote,
-          onCancel: closeEditors
-        )
-        .padding(.leading, Self.textInset)
-        .transition(.opacity)
-      }
-      if isEditingEstimate && isEditable {
-        EstimateEditor(item: item, rank: row.rank) {
-          withAnimation(.snappy(duration: 0.2)) { isEditingEstimate = false }
-        }
-        .padding(.leading, Self.textInset)
-        .transition(.opacity)
-      }
+    mainLine
+    .padding(.horizontal, Metrics.sm)
+    .padding(.vertical, Metrics.xs)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .background(tint.fill)
+    // Popovers, not inline editors: on the timeline a block is exactly as tall
+    // as its slot, and an editor growing inside it would be clipped away.
+    .popover(isPresented: noteBinding, arrowEdge: .bottom) {
+      InlineField(
+        placeholder: "记一条更新（可留空）",
+        text: $note,
+        confirm: "记下",
+        onConfirm: sendNote,
+        onCancel: closeEditors
+      )
+      .padding(Metrics.sm)
+      .frame(width: 320)
     }
-    .padding(.vertical, Metrics.sm)
+    .popover(isPresented: estimateBinding, arrowEdge: .bottom) {
+      EstimateEditor(item: item, rank: row.rank) {
+        withAnimation(.snappy(duration: 0.2)) { isEditingEstimate = false }
+      }
+      .padding(Metrics.sm)
+      .frame(width: 420)
+      .environment(state)
+    }
     .contentShape(Rectangle())
     .onHover { isHovering = $0 }
     .onTapGesture { selectedID = item.id }
@@ -415,9 +444,13 @@ private struct CallSheetRow: View {
     }
   }
 
-  /// Where the task text starts: slot column + gap + circle + gap. Editors line
-  /// up under the text, not under the time, so they read as belonging to it.
-  private static let textInset: CGFloat = 96 + Metrics.sm + Metrics.circleSize + Metrics.sm
+  private var noteBinding: Binding<Bool> {
+    Binding(get: { isNoting && isEditable }, set: { if !$0 { closeEditors() } })
+  }
+
+  private var estimateBinding: Binding<Bool> {
+    Binding(get: { isEditingEstimate && isEditable }, set: { if !$0 { closeEditors() } })
+  }
 
   private var mainLine: some View {
     HStack(alignment: .top, spacing: Metrics.sm) {
@@ -425,14 +458,24 @@ private struct CallSheetRow: View {
       StateCircle(state: item.state) {
         set(item.state == .done ? .open : .done)
       }
-      .padding(.top, 1)
 
       VStack(alignment: .leading, spacing: 2) {
         Text(item.text)
-          .font(Typo.body)
-          .foregroundStyle(isResolved ? Palette.ink3 : Palette.ink)
+          .font(Typo.body.weight(.medium))
+          .foregroundStyle(tint.ink)
           .strikethrough(isResolved, color: Palette.ink3)
           .fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: Metrics.xs) {
+          estimateLabel
+          if isMIT {
+            Text("MIT")
+              .font(Typo.caption)
+              .bold()
+              .kerning(0.96)
+              .foregroundStyle(Palette.q1)
+              .opacity(isResolved ? 0.4 : 1)
+          }
+        }
         if row.isLate {
           Text("已过时段 · 还没更新").font(Typo.caption).foregroundStyle(Palette.mint600)
         }
@@ -552,26 +595,15 @@ private struct CallSheetRow: View {
     }
   }
 
-  /// 时段 / 估时 / MIT, stacked. Fixed width so every row's text starts on the
-  /// same vertical line — a ragged left edge is what makes a list of times
-  /// unreadable as a column.
+  /// The start time, like a calendar entry. Fixed width so every block's text
+  /// starts on the same vertical line; the length is the block's height.
   private var slot: some View {
-    VStack(alignment: .leading, spacing: 1) {
-      Text(row.start.map { "\(DaySchedule.clock($0))–\(DaySchedule.clock(row.end ?? $0))" } ?? "—")
-        .font(Typo.label)
-        .foregroundStyle(row.isLate ? Palette.mint600 : (isResolved ? Palette.ink3 : Palette.ink2))
-        .monospacedDigit()
-      estimateLabel
-      if isMIT {
-        Text("MIT")
-          .font(Typo.caption)
-          .bold()
-          .kerning(0.96)
-          .foregroundStyle(Palette.q1)
-          .opacity(isResolved ? 0.4 : 1)
-      }
-    }
-    .frame(width: 96, alignment: .leading)
+    Text(row.start.map(DaySchedule.clock) ?? "—")
+      .font(Typo.caption)
+      .foregroundStyle(row.isLate ? Palette.mint600 : tint.ink.opacity(0.8))
+      .monospacedDigit()
+      .frame(width: 40, alignment: .leading)
+      .padding(.top, 2)
   }
 
   /// The duration under the time, and the way in to changing it. A button only
@@ -660,21 +692,201 @@ private struct CallSheetRow: View {
   }
 }
 
-// MARK: - Now line
+// MARK: - Timeline
 
-private struct NowLine: View {
+private enum Timeline {
+  /// 96pt an hour, every hour.
+  static let pointsPerMinute: CGFloat = 1.6
+  /// The hour column.
+  static let gutter: CGFloat = 52
+  static let labelHeight: CGFloat = 14
+
+  static func y(_ minute: Int, from origin: Int) -> CGFloat {
+    CGFloat(minute - origin) * pointsPerMinute
+  }
+}
+
+private extension View {
+  /// Place a block on the clock: offset to its start, exactly as tall as its
+  /// length (less a hairline gap), content clipped like a calendar's.
+  func timelineSlot(start: Int, end: Int, origin: Int) -> some View {
+    frame(height: max(Timeline.y(end, from: start) - 2, 12), alignment: .top)
+      .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+      .padding(.leading, Timeline.gutter)
+      .offset(y: Timeline.y(start, from: origin) + 1)
+  }
+}
+
+/// The hour labels and the dashed rule across the day at each one.
+private struct HourGrid: View {
+  let range: ClosedRange<Int>
+
+  var body: some View {
+    ForEach(Array(stride(from: range.lowerBound, through: range.upperBound, by: 60)), id: \.self) { minute in
+      HStack(spacing: Metrics.xxs) {
+        Text(DaySchedule.clock(minute))
+          .font(Typo.caption)
+          .monospacedDigit()
+          .foregroundStyle(Palette.ink3)
+          .frame(width: Timeline.gutter - Metrics.xxs, alignment: .leading)
+        DashedRule().stroke(Palette.rule, style: StrokeStyle(lineWidth: Metrics.hairline, dash: [3, 3]))
+          .frame(height: Metrics.hairline)
+      }
+      .frame(height: Timeline.labelHeight)
+      .offset(y: Timeline.y(minute, from: range.lowerBound) - Timeline.labelHeight / 2)
+    }
+    .accessibilityHidden(true)
+  }
+}
+
+private struct DashedRule: Shape {
+  func path(in rect: CGRect) -> Path {
+    Path { path in
+      path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+      path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+    }
+  }
+}
+
+/// "现在" on the clock: the time in the hour column, a line across the day.
+private struct NowMarker: View {
   let minute: Int
 
   var body: some View {
-    HStack(spacing: Metrics.xs) {
-      Text("现在 \(DaySchedule.clock(minute))")
-        .font(Typo.caption)
-        .foregroundStyle(Palette.mint600)
+    HStack(spacing: Metrics.xxs) {
+      Text(DaySchedule.clock(minute))
+        .font(Typo.caption.weight(.semibold))
         .monospacedDigit()
+        .foregroundStyle(Palette.mint600)
+        .frame(width: Timeline.gutter - Metrics.xxs, alignment: .leading)
+        .background(Palette.page)
       Rectangle().fill(Palette.mint400).frame(height: 2)
     }
+    .frame(height: Timeline.labelHeight)
+    .allowsHitTesting(false)
+    .accessibilityElement()
+    .accessibilityLabel("现在 \(DaySchedule.clock(minute))")
+  }
+}
+
+/// Block colours by where the block came from. A colour per source rather than
+/// per life area: the source is what the data actually knows.
+struct BlockTint {
+  let fill: Color
+  let ink: Color
+
+  static let resolved = BlockTint(fill: Palette.paper.opacity(0.6), ink: Palette.ink3)
+  static let routine = BlockTint(fill: Palette.paper, ink: Palette.ink2)
+  static let meeting = BlockTint(fill: Palette.series(3).opacity(0.16), ink: Palette.series(3))
+  static let priority = BlockTint(fill: Palette.mint100, ink: Palette.mint800)
+  static let issue = BlockTint(fill: Palette.series(1).opacity(0.14), ink: Palette.series(1))
+  static let capture = BlockTint(fill: Palette.series(2).opacity(0.14), ink: Palette.series(2))
+
+  static func forTask(candidateID: String) -> BlockTint {
+    switch candidateID.split(separator: ":", maxSplits: 1).first {
+    case "linear": .issue
+    case "weekly": .priority
+    case "todo_inbox": .capture
+    default: .routine
+    }
+  }
+
+  static func forBlock(_ kind: DaySchedule.FixedBlock.Kind) -> BlockTint {
+    kind == .meeting ? .meeting : .routine
+  }
+}
+
+/// A meal, routine or fixed meeting: not checkable, not draggable.
+private struct FixedBlockView: View {
+  let block: DaySchedule.FixedBlock
+
+  var body: some View {
+    let tint = BlockTint.forBlock(block.kind)
+    HStack(alignment: .firstTextBaseline, spacing: Metrics.sm) {
+      Text(DaySchedule.clock(block.start))
+        .font(Typo.caption)
+        .monospacedDigit()
+        .foregroundStyle(tint.ink.opacity(0.8))
+        .frame(width: 40, alignment: .leading)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(block.label).font(Typo.body.weight(.medium)).foregroundStyle(tint.ink)
+        if let note = block.note {
+          Text(note).font(Typo.caption).foregroundStyle(tint.ink.opacity(0.85))
+        }
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(.horizontal, Metrics.sm)
     .padding(.vertical, Metrics.xs)
-    .accessibilityLabel("现在 \(DaySchedule.clock(minute))，下面的还没开始")
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .background(tint.fill)
+    .accessibilityElement(children: .combine)
+  }
+}
+
+// MARK: - Time by source
+
+/// Where today's hours go, by the same sources the timeline colours by.
+///
+/// Tasks count their slot (done ones too — the hour was spent); deferred rows
+/// and rows with no estimate have no slot and count nothing. Fixed blocks count
+/// their whole length.
+private struct DayTimePanel: View {
+  let schedule: DaySchedule
+  let blocks: [DaySchedule.FixedBlock]
+
+  private struct Line: Identifiable {
+    let id: String
+    let minutes: Int
+    let tint: BlockTint
+  }
+
+  private var lines: [Line] {
+    var tasks: [String: Int] = [:]
+    for row in schedule.rows {
+      guard let minutes = row.minutes, row.start != nil else { continue }
+      let key = row.item.id.split(separator: ":", maxSplits: 1).first.map(String.init) ?? ""
+      tasks[key, default: 0] += minutes
+    }
+    let meetings = blocks.filter { $0.kind == .meeting }.reduce(0) { $0 + $1.end - $1.start }
+    let routines = blocks.filter { $0.kind != .meeting }.reduce(0) { $0 + $1.end - $1.start }
+    return [
+      Line(id: "要务", minutes: tasks["weekly"] ?? 0, tint: .priority),
+      Line(id: "Linear", minutes: tasks["linear"] ?? 0, tint: .issue),
+      Line(id: "随手记", minutes: tasks["todo_inbox"] ?? 0, tint: .capture),
+      Line(id: "会议", minutes: meetings, tint: .meeting),
+      Line(id: "作息", minutes: routines, tint: .routine),
+    ].filter { $0.minutes > 0 }
+  }
+
+  var body: some View {
+    let lines = self.lines
+    if !lines.isEmpty {
+      let longest = lines.map(\.minutes).max() ?? 1
+      Panel("今天的时间") {
+        VStack(alignment: .leading, spacing: Metrics.xs) {
+          ForEach(lines) { line in
+            HStack(spacing: Metrics.sm) {
+              Text(line.id).font(Typo.label).foregroundStyle(Palette.ink2).frame(width: 52, alignment: .leading)
+              GeometryReader { geo in
+                Capsule().fill(Palette.rule.opacity(0.5))
+                  .overlay(alignment: .leading) {
+                    Capsule().fill(line.tint.ink)
+                      .frame(width: geo.size.width * CGFloat(line.minutes) / CGFloat(longest))
+                  }
+              }
+              .frame(height: 8)
+              Text(DaySchedule.duration(line.minutes))
+                .font(Typo.caption)
+                .monospacedDigit()
+                .foregroundStyle(Palette.ink3)
+                .frame(width: 48, alignment: .trailing)
+            }
+            .accessibilityElement(children: .combine)
+          }
+        }
+      }
+    }
   }
 }
 
@@ -1427,36 +1639,6 @@ private struct InlineField: View {
   }
 }
 
-
-// MARK: - Meal / break band
-
-/// A fixed band on the sheet — lunch, a break. Same column geometry as a task
-/// row (96pt slot, 22pt where the circle would be) so the times stay in one
-/// vertical line, but it carries no state circle, no actions and no source: it
-/// is not something you do, it is time the day is not yours.
-private struct MealRow: View {
-  let block: DaySchedule.FixedBlock
-
-  var body: some View {
-    HStack(alignment: .top, spacing: Metrics.sm) {
-      Text("\(DaySchedule.clock(block.start))–\(DaySchedule.clock(block.end))")
-        .font(Typo.label)
-        .foregroundStyle(Palette.ink3)
-        .monospacedDigit()
-        .frame(width: 96, alignment: .leading)
-      Image(systemName: "fork.knife")
-        .foregroundStyle(Palette.ink3)
-        .frame(width: Metrics.circleSize)
-        .padding(.top, 1)
-      Text(block.label)
-        .font(Typo.body)
-        .foregroundStyle(Palette.ink2)
-      Spacer(minLength: 0)
-    }
-    .padding(.vertical, Metrics.sm)
-    .accessibilityElement(children: .combine)
-  }
-}
 
 // MARK: - My todos (rail)
 

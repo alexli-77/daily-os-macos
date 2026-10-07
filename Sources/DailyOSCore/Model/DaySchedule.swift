@@ -54,22 +54,31 @@ public struct DaySchedule: Sendable, Equatable {
     }
   }
 
-  /// A fixed, non-task band on the timeline — a meal or a break. It comes from
-  /// the user's rhythm (`user.rhythm.meal_blocks`), sits at a wall-clock time the
-  /// tasks flow around, and is never checkable/draggable. Kept out of `rows` so
-  /// the task invariants (drag indices, now-line, plan count) are untouched; the
-  /// view interleaves these by start time for display only.
+  /// A fixed, non-task band on the timeline — a meal, a routine or a fixed
+  /// meeting. It comes from the user's rhythm (`user.rhythm.meal_blocks` and
+  /// `fixed_blocks`), sits at a wall-clock time the tasks flow around, and is
+  /// never checkable/draggable. Kept out of `rows` so the task invariants (drag
+  /// indices, now-line, plan count) are untouched.
   public struct FixedBlock: Sendable, Equatable, Identifiable {
+    public enum Kind: Sendable, Equatable {
+      case meal, routine, meeting
+    }
+
     public let id: String
     public let label: String
     public let start: Int
     public let end: Int
+    public let kind: Kind
+    /// A second line, e.g. what the routine is for. Nil when there is none.
+    public let note: String?
 
-    public init(id: String, label: String, start: Int, end: Int) {
+    public init(id: String, label: String, start: Int, end: Int, kind: Kind = .meal, note: String? = nil) {
       self.id = id
       self.label = label
       self.start = start
       self.end = end
+      self.kind = kind
+      self.note = note
     }
   }
 
@@ -147,14 +156,19 @@ public struct DaySchedule: Sendable, Equatable {
       // meal the cursor has already reached, then — if this task would spill into
       // the next meal — let the meal go first and start the task after it. The
       // gap this can leave before a meal is real free time, not an error.
-      while let meal = pendingMeals.first, meal.start <= cursor {
+      //
+      // Repeated until the task fits: stepping past one block can land the
+      // cursor on the next (a meeting that ends as lunch begins), and checking
+      // only once put the task on top of the second block.
+      while true {
+        while let meal = pendingMeals.first, meal.start <= cursor {
+          placedMeals.append(meal)
+          cursor = max(cursor, meal.end)
+          pendingMeals.removeFirst()
+        }
+        guard let meal = pendingMeals.first, meal.start < cursor + minutes else { break }
         placedMeals.append(meal)
         cursor = max(cursor, meal.end)
-        pendingMeals.removeFirst()
-      }
-      if let meal = pendingMeals.first, meal.start < cursor + minutes {
-        placedMeals.append(meal)
-        cursor = meal.end
         pendingMeals.removeFirst()
       }
 

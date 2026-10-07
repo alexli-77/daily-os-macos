@@ -49,10 +49,14 @@ struct StatePayload: Decodable {
 struct RhythmPayload: Decodable {
   let workingHours: ClockRangePayload?
   let mealBlocks: [MealBlockPayload]?
+  /// Today's routines and fixed meetings, already narrowed to today by the
+  /// service. Absent on a service older than LEO-330.
+  let fixedBlocks: [FixedBlockPayload]?
 
   enum CodingKeys: String, CodingKey {
     case workingHours = "working_hours"
     case mealBlocks = "meal_blocks"
+    case fixedBlocks = "fixed_blocks"
   }
 }
 
@@ -65,6 +69,15 @@ struct MealBlockPayload: Decodable {
   let label: String
   let start: String
   let end: String
+}
+
+struct FixedBlockPayload: Decodable {
+  let label: String
+  let start: String
+  let end: String
+  /// `routine` | `meeting`; anything else is drawn as a routine.
+  let kind: String?
+  let note: String?
 }
 
 struct TodoInboxPayload: Decodable {
@@ -264,7 +277,20 @@ extension DailyOSClient {
             end > start else { return nil }
       return DaySchedule.FixedBlock(id: "meal:\(block.label):\(block.start)", label: block.label, start: start, end: end)
     }
-    return (workStart, meals)
+    let fixed: [DaySchedule.FixedBlock] = (rhythm.fixedBlocks ?? []).compactMap { block in
+      guard let start = DayStart.minute(fromClock: block.start),
+            let end = DayStart.minute(fromClock: block.end),
+            end > start else { return nil }
+      return DaySchedule.FixedBlock(
+        id: "fixed:\(block.label):\(block.start)",
+        label: block.label,
+        start: start,
+        end: end,
+        kind: block.kind == "meeting" ? .meeting : .routine,
+        note: block.note.flatMap { $0.isEmpty ? nil : $0 }
+      )
+    }
+    return (workStart, (meals + fixed).sorted { $0.start < $1.start })
   }
 
   private var statePath: String { "/api/state" }
