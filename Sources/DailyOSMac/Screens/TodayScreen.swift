@@ -493,10 +493,12 @@ private struct CallSheetRow: View {
   /// its source), then what you can *do* to it. The last two are fixed, so the
   /// content column is the same width on every row and every title wraps at
   /// the same place (LEO-334).
-  private static let tagsWidth: CGFloat = 150
-  /// Sized for the widest case: three state buttons, delete, the estimate and
-  /// the pin.
-  private static let actionsWidth: CGFloat = 200
+  /// Room for MIT plus the longest source label, a Linear key like CUTTO-1038.
+  private static let tagsWidth: CGFloat = 130
+  /// The estimate and the pin only. The hover controls float over the row
+  /// instead of reserving space: reserved, they kept ~120pt empty on every row
+  /// that was not being hovered, and that came out of the title.
+  private static let actionsWidth: CGFloat = 90
 
   /// One line for the row's state, kept right under the title.
   private var statusText: (text: String, color: Color)? {
@@ -573,7 +575,8 @@ private struct CallSheetRow: View {
   }
 
   private var mainLine: some View {
-    HStack(alignment: .top, spacing: Metrics.sm) {
+    let showsControls = isHovering || selectedID == item.id
+    return HStack(alignment: .top, spacing: Metrics.sm) {
       slot
       StateCircle(state: item.state) {
         set(item.state == .done ? .open : .done)
@@ -605,6 +608,26 @@ private struct CallSheetRow: View {
       actions
         .frame(width: compact ? nil : Self.actionsWidth, alignment: .topTrailing)
     }
+    // The state buttons and delete, floated just left of the estimate while the
+    // row is hovered or selected. In the hierarchy at all times — faded, not
+    // removed — so VoiceOver and the keyboard still reach them.
+    .overlay(alignment: .topTrailing) {
+      HStack(spacing: Metrics.xxs) {
+        // No ✓: the circle on the left is complete. 恢复未做 only once there is
+        // something to undo — on an untouched row it was a lit button that did
+        // nothing (LEO-332).
+        RowActionBar(state: item.state, isVisible: showsControls, allowed: allowedStates, set: set)
+        deleteButton
+      }
+      .padding(.horizontal, Metrics.xxs)
+      .background {
+        Capsule()
+          .fill(Palette.page)
+          .overlay(Capsule().fill(tint.fill))
+          .opacity(showsControls ? 1 : 0)
+      }
+      .padding(.trailing, (compact ? 64 : Self.actionsWidth) + Metrics.sm)
+    }
   }
 
   /// The middle column: MIT first, where it is seen, then the source. A row
@@ -633,20 +656,6 @@ private struct CallSheetRow: View {
   /// The right column: everything you can do to the row, against the row's end.
   private var actions: some View {
     HStack(alignment: .top, spacing: Metrics.xs) {
-      if !compact || isHovering || selectedID == item.id {
-        // No ✓: the circle on the left is complete. 恢复未做 only once there is
-        // something to undo — on an untouched row it was a lit button that did
-        // nothing (LEO-332).
-        RowActionBar(
-          state: item.state,
-          isVisible: isHovering || selectedID == item.id,
-          allowed: allowedStates,
-          set: set
-        )
-
-        deleteButton
-      }
-
       // Here rather than under the title: a title that wraps fills a short
       // block, and the estimate under it was clipped away (LEO-332). Always
       // shown — it is the block's length, and clicking it changes it.
