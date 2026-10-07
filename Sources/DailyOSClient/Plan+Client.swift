@@ -128,7 +128,8 @@ extension DailyOSClient {
     event: String,
     note: String?,
     minutes: Int? = nil,
-    start: String? = nil
+    start: String? = nil,
+    text: String? = nil
   ) async throws {
     struct Request: Encodable {
       let candidateId: String
@@ -138,10 +139,12 @@ extension DailyOSClient {
       let minutes: Int?
       /// "HH:mm", on `place` only.
       let start: String?
+      /// The row's new wording, on `update` only.
+      let text: String?
     }
     try await post(
       "/api/today/todo-feedback",
-      body: Request(candidateId: candidateID, rank: rank, event: event, note: note, minutes: minutes, start: start)
+      body: Request(candidateId: candidateID, rank: rank, event: event, note: note, minutes: minutes, start: start, text: text)
     )
   }
 

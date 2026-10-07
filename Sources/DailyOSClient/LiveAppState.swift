@@ -517,6 +517,23 @@ public final class LiveAppState: AppState {
     }
   }
 
+  public override func editPlanText(candidateID: String, rank: Int, text: String) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    let outcome = await super.editPlanText(candidateID: candidateID, rank: rank, text: text)
+    guard case .ok = outcome else { return outcome }
+    do {
+      try await client.recordPlanFeedback(candidateID: candidateID, rank: rank, event: "update", note: nil, text: text)
+      // A capture's text changed service-side too; 随手记 should say so.
+      if candidateID.hasPrefix("todo_inbox:") { await reload() }
+      return .ok("已改好")
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      lastActionError = reason
+      await reload()
+      return .failed(reason)
+    }
+  }
+
   /// Persist the order the user just dragged into place.
   ///
   /// The rows have already moved — `movePlanItem` runs on the drop, before this

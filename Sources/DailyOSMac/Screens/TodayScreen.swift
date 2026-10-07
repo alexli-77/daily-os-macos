@@ -449,11 +449,19 @@ private struct CallSheetRow: View {
   @State private var isNoting = false
   @State private var note = ""
   @State private var isConfirmingDelete = false
+  /// Rewriting the row's text in place (LEO-332).
+  @State private var isEditingText = false
+  @State private var draftText = ""
+  @FocusState private var textFocused: Bool
 
   private var item: TodoItem { row.item }
   private var isEditable: Bool { item.state == .open || item.state == .partial }
   private var isResolved: Bool { item.state == .done || item.state == .deferred }
-  private var isMIT: Bool { isPlanRow && PlanImportance.forRank(row.rank) == .mit }
+  /// Meal rows sit after the plan but can still land on a low rank in a short
+  /// plan; they are never the day's most important thing.
+  private var isMIT: Bool {
+    isPlanRow && !item.id.hasPrefix("rhythm:") && PlanImportance.forRank(row.rank) == .mit
+  }
 
   /// Fixed locale: the wire format is always `yyyy-MM-dd`, and a user whose
   /// region formats dates differently must still parse it.
@@ -535,23 +543,7 @@ private struct CallSheetRow: View {
       }
 
       VStack(alignment: .leading, spacing: 2) {
-        Text(item.text)
-          .font(Typo.body.weight(.medium))
-          .foregroundStyle(tint.ink)
-          .strikethrough(isResolved, color: Palette.ink3)
-          .lineLimit(compact ? 2 : nil)
-          .fixedSize(horizontal: false, vertical: !compact)
-        HStack(spacing: Metrics.xs) {
-          estimateLabel
-          if isMIT {
-            Text("MIT")
-              .font(Typo.caption)
-              .bold()
-              .kerning(0.96)
-              .foregroundStyle(Palette.q1)
-              .opacity(isResolved ? 0.4 : 1)
-          }
-        }
+        title
         if row.isLate {
           Text("已过时段 · 还没更新").font(Typo.caption).foregroundStyle(Palette.mint600)
         }
@@ -587,14 +579,32 @@ private struct CallSheetRow: View {
           noteButton
         }
 
+        // No ✓: the circle on the left is complete. 恢复未做 only once there is
+        // something to undo — on an untouched row it was a lit button that did
+        // nothing (LEO-332).
         RowActionBar(
           state: item.state,
           isVisible: isHovering || selectedID == item.id,
-          allowed: isPlanRow ? [.done, .partial, .deferred, .open] : [.done, .deferred, .open],
+          allowed: allowedStates,
           set: set
         )
 
         deleteButton
+      }
+
+      // In the trailing row rather than under the title: a title that wraps
+      // fills a short block, and the estimate under it was clipped away
+      // (LEO-332). Always shown — it is the block's length, not a hover action.
+      estimateLabel
+        .padding(.top, 2)
+      if isMIT {
+        Text("MIT")
+          .font(Typo.caption)
+          .bold()
+          .kerning(0.96)
+          .foregroundStyle(Palette.q1)
+          .opacity(isResolved ? 0.4 : 1)
+          .padding(.top, 2)
       }
 
       if let onUnpin {
@@ -612,6 +622,57 @@ private struct CallSheetRow: View {
 
       if !compact {
         source
+      }
+    }
+  }
+
+  private var allowedStates: Set<TodoState> {
+    var states: Set<TodoState> = isPlanRow ? [.partial, .deferred] : [.deferred]
+    if item.state != .open { states.insert(.open) }
+    return states
+  }
+
+  /// The row's text. Click it to rewrite it in place: Return or clicking away
+  /// saves, Escape cancels. The edit is today's wording for this row; a Linear
+  /// issue or cycle priority keeps its own (LEO-332).
+  @ViewBuilder private var title: some View {
+    if isEditingText {
+      TextField("这一条要做什么", text: $draftText, axis: .vertical)
+        .textFieldStyle(.plain)
+        .font(Typo.label)
+        .foregroundStyle(Palette.ink)
+        .lineLimit(1...3)
+        .focused($textFocused)
+        .onSubmit(saveText)
+        .onExitCommand { isEditingText = false }
+        .onChange(of: textFocused) { _, focused in if !focused && isEditingText { saveText() } }
+        .onAppear { textFocused = true }
+    } else {
+      Text(item.text)
+        .font(Typo.label)
+        .foregroundStyle(tint.ink)
+        .strikethrough(isResolved, color: Palette.ink3)
+        .lineLimit(compact ? 2 : nil)
+        .fixedSize(horizontal: false, vertical: !compact)
+        .contentShape(Rectangle())
+        .onTapGesture {
+          selectedID = item.id
+          draftText = item.text
+          isEditingText = true
+        }
+        .help("点一下改这一条")
+    }
+  }
+
+  private func saveText() {
+    isEditingText = false
+    let text = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty, text != item.text else { return }
+    Task {
+      let outcome = await state.editPlanText(candidateID: item.id, rank: row.rank, text: text)
+      switch outcome {
+      case .ok(let message): state.toast = message ?? "已改好"
+      case .failed(let why), .unsupported(let why): state.toast = why
       }
     }
   }
@@ -883,7 +944,7 @@ private struct DropGhost: View {
 
   var body: some View {
     Text(text)
-      .font(Typo.body.weight(.medium))
+      .font(Typo.label)
       .foregroundStyle(Palette.mint800)
       .padding(.horizontal, Metrics.sm)
       .padding(.vertical, Metrics.xs)
@@ -967,6 +1028,7 @@ struct BlockTint {
     case "linear": .issue
     case "weekly": .priority
     case "todo_inbox": .capture
+    // Meal rows (`rhythm:`) and anything unknown.
     default: .routine
     }
   }
@@ -989,7 +1051,7 @@ private struct FixedBlockView: View {
         .foregroundStyle(tint.ink.opacity(0.8))
         .frame(width: 40, alignment: .leading)
       VStack(alignment: .leading, spacing: 2) {
-        Text(block.label).font(Typo.body.weight(.medium)).foregroundStyle(tint.ink)
+        Text(block.label).font(Typo.label).foregroundStyle(tint.ink)
         if let note = block.note {
           Text(note).font(Typo.caption).foregroundStyle(tint.ink.opacity(0.85))
         }
@@ -1029,7 +1091,7 @@ private struct DayTimePanel: View {
       tasks[key, default: 0] += minutes
     }
     let meetings = blocks.filter { $0.kind == .meeting }.reduce(0) { $0 + $1.end - $1.start }
-    let routines = blocks.filter { $0.kind != .meeting }.reduce(0) { $0 + $1.end - $1.start }
+    let routines = blocks.filter { $0.kind != .meeting }.reduce(0) { $0 + $1.end - $1.start } + (tasks["rhythm"] ?? 0)
     return [
       Line(id: "要务", minutes: tasks["weekly"] ?? 0, tint: .priority),
       Line(id: "Linear", minutes: tasks["linear"] ?? 0, tint: .issue),
