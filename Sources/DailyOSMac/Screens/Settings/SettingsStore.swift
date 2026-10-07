@@ -332,6 +332,76 @@ final class SettingsStore {
     ])
   }
 
+  /// 作息时间: the work day, the meals and the fixed blocks (LEO-333).
+  ///
+  /// Whole lists are written, not single entries: the panel shows the complete
+  /// list, so what is on screen is what lands in config.yaml.
+  func rhythmTimeEdits(_ draft: SettingsDraft) -> ConfigEdits {
+    let clean = { (text: String) in text.trimmingCharacters(in: .whitespacesAndNewlines) }
+    let meals = draft.rhythmMeals.map { block in
+      JSONNode.object(["label": .string(clean(block.label)), "start": .string(clean(block.start)), "end": .string(clean(block.end))])
+    }
+    let fixed = draft.rhythmFixed.map { block -> JSONNode in
+      var object: [String: JSONNode] = [
+        "label": .string(clean(block.label)),
+        "start": .string(clean(block.start)),
+        "end": .string(clean(block.end)),
+        "kind": .string(block.kind),
+      ]
+      if !clean(block.note).isEmpty { object["note"] = .string(clean(block.note)) }
+      let days = SettingsStore.weekdayOrder.filter { block.days.contains($0.code) }.map { JSONNode.string($0.code) }
+      if !days.isEmpty { object["days"] = .array(days) }
+      let dates = SettingsStore.dateList(block.dates)
+      if !dates.isEmpty { object["dates"] = .array(dates.map(JSONNode.string)) }
+      return .object(object)
+    }
+    return ConfigEdits(config: [
+      ConfigEdit(
+        path: ["user", "rhythm", "working_hours"],
+        value: .object(["start": .string(clean(draft.rhythmWorkStart)), "end": .string(clean(draft.rhythmWorkEnd))])
+      ),
+      ConfigEdit(path: ["user", "rhythm", "meal_blocks"], value: .array(meals)),
+      ConfigEdit(path: ["user", "rhythm", "fixed_blocks"], value: .array(fixed)),
+    ])
+  }
+
+  /// What would stop 作息时间 from saving, each naming the entry. The service
+  /// drops a malformed block without a word, so the check has to happen here
+  /// or the block simply never appears.
+  func rhythmTimeProblems(_ draft: SettingsDraft) -> [String] {
+    var problems: [String] = []
+    func check(_ start: String, _ end: String, _ name: String) {
+      let start = start.trimmingCharacters(in: .whitespaces)
+      let end = end.trimmingCharacters(in: .whitespaces)
+      if !SettingsStore.isClock(start) || !SettingsStore.isClock(end) {
+        problems.append("\(name)的时间要写成 HH:mm，比如 07:00")
+      } else if end <= start {
+        problems.append("\(name)的结束要晚于开始")
+      }
+    }
+    check(draft.rhythmWorkStart, draft.rhythmWorkEnd, "工作时间")
+    for (kind, blocks) in [("吃饭时段", draft.rhythmMeals), ("固定日程", draft.rhythmFixed)] {
+      for (index, block) in blocks.enumerated() {
+        let label = block.label.trimmingCharacters(in: .whitespaces)
+        let name = label.isEmpty ? "第 \(index + 1) 个\(kind)" : "「\(label)」"
+        if label.isEmpty { problems.append("\(name)还没有名称") }
+        check(block.start, block.end, name)
+        if SettingsStore.dateList(block.dates).contains(where: { $0.wholeMatch(of: /\d{4}-\d{2}-\d{2}/) == nil }) {
+          problems.append("\(name)的日期要写成 2026-10-06，多个用逗号隔开")
+        }
+      }
+    }
+    return problems
+  }
+
+  static func isClock(_ text: String) -> Bool {
+    text.wholeMatch(of: /([01]\d|2[0-3]):[0-5]\d/) != nil
+  }
+
+  static func dateList(_ text: String) -> [String] {
+    text.split(whereSeparator: { ",，、 \n".contains($0) }).map(String.init)
+  }
+
   /// The seven days, in the order a week is read rather than alphabetically.
   static let weekdayOrder: [(code: String, label: String)] = [
     ("MON", "周一"), ("TUE", "周二"), ("WED", "周三"), ("THU", "周四"),
@@ -432,6 +502,7 @@ final class SettingsStore {
 
   var isBasicsDirty: Bool { basicsEdits(draft) != basicsEdits(original) }
   var isRhythmDirty: Bool { rhythmEdits(draft) != rhythmEdits(original) }
+  var isRhythmTimesDirty: Bool { rhythmTimeEdits(draft) != rhythmTimeEdits(original) }
   var isCLIDirty: Bool { cliEdits(draft) != cliEdits(original) }
   var isFeishuDirty: Bool { feishuEdits(draft) != feishuEdits(original) }
   var isSourcesDirty: Bool { sourcesEdits(draft) != sourcesEdits(original) }
@@ -444,6 +515,7 @@ final class SettingsStore {
 
   func saveBasics() async { await save("基础设置", basicsEdits(draft)) }
   func saveRhythmSettings() async { await save("休息日设置", rhythmEdits(draft)) }
+  func saveRhythmTimes() async { await save("作息时间", rhythmTimeEdits(draft)) }
   func saveCLIPaths() async { await save("CLI 路径", cliEdits(draft)) }
   func saveFeishu() async { await save("飞书设置", feishuEdits(draft)) }
   func saveSources() async { await save("数据源", sourcesEdits(draft)) }

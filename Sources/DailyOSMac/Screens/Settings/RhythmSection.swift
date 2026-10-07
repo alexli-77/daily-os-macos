@@ -21,6 +21,7 @@ struct RhythmSection: View {
   var body: some View {
     ResolvedDayPanel(snapshot: snapshot)
     RestDaysPanel(store: store)
+    TimesPanel(store: store)
     NotesPanel(store: store, snapshot: snapshot)
     RhythmExamplePanel()
   }
@@ -89,6 +90,149 @@ private struct RestDaysPanel: View {
         Task { await store.saveRhythmSettings() }
       }
     }
+  }
+}
+
+/// 作息时间 (LEO-333): the clock half — when the work day starts, the meals,
+/// and the routines and meetings that are not in any calendar.
+///
+/// Edited here so nobody has to open config.yaml to say "lunch is at 12:30".
+/// Meals show up on today's sheet as rows the user can still move; fixed blocks
+/// are drawn as blocks tasks flow around.
+private struct TimesPanel: View {
+  @Environment(AppState.self) private var state
+  let store: SettingsStore
+
+  var body: some View {
+    @Bindable var store = store
+    let problems = store.rhythmTimeProblems(store.draft)
+    Panel("作息时间", subtitle: "写进 config.yaml。保存后今天的时间轴马上按新的时间重画") {
+      VStack(alignment: .leading, spacing: Metrics.sm) {
+        KeyValueRow("工作时间") {
+          VStack(alignment: .leading, spacing: Metrics.xxs) {
+            HStack(spacing: Metrics.xs) {
+              ClockField(text: $store.draft.rhythmWorkStart)
+              Text("–").foregroundStyle(Palette.ink3)
+              ClockField(text: $store.draft.rhythmWorkEnd)
+            }
+            HintText("没拖过的任务从开始时间起按估时自动排。")
+          }
+        }
+        KeyValueRow("吃饭") {
+          VStack(alignment: .leading, spacing: Metrics.xs) {
+            ForEach($store.draft.rhythmMeals) { $block in
+              HStack(spacing: Metrics.xs) {
+                TextField("午餐", text: $block.label)
+                  .textFieldStyle(.roundedBorder)
+                  .frame(width: 140)
+                ClockField(text: $block.start)
+                Text("–").foregroundStyle(Palette.ink3)
+                ClockField(text: $block.end)
+                RemoveButton { store.draft.rhythmMeals.removeAll { $0.id == block.id } }
+              }
+            }
+            Button("加一个吃饭时段") {
+              store.draft.rhythmMeals.append(RhythmBlockDraft(label: "", start: "12:00", end: "13:00"))
+            }
+            .buttonStyle(QuietButtonStyle())
+            HintText("吃饭会作为一行出现在今天的通告单上，当天可以拖走、改时长或删掉。")
+          }
+        }
+        KeyValueRow("固定日程") {
+          VStack(alignment: .leading, spacing: Metrics.xs) {
+            ForEach($store.draft.rhythmFixed) { $block in
+              FixedBlockEditor(block: $block) {
+                store.draft.rhythmFixed.removeAll { $0.id == block.id }
+              }
+            }
+            Button("加一个固定日程") {
+              store.draft.rhythmFixed.append(RhythmBlockDraft(label: "", start: "07:00", end: "08:00"))
+            }
+            .buttonStyle(QuietButtonStyle())
+            HintText("起床、晚饭后散步这类作息，或者不在日历里的固定会议。画成不能拖的块，任务会绕开它们。哪几天都不选就是每天。英语口语这类要做的事别放这里，记成 todo。")
+          }
+        }
+        if !problems.isEmpty {
+          VStack(alignment: .leading, spacing: 2) {
+            ForEach(problems, id: \.self) { problem in
+              Text(problem).font(Typo.caption).foregroundStyle(Palette.danger)
+            }
+          }
+        }
+      }
+    } actions: {
+      SaveAction(isDirty: store.isRhythmTimesDirty && problems.isEmpty, isBusy: store.isBusy, title: "保存作息时间") {
+        Task {
+          await store.saveRhythmTimes()
+          if store.banner?.ok == true { await state.reloadToday() }
+        }
+      }
+    }
+  }
+}
+
+/// One fixed block: name, time, kind on the first line; which days and a note
+/// under it.
+private struct FixedBlockEditor: View {
+  @Binding var block: RhythmBlockDraft
+  let onRemove: () -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Metrics.xxs) {
+      HStack(spacing: Metrics.xs) {
+        TextField("名称，比如 起床、周会", text: $block.label)
+          .textFieldStyle(.roundedBorder)
+          .frame(width: 180)
+        ClockField(text: $block.start)
+        Text("–").foregroundStyle(Palette.ink3)
+        ClockField(text: $block.end)
+        Picker("类型", selection: $block.kind) {
+          Text("作息").tag("routine")
+          Text("会议").tag("meeting")
+        }
+        .labelsHidden()
+        .frame(width: 80)
+        RemoveButton(action: onRemove)
+      }
+      HStack(spacing: Metrics.xs) {
+        WeekdayPicker(selection: $block.days)
+        TextField("或者只在这些日期：2026-10-06", text: $block.dates)
+          .textFieldStyle(.roundedBorder)
+          .frame(width: 220)
+      }
+      TextField("备注（块里的第二行小字，可留空）", text: $block.note)
+        .textFieldStyle(.roundedBorder)
+        .frame(maxWidth: 420)
+    }
+    .padding(Metrics.xs)
+    .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+  }
+}
+
+/// "HH:mm", typed. A text field rather than a clock picker: the config stores
+/// the string, and typing 07:00 is faster than scrolling to it.
+private struct ClockField: View {
+  @Binding var text: String
+
+  var body: some View {
+    TextField("07:00", text: $text)
+      .textFieldStyle(.roundedBorder)
+      .font(Typo.tabularBody)
+      .frame(width: 64)
+  }
+}
+
+private struct RemoveButton: View {
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      Image(systemName: "minus.circle")
+        .foregroundStyle(Palette.ink3)
+    }
+    .buttonStyle(.plain)
+    .help("删掉这一条")
+    .accessibilityLabel("删掉这一条")
   }
 }
 

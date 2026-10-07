@@ -517,6 +517,10 @@ public final class LiveAppState: AppState {
     }
   }
 
+  public override func reloadToday() async {
+    await reload()
+  }
+
   public override func editPlanText(candidateID: String, rank: Int, text: String) async -> ActionOutcome {
     guard let client else { return .failed("没有连接到服务。") }
     let outcome = await super.editPlanText(candidateID: candidateID, rank: rank, text: text)
