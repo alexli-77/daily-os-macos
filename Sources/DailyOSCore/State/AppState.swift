@@ -527,6 +527,21 @@ open class AppState {
     return .ok(nil)
   }
 
+  /// Pin a plan row to a start time on today's timeline, or release it back to
+  /// automatic layout with `nil` (LEO-331). Applied locally first, for the same
+  /// reason as `movePlanItem`; a live store also records it.
+  ///
+  /// A row with no estimate gets 30 minutes when it is pinned: a block with no
+  /// length cannot sit on a clock.
+  open func placePlanItem(_ id: TodoItem.ID, rank: Int, start: Int?) async -> ActionOutcome {
+    guard let index = plan.firstIndex(where: { $0.id == id }) else {
+      return .failed("这条计划已经不在了。")
+    }
+    plan[index].pinnedStart = start
+    if start != nil && plan[index].estimatedMinutes == nil { plan[index].estimatedMinutes = 30 }
+    return .ok(nil)
+  }
+
   /// Move one plan row to a new position.
   ///
   /// Applied locally here and *not* refused when there is no service, because

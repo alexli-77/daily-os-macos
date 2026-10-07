@@ -127,12 +127,36 @@ public struct DaySchedule: Sendable, Equatable {
     var late: [Row] = []
     var remaining = 0
     var missing = 0
-    var nowIndex = -1
     // Sorted, and dropped if they end before the day even starts (a lunch at
     // 12:00 is irrelevant to a plan that begins at 14:00). Consumed as the cursor
     // passes them; whatever is left over never happened within the planned day.
     var pendingMeals = meals.filter { $0.end > startMinute }.sorted { $0.start < $1.start }
     var placedMeals: [FixedBlock] = []
+
+    /// The length a row occupies: its estimate, halved when partial. A pinned
+    /// row with no estimate still needs a length to sit on the clock.
+    func length(of item: TodoItem) -> Int? {
+      guard let estimate = item.estimatedMinutes ?? (item.pinnedStart != nil ? 30 : nil), estimate > 0 else { return nil }
+      return item.state == .partial ? Int((Double(estimate) / 2).rounded()) : estimate
+    }
+
+    // Rows the user pinned (LEO-331) sit where they were put, and the rows that
+    // are laid out automatically flow around them exactly as around a meal.
+    // Deferred rows take no time, pinned or not.
+    var pendingPins: [(start: Int, end: Int)] = items
+      .compactMap { item in
+        guard item.state != .deferred, let start = item.pinnedStart, let minutes = length(of: item) else { return nil }
+        return (start, start + minutes)
+      }
+      .filter { $0.end > startMinute }
+      .sorted { $0.start < $1.start }
+    let latestPinnedEnd = pendingPins.map(\.end).max()
+
+    func append(_ row: Row) {
+      rows.append(row)
+      if row.isLate { late.append(row) }
+      if let minutes = row.minutes, row.item.state != .done { remaining += minutes }
+    }
 
     for (index, item) in items.enumerated() {
       let rank = index + 1
@@ -142,7 +166,14 @@ public struct DaySchedule: Sendable, Equatable {
         continue
       }
 
-      guard let estimate = item.estimatedMinutes, estimate > 0 else {
+      if let start = item.pinnedStart, let minutes = length(of: item) {
+        let end = start + minutes
+        let isLate = (item.state == .open || item.state == .partial) && end < nowMinute
+        append(Row(item: item, rank: rank, start: start, end: end, minutes: minutes, isLate: isLate))
+        continue
+      }
+
+      guard let minutes = length(of: item) else {
         // No slot, and the cursor does not move. Counted so the footer can admit
         // the total is incomplete.
         if item.state != .done { missing += 1 }
@@ -150,12 +181,11 @@ public struct DaySchedule: Sendable, Equatable {
         continue
       }
 
-      let minutes = item.state == .partial ? Int((Double(estimate) / 2).rounded()) : estimate
-
-      // A meal is fixed on the clock; a task may not run through one. Flush any
-      // meal the cursor has already reached, then — if this task would spill into
-      // the next meal — let the meal go first and start the task after it. The
-      // gap this can leave before a meal is real free time, not an error.
+      // A meal (or a pinned row) is fixed on the clock; a task may not run
+      // through one. Step past anything the cursor has already reached, then —
+      // if this task would spill into the next obstacle — let the obstacle go
+      // first and start the task after it. The gap this can leave is real free
+      // time, not an error.
       //
       // Repeated until the task fits: stepping past one block can land the
       // cursor on the next (a meeting that ends as lunch begins), and checking
@@ -166,28 +196,35 @@ public struct DaySchedule: Sendable, Equatable {
           cursor = max(cursor, meal.end)
           pendingMeals.removeFirst()
         }
-        guard let meal = pendingMeals.first, meal.start < cursor + minutes else { break }
-        placedMeals.append(meal)
-        cursor = max(cursor, meal.end)
-        pendingMeals.removeFirst()
+        while let pin = pendingPins.first, pin.start <= cursor {
+          cursor = max(cursor, pin.end)
+          pendingPins.removeFirst()
+        }
+        let nextMeal = pendingMeals.first.map(\.start) ?? Int.max
+        let nextPin = pendingPins.first?.start ?? Int.max
+        // Stepping past a pin can land the cursor on a meal, and the other way
+        // round: go again until neither is behind the cursor.
+        if nextMeal <= cursor || nextPin <= cursor { continue }
+        guard min(nextMeal, nextPin) < cursor + minutes else { break }
+        if nextMeal <= nextPin, let meal = pendingMeals.first {
+          placedMeals.append(meal)
+          cursor = max(cursor, meal.end)
+          pendingMeals.removeFirst()
+        } else if let pin = pendingPins.first {
+          cursor = max(cursor, pin.end)
+          pendingPins.removeFirst()
+        }
       }
 
       let end = cursor + minutes
-
-      // Checked before the row is appended, and before the done-row shortcut, so
-      // the line lands above the first row that has not started yet whatever its
-      // state. Using `rows.count` here is the index this row is about to take.
-      if nowIndex < 0 && cursor >= nowMinute { nowIndex = rows.count }
-
       let isLate = (item.state == .open || item.state == .partial) && end < nowMinute
-      let row = Row(item: item, rank: rank, start: cursor, end: end, minutes: minutes, isLate: isLate)
-      rows.append(row)
-      if isLate { late.append(row) }
-      if item.state != .done { remaining += minutes }
+      append(Row(item: item, rank: rank, start: cursor, end: end, minutes: minutes, isLate: isLate))
       cursor = end
     }
 
-    if nowIndex < 0 { nowIndex = rows.count }
+    // The first row, in sheet order, that has not started yet — the line lands
+    // above it whatever its state.
+    let nowIndex = rows.firstIndex { ($0.start ?? Int.min) >= nowMinute } ?? rows.count
 
     return DaySchedule(
       rows: rows,
@@ -195,7 +232,7 @@ public struct DaySchedule: Sendable, Equatable {
       nowIndex: nowIndex,
       now: nowMinute,
       remaining: remaining,
-      endOfDay: cursor,
+      endOfDay: max(cursor, latestPinnedEnd ?? cursor),
       doneCount: items.filter { $0.state == .done }.count,
       partialCount: items.filter { $0.state == .partial }.count,
       deferredCount: items.filter { $0.state == .deferred }.count,
@@ -204,6 +241,7 @@ public struct DaySchedule: Sendable, Equatable {
       missingEstimates: missing
     )
   }
+
 }
 
 // MARK: - Formatting
@@ -266,5 +304,66 @@ public enum DayStart {
     guard parts.count == 2, let h = Int(parts[0]), let m = Int(parts[1]),
           (0...23).contains(h), (0...59).contains(m) else { return nil }
     return h * 60 + m
+  }
+}
+
+// MARK: - Overlap columns
+
+/// Side-by-side columns for blocks that overlap on the timeline, the way a
+/// calendar draws two meetings at the same hour (LEO-331).
+///
+/// Blocks that overlap, directly or through a chain, form one group; each group
+/// gets as many columns as it needs at its busiest, and every block takes the
+/// leftmost column free at its start. A block that overlaps nothing gets the
+/// full width.
+public enum TimelineColumns {
+  public struct Placement: Sendable, Equatable {
+    public let column: Int
+    public let count: Int
+
+    public init(column: Int, count: Int) {
+      self.column = column
+      self.count = count
+    }
+  }
+
+  public struct Span: Sendable {
+    public let id: String
+    public let start: Int
+    public let end: Int
+
+    public init(id: String, start: Int, end: Int) {
+      self.id = id
+      self.start = start
+      self.end = end
+    }
+  }
+
+  public static func assign(_ spans: [Span]) -> [String: Placement] {
+    let sorted = spans.sorted { $0.start < $1.start || ($0.start == $1.start && $0.end > $1.end) }
+    var result: [String: Placement] = [:]
+    var group: [(id: String, column: Int)] = []
+    var columnEnds: [Int] = []
+    var groupEnd = Int.min
+
+    func close() {
+      for entry in group { result[entry.id] = Placement(column: entry.column, count: max(columnEnds.count, 1)) }
+      group = []
+      columnEnds = []
+    }
+
+    for span in sorted {
+      if span.start >= groupEnd { close() }
+      if let free = columnEnds.firstIndex(where: { $0 <= span.start }) {
+        columnEnds[free] = span.end
+        group.append((span.id, free))
+      } else {
+        columnEnds.append(span.end)
+        group.append((span.id, columnEnds.count - 1))
+      }
+      groupEnd = max(groupEnd, span.end)
+    }
+    close()
+    return result
   }
 }
