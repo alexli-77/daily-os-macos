@@ -789,6 +789,20 @@ let staleMeal = DaySchedule.build(
   items: [sheetItem("a", 60)],
   startMinute: 14 * 60, nowMinute: 14 * 60, meals: [lunch])
 check(staleMeal.fixedBlocks.isEmpty, "计划从 14:00 起时，12:00 的午餐与今天无关，不显示")
+// 首尾相接的固定块（会议 11:00–12:30 紧接午餐 12:30–13:00、Session 13:00–15:00）：
+// 跨过一个块后游标正好落在下一个块上，任务必须继续往后推，不能骑在第二个块上（LEO-330）
+let chain = DaySchedule.build(
+  items: [sheetItem("a", 45), sheetItem("b", 60)],
+  startMinute: 10 * 60, nowMinute: 10 * 60,
+  meals: [
+    DaySchedule.FixedBlock(id: "m1", label: "会议", start: 11 * 60, end: 12 * 60 + 30, kind: .meeting),
+    DaySchedule.FixedBlock(id: "l", label: "午餐", start: 12 * 60 + 30, end: 13 * 60),
+    DaySchedule.FixedBlock(id: "m2", label: "Session", start: 13 * 60, end: 15 * 60, kind: .meeting),
+  ])
+check(chain.rows[0].start == 10 * 60 && chain.rows[0].end == 10 * 60 + 45, "45 分钟的任务在 11:00 会议前排下")
+check(chain.rows[1].start == 15 * 60, "1 小时的任务跨过首尾相接的三个固定块，排到 15:00")
+check(chain.fixedBlocks.map(\.id) == ["m1", "l", "m2"], "三个固定块都按顺序放置")
+
 // 没有餐块时行为和以前完全一样（默认参数护栏）
 let noMeal = DaySchedule.build(items: [sheetItem("a", 60), sheetItem("b", 60)], startMinute: t0, nowMinute: noon)
 check(noMeal.fixedBlocks.isEmpty && noMeal.rows[1].start == t0 + 60, "不传餐块时和旧的零间隙顺推一致")

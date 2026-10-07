@@ -87,8 +87,8 @@ open class AppState {
   /// `user.rhythm.working_hours.start` (minutes from midnight). `nil` falls back
   /// to the plan timestamp — see `DayStart`.
   public var planWorkStartMinute: Int?
-  /// Fixed meal/break bands (`user.rhythm.meal_blocks`) the schedule flows tasks
-  /// around, so the day is not one unbroken morning block.
+  /// Fixed bands the schedule flows tasks around — meals (`user.rhythm.meal_blocks`)
+  /// and today's routines and meetings (`fixed_blocks`) — in start order.
   public var planMealBlocks: [DaySchedule.FixedBlock] = []
 
   /// When this app started a `daily_plan` run that has not produced a plan yet.
