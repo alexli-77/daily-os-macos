@@ -599,6 +599,11 @@ open class AppState {
   /// only goes to the network when the cache is stale.
   open func refreshWeather(force: Bool = false) async {}
 
+  /// Re-read today's plan and rhythm now. For a change made elsewhere — the
+  /// 作息时间 settings — that the Today page would otherwise only pick up on
+  /// the next reconnect (LEO-333).
+  open func reloadToday() async {}
+
   /// Ask the service to run `daily_plan` now.
   open func generatePlan() async -> ActionOutcome {
     .unsupported("这一版没有连接到服务。")

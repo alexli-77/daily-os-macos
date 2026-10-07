@@ -582,6 +582,12 @@ struct SettingsDraft: Equatable {
   var rhythmRestDays: Set<String> = []
   var rhythmWorkCap = 1
   var rhythmMd = ""
+  /// 作息时间 (LEO-333): the clock half of the rhythm, "HH:mm" strings as the
+  /// config stores them.
+  var rhythmWorkStart = "09:30"
+  var rhythmWorkEnd = "18:30"
+  var rhythmMeals: [RhythmBlockDraft] = []
+  var rhythmFixed: [RhythmBlockDraft] = []
 
   // 文档
   var decisionPolicyMd = ""
@@ -694,6 +700,23 @@ struct SettingsDraft: Equatable {
     rhythmRestDays = Set(snapshot.rhythm.restDays)
     rhythmWorkCap = rhythm["work_task_cap_on_rest_days"].int ?? 1
     rhythmMd = snapshot.rhythm.markdown
+    let hours = rhythm["working_hours"]
+    if !hours["start"].string.isEmpty { rhythmWorkStart = hours["start"].string }
+    if !hours["end"].string.isEmpty { rhythmWorkEnd = hours["end"].string }
+    rhythmMeals = rhythm["meal_blocks"].array.map { node in
+      RhythmBlockDraft(label: node["label"].string, start: node["start"].string, end: node["end"].string)
+    }
+    rhythmFixed = rhythm["fixed_blocks"].array.map { node in
+      RhythmBlockDraft(
+        label: node["label"].string,
+        start: node["start"].string,
+        end: node["end"].string,
+        kind: node["kind"].string == "meeting" ? "meeting" : "routine",
+        note: node["note"].string,
+        days: Set(node["days"].array.map { $0.string.uppercased() }),
+        dates: node["dates"].array.map(\.string).joined(separator: ", ")
+      )
+    }
 
     decisionPolicyMd = snapshot.decisionPolicy.markdown
     strategyFileID = snapshot.strategy.first?.id ?? ""
@@ -1078,4 +1101,23 @@ enum WireDate {
     guard !raw.isEmpty else { return nil }
     return (try? Date(raw, strategy: withFraction)) ?? (try? Date(raw, strategy: withoutFraction))
   }
+}
+
+/// One meal or fixed block as the 作息时间 panel edits it (LEO-333).
+///
+/// Strings rather than minutes: the config stores "HH:mm", the user types
+/// "HH:mm", and anything that does not parse is reported by name instead of
+/// being silently rounded into something else.
+struct RhythmBlockDraft: Equatable, Identifiable {
+  var id = UUID()
+  var label = ""
+  var start = ""
+  var end = ""
+  /// `routine` | `meeting`. Meals ignore it.
+  var kind = "routine"
+  var note = ""
+  /// Weekday codes. Empty = every day (unless `dates` narrows it).
+  var days: Set<String> = []
+  /// "2026-10-06, 2026-10-08" — specific days, e.g. a residency's sessions.
+  var dates = ""
 }
