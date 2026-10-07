@@ -489,10 +489,14 @@ private struct CallSheetRow: View {
     return item.colorTag.flatMap(BlockTint.named) ?? BlockTint.forTask(candidateID: item.id)
   }
 
-  /// The right-hand column is the same width on every row, so every title
-  /// wraps at the same place (LEO-334). Sized for the widest case: the hover
-  /// controls, the estimate, MIT, the pin and a Linear key.
-  private static let trailingWidth: CGFloat = 300
+  /// Three columns (LEO-335): the content, then what the row *is* (MIT and
+  /// its source), then what you can *do* to it. The last two are fixed, so the
+  /// content column is the same width on every row and every title wraps at
+  /// the same place (LEO-334).
+  private static let tagsWidth: CGFloat = 150
+  /// Sized for the widest case: three state buttons, delete, the estimate and
+  /// the pin.
+  private static let actionsWidth: CGFloat = 200
 
   /// One line for the row's state, kept right under the title.
   private var statusText: (text: String, color: Color)? {
@@ -595,14 +599,39 @@ private struct CallSheetRow: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
 
-      trailing
-        .frame(width: compact ? nil : Self.trailingWidth, alignment: .topTrailing)
+      tags
+        .frame(width: compact ? nil : Self.tagsWidth, alignment: .topLeading)
+
+      actions
+        .frame(width: compact ? nil : Self.actionsWidth, alignment: .topTrailing)
     }
   }
 
-  /// Controls, estimate, MIT, pin and source, packed against the right edge so
-  /// nothing floats in the middle of the row (LEO-334).
-  private var trailing: some View {
+  /// The middle column: MIT first, where it is seen, then the source. A row
+  /// sharing its width with an overlapping block keeps MIT and drops the source.
+  private var tags: some View {
+    HStack(alignment: .top, spacing: Metrics.xs) {
+      if isMIT {
+        Text("MIT")
+          .font(Typo.caption)
+          .bold()
+          .kerning(0.96)
+          .foregroundStyle(Palette.page)
+          .padding(.horizontal, 6)
+          .padding(.vertical, 1)
+          .background(Palette.q1, in: Capsule())
+          .opacity(isResolved ? 0.4 : 1)
+          .padding(.top, 1)
+      }
+      if !compact {
+        source
+          .padding(.top, 2)
+      }
+    }
+  }
+
+  /// The right column: everything you can do to the row, against the row's end.
+  private var actions: some View {
     HStack(alignment: .top, spacing: Metrics.xs) {
       if !compact || isHovering || selectedID == item.id {
         // No ✓: the circle on the left is complete. 恢复未做 only once there is
@@ -618,20 +647,11 @@ private struct CallSheetRow: View {
         deleteButton
       }
 
-      // In the trailing row rather than under the title: a title that wraps
-      // fills a short block, and the estimate under it was clipped away
-      // (LEO-332). Always shown — it is the block's length, not a hover action.
+      // Here rather than under the title: a title that wraps fills a short
+      // block, and the estimate under it was clipped away (LEO-332). Always
+      // shown — it is the block's length, and clicking it changes it.
       estimateLabel
         .padding(.top, 2)
-      if isMIT {
-        Text("MIT")
-          .font(Typo.caption)
-          .bold()
-          .kerning(0.96)
-          .foregroundStyle(Palette.q1)
-          .opacity(isResolved ? 0.4 : 1)
-          .padding(.top, 2)
-      }
 
       if let onUnpin {
         Button(action: onUnpin) {
@@ -644,11 +664,6 @@ private struct CallSheetRow: View {
         .buttonStyle(.plain)
         .help("固定在这个钟点 · 点一下取消固定，回到自动排")
         .accessibilityLabel("取消固定")
-      }
-
-      if !compact {
-        source
-          .padding(.top, 2)
       }
     }
   }
