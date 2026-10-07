@@ -568,6 +568,9 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
   /// Where the user pinned this row on today's timeline, minutes from midnight
   /// (LEO-331). Nil = laid out automatically from order and estimate.
   public var pinnedStart: Int?
+  /// The colour the user gave this row today (LEO-334), one of
+  /// `Palette.rowColorNames`. Nil = coloured by source.
+  public var colorTag: String?
 
   public init(
     id: String,
@@ -579,7 +582,8 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
     estimatedMinutes: Int? = nil,
     note: String? = nil,
     carriedFrom: String? = nil,
-    pinnedStart: Int? = nil
+    pinnedStart: Int? = nil,
+    colorTag: String? = nil
   ) {
     self.id = id
     self.text = text
@@ -591,6 +595,7 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
     self.note = note
     self.carriedFrom = carriedFrom
     self.pinnedStart = pinnedStart
+    self.colorTag = colorTag
   }
 }
 

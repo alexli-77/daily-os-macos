@@ -831,6 +831,16 @@ let pinnedOnLunch = DaySchedule.build(
 check(pinnedOnLunch.rows[0].start == 12 * 60 + 15, "用户可以把任务钉在午餐上，照放不误")
 check(pinnedOnLunch.rows[1].start == 13 * 60, "自动排的行绕开午餐和钉住的行，从 13:00 开始")
 
+// 新记的 todo 排在最后（LEO-334）：整天都钉住了，后面追加的自动行不能跑到早上的空档里
+let appended = DaySchedule.build(
+  items: [pinnedItem("p1", 60, at: 11 * 60), pinnedItem("p2", 60, at: 14 * 60), sheetItem("new", 30)],
+  startMinute: 9 * 60 + 30, nowMinute: 9 * 60)
+check(appended.rows[2].start == 15 * 60, "排在钉住行后面的新 todo 从最后一个钉住行结束开始，而不是 09:30")
+let ahead = DaySchedule.build(
+  items: [sheetItem("first", 30), pinnedItem("p", 60, at: 14 * 60)],
+  startMinute: 9 * 60 + 30, nowMinute: 9 * 60)
+check(ahead.rows[0].start == 9 * 60 + 30, "排在钉住行前面的自动行照旧从起点开始")
+
 // 重叠的块并排：一组互相重叠的块按最忙时刻的数量分列，不重叠的占满宽度
 let columns = TimelineColumns.assign([
   .init(id: "meet", start: 9 * 60, end: 10 * 60),

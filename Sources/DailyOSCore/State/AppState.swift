@@ -543,13 +543,17 @@ open class AppState {
     return .ok(nil)
   }
 
-  /// Rewrite a plan row's text for today (LEO-332). Applied locally first; a
-  /// live store also records it.
-  open func editPlanText(candidateID: String, rank: Int, text: String) async -> ActionOutcome {
+  /// Edit a plan row for today from the row editor (LEO-332, LEO-334): its
+  /// text, its colour (`auto` = by source) and an update note, any of which may
+  /// be nil for "unchanged". Applied locally first; a live store also records
+  /// it, as one `update`.
+  open func updatePlanRow(candidateID: String, rank: Int, text: String?, color: String?, note: String?) async -> ActionOutcome {
     guard let index = plan.firstIndex(where: { $0.id == candidateID }) else {
       return .failed("这条计划已经不在了。")
     }
-    plan[index].text = text
+    if let text { plan[index].text = text }
+    if let color { plan[index].colorTag = color == "auto" ? nil : color }
+    if let note { plan[index].note = note }
     return .ok(nil)
   }
 

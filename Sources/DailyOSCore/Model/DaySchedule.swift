@@ -152,6 +152,11 @@ public struct DaySchedule: Sendable, Equatable {
       .sorted { $0.start < $1.start }
     let latestPinnedEnd = pendingPins.map(\.end).max()
 
+    // An automatic row never starts before a pinned row that comes ahead of it
+    // in the sheet (LEO-334). Without this a capture appended to a fully pinned
+    // day took the first free slot of the morning and showed up at the top.
+    var floor = Int.min
+
     func append(_ row: Row) {
       rows.append(row)
       if row.isLate { late.append(row) }
@@ -170,6 +175,7 @@ public struct DaySchedule: Sendable, Equatable {
         let end = start + minutes
         let isLate = (item.state == .open || item.state == .partial) && end < nowMinute
         append(Row(item: item, rank: rank, start: start, end: end, minutes: minutes, isLate: isLate))
+        floor = max(floor, end)
         continue
       }
 
@@ -180,6 +186,8 @@ public struct DaySchedule: Sendable, Equatable {
         rows.append(Row(item: item, rank: rank, start: nil, end: nil, minutes: nil, isLate: false))
         continue
       }
+
+      cursor = max(cursor, floor)
 
       // A meal (or a pinned row) is fixed on the clock; a task may not run
       // through one. Step past anything the cursor has already reached, then —

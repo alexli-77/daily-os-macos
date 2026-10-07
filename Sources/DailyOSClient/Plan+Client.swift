@@ -35,6 +35,8 @@ struct TodayPlanResponse: Decodable {
     let minutes: Int?
     /// "HH:mm" when the user pinned the row to a time today (LEO-331).
     let start: String?
+    /// The colour the user gave the row today (LEO-334).
+    let color: String?
   }
 
   let plan: Plan?
@@ -98,7 +100,8 @@ extension DailyOSClient {
           estimatedMinutes: todo.minutes,
           note: response.notes?[todo.candidateId],
           carriedFrom: response.carriedFrom?[todo.candidateId],
-          pinnedStart: todo.start.flatMap(DayStart.minute(fromClock:))
+          pinnedStart: todo.start.flatMap(DayStart.minute(fromClock:)),
+          colorTag: todo.color
         )
       }
 
@@ -129,7 +132,8 @@ extension DailyOSClient {
     note: String?,
     minutes: Int? = nil,
     start: String? = nil,
-    text: String? = nil
+    text: String? = nil,
+    color: String? = nil
   ) async throws {
     struct Request: Encodable {
       let candidateId: String
@@ -141,10 +145,12 @@ extension DailyOSClient {
       let start: String?
       /// The row's new wording, on `update` only.
       let text: String?
+      /// A colour name or `auto`, on `update` only.
+      let color: String?
     }
     try await post(
       "/api/today/todo-feedback",
-      body: Request(candidateId: candidateID, rank: rank, event: event, note: note, minutes: minutes, start: start, text: text)
+      body: Request(candidateId: candidateID, rank: rank, event: event, note: note, minutes: minutes, start: start, text: text, color: color)
     )
   }
 
