@@ -345,6 +345,7 @@ private struct CallSheetRow: View {
   @State private var isEditingEstimate = false
   @State private var isNoting = false
   @State private var note = ""
+  @State private var isConfirmingDelete = false
 
   private var item: TodoItem { row.item }
   private var isEditable: Bool { item.state == .open || item.state == .partial }
@@ -405,6 +406,12 @@ private struct CallSheetRow: View {
       if dropEdge != nil {
         Capsule().fill(Palette.mint400).frame(height: 2).transition(.opacity)
       }
+    }
+    .confirmationDialog("删除这一条？", isPresented: $isConfirmingDelete) {
+      Button("删除", role: .destructive, action: remove)
+      Button("取消", role: .cancel) {}
+    } message: {
+      Text(deleteMessage)
     }
   }
 
@@ -467,6 +474,8 @@ private struct CallSheetRow: View {
         set: set
       )
 
+      deleteButton
+
       source
     }
   }
@@ -496,6 +505,51 @@ private struct CallSheetRow: View {
     .allowsHitTesting(visible)
     .opacity(visible ? 1 : 0)
     .animation(.easeOut(duration: 0.12), value: visible)
+  }
+
+  /// 删除 — fades in with the other row controls. Asks first: for a capture it
+  /// deletes the capture itself, which the four-state circle cannot undo.
+  private var deleteButton: some View {
+    let visible = isHovering || selectedID == item.id
+    return Button {
+      isConfirmingDelete = true
+    } label: {
+      Image(systemName: "trash")
+        .font(.system(size: 10, weight: .semibold))
+        .frame(width: 20, height: 20)
+        .foregroundStyle(Palette.ink3)
+        .contentShape(Circle())
+    }
+    .buttonStyle(.plain)
+    .help("从今天删除")
+    .accessibilityLabel("从今天删除")
+    .allowsHitTesting(visible)
+    .opacity(visible ? 1 : 0)
+    .animation(.easeOut(duration: 0.12), value: visible)
+  }
+
+  private var isCapture: Bool { !isPlanRow || item.id.hasPrefix("todo_inbox:") }
+
+  /// What deleting does differs by source, so the dialog says which one this is.
+  private var deleteMessage: String {
+    if isCapture { return "会从今天的通告单和随手记里一起删掉。" }
+    let label = PlanSource(candidateID: item.id, sourceRef: item.sourceRef).label
+    return "只从今天的通告单上拿掉，\(label) 本身不动，明天还可能再排进来。"
+  }
+
+  private func remove() {
+    guard isPlanRow else {
+      // A capture that is not on the plan: deleting it is the inbox's own delete.
+      state.setTodo(item.id, to: .deleted)
+      return
+    }
+    Task {
+      let outcome = await state.planFeedback(candidateID: item.id, rank: row.rank, event: "remove", note: nil)
+      state.toast = switch outcome {
+      case .ok: "已从今天删除"
+      case .failed(let why), .unsupported(let why): why
+      }
+    }
   }
 
   /// 时段 / 估时 / MIT, stacked. Fixed width so every row's text starts on the
