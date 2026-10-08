@@ -1,0 +1,149 @@
+import Foundation
+
+/// 双周排期: a cycle's 要务 laid out over its days, before any day is planned.
+///
+/// Big rocks — each role's most important thing — hold a concrete slot; the
+/// rest only a day. The daily plan takes its slice from here, so a fix to how
+/// the cycle is spread belongs here too, not on the Today page. Stored by the
+/// service beside the cycle file (`<id>.schedule.json`).
+public struct CycleScheduleState: Sendable, Equatable {
+  public struct Item: Sendable, Equatable, Identifiable {
+    /// The 8-hex key sessions refer to — the same one the plan's weekly ids end in.
+    public let key: String
+    public let text: String
+    /// The OKR objective it serves; its opening word is the role.
+    public let okr: String
+    public let mit: Bool
+    public var id: String { key }
+
+    public init(key: String, text: String, okr: String, mit: Bool) {
+      self.key = key
+      self.text = text
+      self.okr = okr
+      self.mit = mit
+    }
+  }
+
+  public struct Day: Sendable, Equatable, Identifiable {
+    /// `YYYY-MM-DD`.
+    public let date: String
+    public let weekday: String
+    public let restDay: Bool
+    public var id: String { date }
+
+    public init(date: String, weekday: String, restDay: Bool) {
+      self.date = date
+      self.weekday = weekday
+      self.restDay = restDay
+    }
+  }
+
+  public let cycleID: String
+  /// The service's today, so "past" and "today" agree with the plan's calendar.
+  public let today: String
+  public let items: [Item]
+  public let days: [Day]
+  public var schedule: CycleSchedule?
+  /// A generation is in flight.
+  public let running: Bool
+  /// Why the last generation failed, if it did.
+  public let error: String?
+
+  public init(cycleID: String, today: String, items: [Item], days: [Day], schedule: CycleSchedule?, running: Bool, error: String? = nil) {
+    self.cycleID = cycleID
+    self.today = today
+    self.items = items
+    self.days = days
+    self.schedule = schedule
+    self.running = running
+    self.error = error
+  }
+
+  /// Items grouped by role, in the cycle file's order.
+  public var roles: [(role: String, items: [Item])] {
+    var order: [String] = []
+    var groups: [String: [Item]] = [:]
+    for item in items {
+      let role = Self.role(of: item.okr)
+      if groups[role] == nil { order.append(role) }
+      groups[role, default: []].append(item)
+    }
+    return order.map { ($0, groups[$0] ?? []) }
+  }
+
+  /// "工作-UX designer。探索…" → "工作"; the objective's opening word is the role.
+  public static func role(of okr: String) -> String {
+    let trimmed = okr.trimmingCharacters(in: .whitespaces)
+    guard !trimmed.isEmpty else { return "其他" }
+    let separators = CharacterSet(charactersIn: "-－·・:：。， ")
+    let head = trimmed.unicodeScalars.split(whereSeparator: { separators.contains($0) }).first.map { String(String.UnicodeScalarView($0)) } ?? trimmed
+    return head.isEmpty ? trimmed : head
+  }
+
+  /// Total minutes planned on a day, for the column's load line.
+  public func minutes(on date: String) -> Int {
+    (schedule?.sessions ?? []).filter { $0.date == date }.reduce(0) { $0 + $1.minutes }
+  }
+}
+
+public struct CycleSchedule: Sendable, Equatable {
+  public var generatedAt: Date?
+  public var editedAt: Date?
+  public var sessions: [ScheduleSession]
+  public var deadlines: [ScheduleDeadline]
+  public var note: String?
+
+  public init(generatedAt: Date? = nil, editedAt: Date? = nil, sessions: [ScheduleSession], deadlines: [ScheduleDeadline], note: String? = nil) {
+    self.generatedAt = generatedAt
+    self.editedAt = editedAt
+    self.sessions = sessions
+    self.deadlines = deadlines
+    self.note = note
+  }
+
+  public func sessions(item key: String, on date: String) -> [ScheduleSession] {
+    sessions.filter { $0.itemKey == key && $0.date == date }
+  }
+
+  public func deadline(item key: String) -> String? {
+    deadlines.first { $0.itemKey == key }?.date
+  }
+}
+
+public struct ScheduleSession: Sendable, Equatable, Identifiable {
+  public let id: String
+  public var itemKey: String
+  public var label: String
+  public var date: String
+  /// `HH:mm`, big rocks only.
+  public var start: String?
+  public var minutes: Int
+  public var bigRock: Bool
+
+  public init(id: String, itemKey: String, label: String, date: String, start: String? = nil, minutes: Int, bigRock: Bool = false) {
+    self.id = id
+    self.itemKey = itemKey
+    self.label = label
+    self.date = date
+    self.start = start
+    self.minutes = minutes
+    self.bigRock = bigRock
+  }
+}
+
+public struct ScheduleDeadline: Sendable, Equatable {
+  public var itemKey: String
+  public var label: String
+  public var date: String
+
+  public init(itemKey: String, label: String, date: String) {
+    self.itemKey = itemKey
+    self.label = label
+    self.date = date
+  }
+}
+
+public struct CycleScheduleError: Error, Sendable, Equatable {
+  public let message: String
+  public init(_ message: String) { self.message = message }
+}

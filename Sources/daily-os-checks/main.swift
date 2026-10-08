@@ -1084,8 +1084,33 @@ check(mitState.plan.map { $0.isMIT } == [false, false, true], "建议的那条�
 _ = await mitState.updatePlanRow(candidateID: "b", rank: 2, text: "改个说法", color: nil, note: nil)
 check(mitState.plan.map { $0.isMIT } == [false, false, true], "只改文字不碰 MIT")
 
+// MARK: - 双周排期
+//
+// 角色就是 OKR 目标标题开头那个词；排期视图按它分组。
+
+check(CycleScheduleState.role(of: "工作-UX designer。探索并开创全新的工作方式") == "工作", "「工作-」开头的目标归到「工作」")
+check(CycleScheduleState.role(of: "朋友：正能量闺蜜。建立人脉网档案") == "朋友", "全角冒号也能切出角色")
+check(CycleScheduleState.role(of: "") == "其他", "没有目标的要务归到「其他」")
+let scheduleState = CycleScheduleState(
+  cycleID: "c", today: "2026-10-08",
+  items: [
+    .init(key: "a", text: "写方案 **MIT**", okr: "工作-设计", mit: true),
+    .init(key: "b", text: "打球", okr: "享乐-生活", mit: false),
+    .init(key: "c", text: "作品集", okr: "工作-设计", mit: false),
+  ],
+  days: [.init(date: "2026-10-08", weekday: "星期四", restDay: false)],
+  schedule: CycleSchedule(sessions: [
+    ScheduleSession(id: "1", itemKey: "a", label: "写方案", date: "2026-10-08", start: "10:00", minutes: 120, bigRock: true),
+    ScheduleSession(id: "2", itemKey: "b", label: "打球", date: "2026-10-08", minutes: 90),
+  ], deadlines: []),
+  running: false
+)
+check(scheduleState.roles.map(\.role) == ["工作", "享乐"], "角色按要务在文件里出现的顺序排")
+check(scheduleState.roles.first?.items.map(\.key) == ["a", "c"], "同一角色的要务排在一起")
+check(scheduleState.minutes(on: "2026-10-08") == 210, "一天的合计把这天的格子都加上")
+
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 回归集")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 回归集")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

@@ -419,6 +419,11 @@ private struct CycleDetail: View {
           // it yet".
           MissingSectionPanel(cycle: cycle, kind: kind, editable: editable)
         }
+        // Right under 要务: the schedule is those 要务 laid over the days, and
+        // it is read against them.
+        if kind == .priorities, state.isViewingSelf {
+          CycleSchedulePanel(cycle: cycle, editable: editable)
+        }
       }
     } toolbar: {
       if let runId = cycle.runId {
