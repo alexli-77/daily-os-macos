@@ -629,11 +629,11 @@ private struct CallSheetRow: View {
     }
   }
 
-  /// The middle column: MIT first, where it is seen, then the source on the
-  /// same line. A row sharing its width with an overlapping block keeps MIT and
-  /// drops the source.
+  /// The middle column: MIT first, where it is seen, and the source under it,
+  /// both on the column's left edge. A row sharing its width with an
+  /// overlapping block keeps MIT and drops the source.
   private var tags: some View {
-    HStack(alignment: .top, spacing: Metrics.xs) {
+    VStack(alignment: .leading, spacing: 2) {
       if isMIT {
         Text("MIT")
           .font(Typo.caption)
@@ -648,7 +648,7 @@ private struct CallSheetRow: View {
       }
       if !compact {
         source
-          .padding(.top, 2)
+          .padding(.top, isMIT ? 0 : 2)
       }
     }
   }
