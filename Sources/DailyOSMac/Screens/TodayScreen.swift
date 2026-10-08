@@ -807,7 +807,16 @@ private struct CallSheetRow: View {
       .buttonStyle(.plain)
       .help(item.estimatedMinutes == nil ? "这条没有估时，点一下自己填" : "点一下改估时")
     } else {
-      Text(text).font(Typo.caption).foregroundStyle(Palette.ink3)
+      // Same shape as the button above, stopwatch slot included, so a done row's
+      // estimate lines up with the open rows' instead of sitting ~13pt further
+      // right (LEO-336).
+      HStack(spacing: 2) {
+        Text(text)
+        Image(systemName: "stopwatch").font(.system(size: 9, weight: .medium)).opacity(0)
+      }
+      .font(Typo.caption)
+      .foregroundStyle(Palette.ink3)
+      .accessibilityElement(children: .combine)
     }
   }
 
