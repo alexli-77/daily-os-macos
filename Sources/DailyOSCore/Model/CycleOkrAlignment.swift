@@ -112,3 +112,22 @@ public enum CycleOkrAlignment {
     return Result(rows: rows, isWhollyUnmatched: unmatched)
   }
 }
+
+/// The short label shown before a KR's title in the cycle's OKR column.
+///
+/// KR ids carry their objective's number ("01-KR1"), which the column already
+/// shows once above them — repeated on every KR it was noise. And most titles
+/// already open with "KR1", so the label is dropped when it would only say
+/// the same thing twice.
+public enum KeyResultLabel {
+  public static func text(id: String, title: String) -> String? {
+    var label = id.trimmingCharacters(in: .whitespaces)
+    if let dash = label.firstIndex(of: "-"), label[..<dash].allSatisfy(\.isNumber), !label[..<dash].isEmpty {
+      label = String(label[label.index(after: dash)...])
+    }
+    guard !label.isEmpty else { return nil }
+    let trimmedTitle = title.trimmingCharacters(in: .whitespaces)
+    if trimmedTitle.lowercased().hasPrefix(label.lowercased()) { return nil }
+    return label
+  }
+}
