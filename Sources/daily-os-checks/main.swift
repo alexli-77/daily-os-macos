@@ -1152,8 +1152,24 @@ check(KeyResultLabel.text(id: "01-KR1", title: "KR1 完成作品集") == nil, "�
 check(KeyResultLabel.text(id: "02-KR3", title: "坚持每日一画") == "KR3", "去掉目标编号，只留 KR3")
 check(KeyResultLabel.text(id: "KR2", title: "做分享") == "KR2", "本来就没编号的照旧")
 
+// MARK: - 作息
+// 每类一天多少时间：时间块按类别加起来；24:00 结束的块也算对；侧栏里作息排在周期后面。
+
+let routineMode = RoutineMode(id: "m", label: "作品集日", blocks: [
+  RoutineBlock(id: "a", start: "07:00", end: "08:00", title: "口语", category: "habit", kind: .slot),
+  RoutineBlock(id: "b", start: "13:00", end: "18:00", title: "作品集", category: "portfolio", kind: .slot),
+  RoutineBlock(id: "c", start: "20:00", end: "21:30", title: "画画", category: "habit", kind: .slot),
+  RoutineBlock(id: "d", start: "12:30", end: "13:00", title: "休息"),
+  RoutineBlock(id: "e", start: "23:00", end: "24:00", title: "睡前", category: "rest"),
+])
+check(routineMode.minutesByCategory().map(\.key) == ["portfolio", "habit", "rest"], "类别按时长从多到少")
+check(routineMode.minutesByCategory().first { $0.key == "habit" }?.minutes == 150, "同类的几块加在一起")
+check(routineMode.blocks.last?.minutes == 60, "到 24:00 结束的块是 60 分钟，不是负数")
+check(AppSection.workGroup == [.today, .cycles, .routine, .okr, .countdown], "作息在周期后面")
+check(AppSection.routine.shortcut == "3" && AppSection.schedules.shortcut == "8", "快捷键跟着侧栏顺序走")
+
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 回归集")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 回归集")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

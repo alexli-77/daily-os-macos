@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The eight destinations.
+/// The nine destinations.
 ///
 /// The web console has nine pages plus a nine-section config screen. Two of them
 /// do not survive the move to a native app:
@@ -14,6 +14,7 @@ import SwiftUI
 public enum AppSection: String, CaseIterable, Identifiable, Sendable {
   case today
   case cycles
+  case routine
   case okr
   case countdown
   case runs
@@ -27,6 +28,7 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
     switch self {
     case .today: "今天"
     case .cycles: "周期"
+    case .routine: "作息"
     case .okr: "OKR"
     case .countdown: "倒数日"
     case .runs: "运行"
@@ -40,6 +42,7 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
     switch self {
     case .today: "sun.horizon"
     case .cycles: "calendar.badge.clock"
+    case .routine: "calendar.day.timeline.left"
     case .okr: "target"
     case .countdown: "hourglass"
     case .runs: "waveform.path.ecg"
@@ -56,22 +59,24 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
   /// alternative was to hand the new section ⌘7 and leave the others alone,
   /// which keeps three months of muscle memory at the price of a sidebar whose
   /// order and whose shortcuts disagree forever. The order is the thing people
-  /// actually read off the screen.
+  /// actually read off the screen. 作息 went in after 周期 the same way: it is
+  /// the frame the cycle's days run on, and it sits beside it.
   public var shortcut: KeyEquivalent? {
     switch self {
     case .today: "1"
     case .cycles: "2"
-    case .okr: "3"
-    case .countdown: "4"
-    case .runs: "5"
-    case .artifacts: "6"
-    case .schedules: "7"
+    case .routine: "3"
+    case .okr: "4"
+    case .countdown: "5"
+    case .runs: "6"
+    case .artifacts: "7"
+    case .schedules: "8"
     case .settings: nil
     }
   }
 
   /// The sidebar groups. Work you do, then work the machine did, then config.
-  public static let workGroup: [AppSection] = [.today, .cycles, .okr, .countdown]
+  public static let workGroup: [AppSection] = [.today, .cycles, .routine, .okr, .countdown]
   public static let systemGroup: [AppSection] = [.runs, .artifacts, .schedules]
 
   /// The iOS tabs. Everything in `systemGroup` plus settings lives behind

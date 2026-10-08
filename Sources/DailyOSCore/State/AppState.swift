@@ -92,6 +92,10 @@ open class AppState {
   /// service puts them on the sheet as rows (LEO-332).
   public var planMealBlocks: [DaySchedule.FixedBlock] = []
 
+  /// Today's 作息, when one covers today: its mode and the slots the Today
+  /// timeline draws behind the rows.
+  public var todayRoutine: TodayRoutine?
+
   /// When this app started a `daily_plan` run that has not produced a plan yet.
   ///
   /// **In the store rather than in the panel**, and that is the whole point of
@@ -518,6 +522,22 @@ open class AppState {
   /// service.
   open func loadDayHistory(date: String?) async -> Result<DayHistory, DayHistoryError> {
     .success(MockData.dayHistory(date: date))
+  }
+
+  // MARK: 作息
+
+  open func loadRoutines() async -> Result<RoutineState, RoutineError> {
+    .failure(RoutineError("没有连接到服务，看不到作息。"))
+  }
+
+  /// Save every period, whole. Returns what the service kept.
+  open func saveRoutines(_ periods: [RoutinePeriod]) async -> Result<RoutineState, RoutineError> {
+    .failure(RoutineError("没有连接到服务。"))
+  }
+
+  /// Which mode a date runs in (作品集日 / Cutto 日).
+  open func setDayMode(date: String?, mode: String) async -> ActionOutcome {
+    .unsupported("没有连接到服务。")
   }
 
   // MARK: 双周排期
