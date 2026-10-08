@@ -29,6 +29,7 @@ struct SectionView: View {
     switch section {
     case .today: TodayScreen()
     case .cycles: CyclesScreen()
+    case .routine: RoutineScreen()
     case .okr: OKRScreen()
     case .countdown: CountdownScreen()
     case .runs: RunsScreen()

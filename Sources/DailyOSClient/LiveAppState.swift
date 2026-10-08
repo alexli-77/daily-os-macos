@@ -31,7 +31,7 @@ public final class LiveAppState: AppState {
   /// a new section in one and not the other would either mark a live screen as
   /// fixture or claim a fixture screen is live, and neither shows up until
   /// someone reconnects.
-  private static let liveSections: Set<AppSection> = [.today, .cycles, .okr, .countdown, .artifacts, .settings]
+  private static let liveSections: Set<AppSection> = [.today, .cycles, .routine, .okr, .countdown, .artifacts, .settings]
 
   public init(connection: ServiceConnection) {
     self.connection = connection
@@ -76,6 +76,7 @@ public final class LiveAppState: AppState {
     planGeneratedAt = nil
     planWorkStartMinute = nil
     planMealBlocks = []
+    todayRoutine = nil
     selectedCycleID = nil
     selectedRunID = nil
     selectedArtifactID = nil
@@ -224,6 +225,7 @@ public final class LiveAppState: AppState {
       let rhythm = try await client.dayRhythm()
       self.planWorkStartMinute = rhythm.workStart
       self.planMealBlocks = rhythm.meals
+      self.todayRoutine = rhythm.routine
     }
 
     await load(.teamToday) {
@@ -450,6 +452,35 @@ public final class LiveAppState: AppState {
       lastActionError = reason
       await reload()
       return .failed(reason)
+    }
+  }
+
+  public override func loadRoutines() async -> Result<RoutineState, RoutineError> {
+    guard let client else { return .failure(RoutineError("没有连接到服务。")) }
+    do { return .success(try await client.routines()) } catch {
+      return .failure(RoutineError((error as? ClientError)?.errorDescription ?? error.localizedDescription))
+    }
+  }
+
+  public override func saveRoutines(_ periods: [RoutinePeriod]) async -> Result<RoutineState, RoutineError> {
+    guard let client else { return .failure(RoutineError("没有连接到服务。")) }
+    do {
+      let saved = try await client.saveRoutines(periods)
+      await reload()
+      return .success(saved)
+    } catch {
+      return .failure(RoutineError((error as? ClientError)?.errorDescription ?? error.localizedDescription))
+    }
+  }
+
+  public override func setDayMode(date: String?, mode: String) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      let text = try await client.setDayMode(date: date, mode: mode)
+      await reload()
+      return .ok(text)
+    } catch {
+      return .failed((error as? ClientError)?.errorDescription ?? error.localizedDescription)
     }
   }
 

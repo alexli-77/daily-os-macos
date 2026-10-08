@@ -51,11 +51,18 @@ struct RhythmPayload: Decodable {
   /// Today's routines and fixed meetings, already narrowed to today by the
   /// service. Absent on a service older than LEO-330.
   let fixedBlocks: [FixedBlockPayload]?
+  /// Today's resolved day shape; only its 作息 is read here.
+  let today: DayShapePayload?
 
   enum CodingKeys: String, CodingKey {
     case workingHours = "working_hours"
     case fixedBlocks = "fixed_blocks"
+    case today
   }
+}
+
+struct DayShapePayload: Decodable {
+  let routine: DayRoutinePayload?
 }
 
 struct ClockRangePayload: Decodable {
@@ -259,9 +266,9 @@ extension DailyOSClient {
   /// work day starts, and the meal bands tasks must flow around. Absent or
   /// malformed values return nil / drop, so the schedule falls back to its old
   /// behaviour rather than to 00:00.
-  public func dayRhythm() async throws -> (workStart: Int?, meals: [DaySchedule.FixedBlock]) {
+  public func dayRhythm() async throws -> (workStart: Int?, meals: [DaySchedule.FixedBlock], routine: TodayRoutine?) {
     let payload: StatePayload = try await get(statePath)
-    guard let rhythm = payload.rhythm else { return (nil, []) }
+    guard let rhythm = payload.rhythm else { return (nil, [], nil) }
     let workStart = rhythm.workingHours.flatMap { DayStart.minute(fromClock: $0.start) }
     // Meals are not drawn as fixed blocks any more: the service puts them on
     // today's sheet as rows the user can move, resize, tick or delete (LEO-332).
@@ -278,7 +285,7 @@ extension DailyOSClient {
         note: block.note.flatMap { $0.isEmpty ? nil : $0 }
       )
     }
-    return (workStart, fixed.sorted { $0.start < $1.start })
+    return (workStart, fixed.sorted { $0.start < $1.start }, rhythm.today?.routine?.model)
   }
 
   private var statePath: String { "/api/state" }

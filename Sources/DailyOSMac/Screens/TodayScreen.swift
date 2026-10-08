@@ -191,6 +191,16 @@ private struct CallSheetPanel: View {
         }
       }
     } actions: {
+      if let routine = state.todayRoutine, routine.modes.count > 1 {
+        // 作品集日 / Cutto 日: decided at the morning meeting, switched here.
+        Picker("", selection: Binding(get: { routine.mode.id }, set: { switchMode(to: $0, in: routine) })) {
+          ForEach(routine.modes, id: \.id) { mode in Text(mode.label).tag(mode.id) }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+        .help("今天按哪种作息过。切换后时段格子跟着变；已经排好的 to-do 不会自己挪，要按新格子重排就点「重新生成」。")
+      }
       if !schedule.rows.isEmpty {
         Button(isRunning ? "正在生成…" : "重新生成", action: generate)
           .buttonStyle(QuietButtonStyle())
@@ -225,6 +235,14 @@ private struct CallSheetPanel: View {
         let lane = max(geo.size.width - Timeline.gutter, 1)
         ZStack(alignment: .topLeading) {
           HourGrid(range: range)
+          // The 作息's slots, behind everything: the time kept for each
+          // category, which that category's rows go into.
+          ForEach(state.todayRoutine?.slots ?? []) { slot in
+            RoutineSlotBand(slot: slot)
+              .frame(width: lane, height: max(Timeline.y(slot.end, from: slot.start) - 2, 12))
+              .offset(x: Timeline.gutter, y: Timeline.y(slot.start, from: origin) + 1)
+              .allowsHitTesting(false)
+          }
           ForEach(blocks) { block in
             FixedBlockView(block: block)
               .timelineSlot(start: block.start, end: block.end, origin: origin, lane: lane, placement: columns["block:\(block.id)"])
@@ -364,8 +382,9 @@ private struct CallSheetPanel: View {
   /// Whole hours from the first thing on the day to the last, so the earliest
   /// routine and the projected end both fit.
   private var timelineRange: ClosedRange<Int> {
-    let starts = state.planMealBlocks.map(\.start) + schedule.rows.compactMap(\.start)
-    let ends = state.planMealBlocks.map(\.end) + schedule.rows.compactMap(\.end)
+    let slots = state.todayRoutine?.slots ?? []
+    let starts = state.planMealBlocks.map(\.start) + schedule.rows.compactMap(\.start) + slots.map(\.start)
+    let ends = state.planMealBlocks.map(\.end) + schedule.rows.compactMap(\.end) + slots.map(\.end)
     let lower = max(0, (starts.min() ?? schedule.now) / 60 * 60)
     let upper = min(24 * 60, ((ends.max() ?? lower) + 59) / 60 * 60)
     return lower...max(upper, lower + 60)
@@ -406,6 +425,17 @@ private struct CallSheetPanel: View {
     Task {
       if case .failed(let why) = await state.savePlanOrder(order) { state.toast = why }
       else { state.toast = "顺到队尾了，后面的时段跟着重算" }
+    }
+  }
+
+  private func switchMode(to mode: String, in routine: TodayRoutine) {
+    guard mode != routine.mode.id else { return }
+    let label = routine.modes.first { $0.id == mode }?.label ?? mode
+    Task {
+      switch await state.setDayMode(date: nil, mode: mode) {
+      case .ok: state.toast = "今天按「\(label)」过；要让 to-do 落进新的格子，点「重新生成」"
+      case .failed(let why), .unsupported(let why): state.toast = why
+      }
     }
   }
 
@@ -969,6 +999,34 @@ private struct RowEditor: View {
     .help(label)
     .accessibilityLabel(label)
     .accessibilityAddTraits(selected ? [.isSelected] : [])
+  }
+}
+
+// MARK: - 作息 slots
+
+/// One slot of today's 作息, drawn behind the rows: a faint wash of the
+/// category's colour, a bar on the left, and its name in the corner. Dashed
+/// when it is a floor.
+private struct RoutineSlotBand: View {
+  let slot: TodayRoutine.Slot
+
+  var body: some View {
+    let color = slot.color.flatMap(Palette.rowColor) ?? Palette.ink3
+    ZStack(alignment: .topTrailing) {
+      RoundedRectangle(cornerRadius: 6, style: .continuous).fill(color.opacity(0.07))
+      Text([slot.category ?? slot.title, slot.floor ? "保底" : nil].compactMap { $0 }.joined(separator: " · "))
+        .font(Typo.caption)
+        .foregroundStyle(color.opacity(0.9))
+        .padding(.horizontal, Metrics.xs)
+        .padding(.top, 2)
+    }
+    .overlay(alignment: .leading) { Rectangle().fill(color.opacity(0.6)).frame(width: 3) }
+    .overlay {
+      if slot.floor {
+        RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(color.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+      }
+    }
+    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
   }
 }
 
