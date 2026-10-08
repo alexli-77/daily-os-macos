@@ -158,11 +158,20 @@ private struct CallSheetPanel: View {
   @Binding var selectedID: TodoItem.ID?
 
   @State private var isStarting = false
+  @State private var showsAdhoc = false
   /// A drag in progress on the timeline, so the block can follow the pointer
   /// (snapped) before anything is sent.
   @State private var drag: TimelineDrag?
 
   var body: some View {
+    callSheet
+      .sheet(isPresented: $showsAdhoc) {
+        AdhocSheet(rows: schedule.rows, now: schedule.now) { showsAdhoc = false }
+          .environment(state)
+      }
+  }
+
+  private var callSheet: some View {
     Panel("今天的通告单", subtitle: subtitle) {
       VStack(alignment: .leading, spacing: Metrics.sm) {
         if let startedAt = state.planRunStartedAt { StartedNote(at: startedAt) }
@@ -201,6 +210,9 @@ private struct CallSheetPanel: View {
         .fixedSize()
         .help("今天按哪种作息过。切换后时段格子跟着变；已经排好的 to-do 不会自己挪，要按新格子重排就点「重新生成」。")
       }
+      Button { showsAdhoc = true } label: { Label("临时安排", systemImage: "plus") }
+        .buttonStyle(QuietButtonStyle(tone: .neutral))
+        .help("今天临时多了件事（比如晚上去打球）：放进今天，作息今天给它让位，排期跟着记上")
       if !schedule.rows.isEmpty {
         Button(isRunning ? "正在生成…" : "重新生成", action: generate)
           .buttonStyle(QuietButtonStyle())
@@ -244,7 +256,7 @@ private struct CallSheetPanel: View {
               .allowsHitTesting(false)
           }
           ForEach(blocks) { block in
-            FixedBlockView(block: block)
+            RoutineFixedBlock(block: block)
               .timelineSlot(start: block.start, end: block.end, origin: origin, lane: lane, placement: columns["block:\(block.id)"])
           }
           ForEach(slotted, id: \.element.id) { index, row in
@@ -745,8 +757,15 @@ private struct CallSheetRow: View {
         if case .failed(let why) = outcome { failure = why } else if case .unsupported(let why) = outcome { failure = why }
       }
       // Last, so a rename and a tick in one save land as edited-then-ticked.
-      if failure == nil, let newState { failure = await send(newState) }
-      state.toast = failure ?? "已改好"
+      var note: String?
+      if failure == nil, let newState { (failure, note) = await send(newState) }
+      if let failure { state.toast = failure; return }
+      if let note, let newState {
+        // The schedule moved with it; offer the way back.
+        state.toast("已改好；\(note)", undo: undo(from: newState))
+      } else {
+        state.toast = "已改好"
+      }
     }
   }
 
@@ -765,11 +784,17 @@ private struct CallSheetRow: View {
       state.setTodo(item.id, to: .deleted)
       return
     }
+    let candidateID = item.id
+    let rank = row.rank
     Task {
-      let outcome = await state.planFeedback(candidateID: item.id, rank: row.rank, event: "remove", note: nil)
-      state.toast = switch outcome {
-      case .ok: "已从今天删除"
-      case .failed(let why), .unsupported(let why): why
+      switch await state.planFeedback(candidateID: candidateID, rank: rank, event: "remove", note: nil) {
+      case .ok(let note):
+        let store = state
+        let takeBack: @MainActor () -> Void = {
+          Task { @MainActor in _ = await store.planFeedback(candidateID: candidateID, rank: rank, event: "reopen", note: nil) }
+        }
+        state.toast(["已从今天删除", note].compactMap { $0 }.joined(separator: "；"), undo: takeBack)
+      case .failed(let why), .unsupported(let why): state.toast = why
       }
     }
   }
@@ -791,20 +816,33 @@ private struct CallSheetRow: View {
     let target = requested == item.state && requested != .open ? .open : requested
     guard target != item.state else { return }
     Task {
-      let failure = await send(target)
-      if isPlanRow {
-        state.toast = failure ?? (target == .done ? "已完成" : "已恢复")
-      } else if let failure {
+      let (failure, note) = await send(target)
+      if let failure {
         state.toast = failure
+      } else if isPlanRow {
+        let text = target == .done ? "已完成" : "已恢复"
+        if let note { state.toast("\(text)；\(note)", undo: undo(from: target)) } else { state.toast = text }
       }
     }
   }
 
-  /// Puts the row in exactly `target`. Returns why it failed, or nil.
-  private func send(_ target: TodoState) async -> String? {
+  /// Takes the row back to open — which also undoes what the schedule did.
+  private func undo(from target: TodoState) -> (@MainActor () -> Void)? {
+    guard target != .open else { return nil }
+    let candidateID = item.id
+    let rank = row.rank
+    let store = state
+    return {
+      Task { @MainActor in _ = await store.planFeedback(candidateID: candidateID, rank: rank, event: "reopen", note: nil) }
+    }
+  }
+
+  /// Puts the row in exactly `target`. Returns why it failed, and what the
+  /// cycle schedule did in step, if anything.
+  private func send(_ target: TodoState) async -> (failure: String?, note: String?) {
     guard isPlanRow else {
       state.setTodo(item.id, to: target)
-      return nil
+      return (nil, nil)
     }
     let event = switch target {
     case .done: "complete"
@@ -813,8 +851,8 @@ private struct CallSheetRow: View {
     default: "reopen"
     }
     switch await state.planFeedback(candidateID: item.id, rank: row.rank, event: event, note: nil) {
-    case .ok: return nil
-    case .failed(let why), .unsupported(let why): return why
+    case .ok(let note): return (nil, note)
+    case .failed(let why), .unsupported(let why): return (why, nil)
     }
   }
 }
@@ -999,6 +1037,228 @@ private struct RowEditor: View {
     .help(label)
     .accessibilityLabel(label)
     .accessibilityAddTraits(selected ? [.isSelected] : [])
+  }
+}
+
+// MARK: - 临时安排
+
+/// Something that came up today. Pick a 要务 or write it, set the time; the
+/// rows it would sit on top of are listed with what to do with each (挪到明天
+/// by default). Saved in one go, and the toast offers 撤销 for all of it.
+private struct AdhocSheet: View {
+  @Environment(AppState.self) private var state
+  let rows: [DaySchedule.Row]
+  let now: Int
+  let onClose: () -> Void
+
+  @State private var title = ""
+  @State private var itemKey: String?
+  @State private var start: Int
+  @State private var end: Int
+  @State private var extra = false
+  @State private var items: [CycleScheduleState.Item] = []
+  @State private var choices: [String: AdhocRequest.Displace?] = [:]
+  @State private var isSaving = false
+
+  private static let clocks: [Int] = Array(stride(from: 6 * 60, through: 24 * 60, by: 15))
+
+  init(rows: [DaySchedule.Row], now: Int, onClose: @escaping () -> Void) {
+    self.rows = rows
+    self.now = now
+    self.onClose = onClose
+    let first = min(23 * 60, (now + 29) / 30 * 30)
+    _start = State(initialValue: first)
+    _end = State(initialValue: min(24 * 60, first + 120))
+  }
+
+  /// Open rows whose slot overlaps the new one.
+  private var displaced: [DaySchedule.Row] {
+    rows.filter { row in
+      guard let rowStart = row.start, let rowEnd = row.end else { return false }
+      guard row.item.state == .open || row.item.state == .partial else { return false }
+      return rowStart < end && start < rowEnd
+    }
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Metrics.sm) {
+      Text("临时安排").font(Typo.heading)
+      Text("放进今天；这段时间作息今天给它让位，模板不动。是本期要务的话，算作本期的一次。")
+        .font(Typo.caption).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+      TextField("要做什么，比如「去打球」", text: $title).textFieldStyle(.roundedBorder)
+      if !items.isEmpty {
+        VStack(alignment: .leading, spacing: Metrics.xxs) {
+          Text("是本期的哪条要务吗？").font(Typo.caption).foregroundStyle(Palette.ink3)
+          ScrollView(.horizontal) {
+            HStack(spacing: Metrics.xxs) {
+              ForEach(items) { item in
+                Button(CycleSchedulePanel.clean(item.text).prefix(16) + (item.text.count > 16 ? "…" : "")) {
+                  if itemKey == item.key { itemKey = nil } else {
+                    itemKey = item.key
+                    if title.trimmingCharacters(in: .whitespaces).isEmpty { title = CycleSchedulePanel.clean(item.text) }
+                  }
+                }
+                .buttonStyle(QuietButtonStyle(tone: itemKey == item.key ? .accent : .neutral))
+                .help(item.text)
+              }
+            }
+          }
+        }
+      }
+      HStack {
+        Picker("从", selection: $start) { ForEach(Self.clocks.dropLast(), id: \.self) { Text(DaySchedule.clock($0)).tag($0) } }
+        Picker("到", selection: $end) { ForEach(Self.clocks, id: \.self) { Text($0 == 24 * 60 ? "24:00" : DaySchedule.clock($0)).tag($0) } }
+      }
+      if itemKey != nil {
+        Toggle("这是额外的，不抵掉本期后面的一次", isOn: $extra)
+      }
+      if !displaced.isEmpty {
+        VStack(alignment: .leading, spacing: Metrics.xxs) {
+          Text("这段时间原来排着：").font(Typo.caption).foregroundStyle(Palette.ink3)
+          ForEach(displaced) { row in
+            HStack {
+              Text(row.item.text).font(Typo.body).lineLimit(1)
+              Spacer()
+              Picker("", selection: Binding(get: { choices[row.id] ?? .some(.tomorrow) }, set: { choices[row.id] = $0 })) {
+                Text("挪到明天").tag(AdhocRequest.Displace?.some(.tomorrow))
+                Text("今天不做").tag(AdhocRequest.Displace?.some(.drop))
+                Text("不动").tag(AdhocRequest.Displace?.none)
+              }
+              .labelsHidden().fixedSize()
+            }
+          }
+        }
+      }
+      if end <= start {
+        Text("结束要晚于开始").font(Typo.caption).foregroundStyle(Palette.warn)
+      }
+      HStack {
+        Spacer()
+        Button("取消", action: onClose).buttonStyle(QuietButtonStyle(tone: .neutral)).keyboardShortcut(.cancelAction)
+        Button(isSaving ? "放进去…" : "放进今天", action: save)
+          .buttonStyle(MossButtonStyle(prominent: true))
+          .keyboardShortcut(.defaultAction)
+          .disabled(isSaving || end <= start || title.trimmingCharacters(in: .whitespaces).isEmpty)
+      }
+    }
+    .padding(Metrics.lg)
+    .frame(width: 480)
+    .task {
+      guard let cycle = state.currentCycle, case .success(let loaded) = await state.loadCycleSchedule(cycleID: cycle.id) else { return }
+      items = loaded.items
+    }
+  }
+
+  private func save() {
+    isSaving = true
+    let request = AdhocRequest(
+      title: title.trimmingCharacters(in: .whitespaces),
+      itemKey: itemKey,
+      start: DaySchedule.clock(start),
+      end: end == 24 * 60 ? "24:00" : DaySchedule.clock(end),
+      extra: extra,
+      displaced: displaced.compactMap { row in
+        guard let action = choices[row.id] ?? .some(.tomorrow) else { return nil }
+        return .init(candidateID: row.id, rank: row.rank, action: action)
+      }
+    )
+    Task {
+      let (outcome, undo) = await state.addAdhoc(request)
+      isSaving = false
+      switch outcome {
+      case .ok(let text):
+        onClose()
+        var takeBack: (@MainActor () -> Void)?
+        if let undo {
+          let store = state
+          takeBack = {
+            Task { @MainActor in store.toast = (await store.undoAdhoc(undo)).message }
+          }
+        }
+        state.toast(text ?? "放进今天了", undo: takeBack)
+      case .failed(let why), .unsupported(let why):
+        state.toast = why
+      }
+    }
+  }
+}
+
+private extension AppState.ActionOutcome {
+  var message: String {
+    switch self {
+    case .ok(let text): text ?? "好了"
+    case .failed(let why), .unsupported(let why): why
+    }
+  }
+}
+
+/// A fixed block on Today's timeline. One from the 作息 can be changed for
+/// today only — moved, renamed or taken off today — and put back; the
+/// template is not touched.
+private struct RoutineFixedBlock: View {
+  @Environment(AppState.self) private var state
+  let block: DaySchedule.FixedBlock
+  @State private var isEditing = false
+  @State private var label = ""
+  @State private var start = 0
+  @State private var end = 0
+
+  private static let clocks: [Int] = Array(stride(from: 5 * 60, through: 24 * 60, by: 15))
+
+  var body: some View {
+    FixedBlockView(block: block)
+      .contentShape(Rectangle())
+      .onTapGesture {
+        guard block.routineBlockID != nil else { return }
+        label = block.label
+        start = block.start
+        end = block.end
+        isEditing = true
+      }
+      .help(block.routineBlockID == nil ? "" : "作息里的固定块 · 点一下只改今天")
+      .popover(isPresented: $isEditing, arrowEdge: .trailing) {
+        VStack(alignment: .leading, spacing: Metrics.sm) {
+          Text("只改今天").font(Typo.heading)
+          Text("作息模板不动，明天还是原样。").font(Typo.caption).foregroundStyle(Palette.ink3)
+          TextField("叫什么", text: $label).textFieldStyle(.roundedBorder)
+          HStack {
+            Picker("从", selection: $start) { ForEach(Self.clocks, id: \.self) { Text(DaySchedule.clock($0)).tag($0) } }
+            Picker("到", selection: $end) { ForEach(Self.clocks, id: \.self) { Text($0 == 24 * 60 ? "24:00" : DaySchedule.clock($0)).tag($0) } }
+          }
+          HStack {
+            Button("今天不要这块") { apply("hide") }.buttonStyle(QuietButtonStyle(tone: .neutral))
+            Button("恢复作息原样") { apply("reset") }.buttonStyle(QuietButtonStyle(tone: .neutral))
+            Spacer()
+            Button("保存") { apply("edit") }
+              .buttonStyle(MossButtonStyle(prominent: true))
+              .keyboardShortcut(.defaultAction)
+              .disabled(end <= start || label.trimmingCharacters(in: .whitespaces).isEmpty)
+          }
+        }
+        .padding(Metrics.md)
+        .frame(width: 380)
+      }
+  }
+
+  private func apply(_ action: String) {
+    isEditing = false
+    guard let id = block.routineBlockID else { return }
+    Task {
+      let outcome = await state.changeTodayRoutineBlock(blockID: id, action: action, label: label, start: start, end: end)
+      switch outcome {
+      case .ok(let text):
+        var takeBack: (@MainActor () -> Void)?
+        if action != "reset" {
+          let store = state
+          takeBack = {
+            Task { @MainActor in _ = await store.changeTodayRoutineBlock(blockID: id, action: "reset") }
+          }
+        }
+        state.toast(text ?? "只改了今天", undo: takeBack)
+      case .failed(let why), .unsupported(let why):
+        state.toast = why
+      }
+    }
   }
 }
 

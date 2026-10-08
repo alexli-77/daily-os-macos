@@ -77,6 +77,8 @@ struct FixedBlockPayload: Decodable {
   /// `routine` | `meeting`; anything else is drawn as a routine.
   let kind: String?
   let note: String?
+  /// Set when the block comes from the 作息.
+  let routineBlockId: String?
 }
 
 struct TodoInboxPayload: Decodable {
@@ -282,7 +284,8 @@ extension DailyOSClient {
         start: start,
         end: end,
         kind: block.kind == "meeting" ? .meeting : .routine,
-        note: block.note.flatMap { $0.isEmpty ? nil : $0 }
+        note: block.note.flatMap { $0.isEmpty ? nil : $0 },
+        routineBlockID: block.routineBlockId
       )
     }
     return (workStart, fixed.sorted { $0.start < $1.start }, rhythm.today?.routine?.model)

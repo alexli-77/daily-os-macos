@@ -1173,8 +1173,21 @@ check(ScheduleSession(id: "1", itemKey: "k", label: "回捞用户", date: "2026-
 check(ScheduleSession(id: "2", itemKey: "k", label: "回捞用户", date: "2026-10-08", minutes: 60).title == "回捞用户", "没有就显示要务本身")
 check(ScheduleSession(id: "3", itemKey: "k", label: "回捞用户", date: "2026-10-08", minutes: 60, step: "").title == "回捞用户", "空的一步不算")
 
+// MARK: - 撤销
+// 今天页的改动会回写排期，所以提示条要能撤销；后来的普通提示不能带着前一条的撤销。
+
+let undoState = AppState.previewOwner()
+var undone = false
+undoState.toast("排期也挪了", undo: { undone = true })
+check(undoState.toastUndo != nil, "带撤销的提示有撤销")
+undoState.toastUndo?()
+check(undone, "点撤销会执行")
+undoState.toast("排期也挪了", undo: { })
+undoState.toast = "已完成"
+check(undoState.toastUndo == nil, "新的普通提示不带前一条的撤销")
+
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 回归集")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

@@ -134,6 +134,7 @@ extension DailyOSClient {
   /// other two, because completing something says nothing about how long it
   /// took and a duration riding along on a tick would silently rewrite the
   /// estimate.
+  @discardableResult
   public func recordPlanFeedback(
     candidateID: String,
     rank: Int,
@@ -144,7 +145,7 @@ extension DailyOSClient {
     text: String? = nil,
     color: String? = nil,
     mit: Bool? = nil
-  ) async throws {
+  ) async throws -> String? {
     struct Request: Encodable {
       let candidateId: String
       let rank: Int
@@ -160,10 +161,51 @@ extension DailyOSClient {
       /// Make the row today's MIT or take it off, on `update` only.
       let mit: Bool?
     }
-    try await post(
+    struct Response: Decodable {
+      /// What the cycle schedule did in step (顺延 / 删除 / 恢复 a 要务 row).
+      let schedule: String?
+    }
+    let response: Response = try await post(
       "/api/today/todo-feedback",
       body: Request(candidateId: candidateID, rank: rank, event: event, note: note, minutes: minutes, start: start, text: text, color: color, mit: mit)
     )
+    return response.schedule
+  }
+
+  /// 临时安排. Returns the service's summary and how to undo it.
+  public func addAdhoc(_ request: AdhocRequest) async throws -> (text: String?, undo: AdhocUndo?) {
+    struct Displaced: Encodable { let candidateId: String; let rank: Int; let action: String }
+    struct Body: Encodable {
+      let title: String
+      let itemKey: String?
+      let start: String
+      let end: String
+      let extra: Bool
+      let displaced: [Displaced]
+    }
+    struct Response: Decodable { let text: String?; let undo: AdhocUndo? }
+    let response: Response = try await post("/api/today/adhoc", body: Body(
+      title: request.title, itemKey: request.itemKey, start: request.start, end: request.end, extra: request.extra,
+      displaced: request.displaced.map { Displaced(candidateId: $0.candidateID, rank: $0.rank, action: $0.action.rawValue) }
+    ))
+    return (response.text, response.undo)
+  }
+
+  public func undoAdhoc(_ undo: AdhocUndo) async throws {
+    try await post("/api/today/adhoc/undo", body: undo)
+  }
+
+  /// Change one 作息 block for today only.
+  public func changeDayOverride(blockID: String, action: String, label: String?, start: String?, end: String?) async throws {
+    struct Block: Encodable { let id: String; let start: String; let end: String; let title: String; let kind: String }
+    struct Change: Encodable {
+      let type: String
+      let blockId: String?
+      let block: Block?
+    }
+    struct Body: Encodable { let change: Change }
+    let block: Block? = action == "edit" ? Block(id: blockID, start: start ?? "", end: end ?? "", title: label ?? "", kind: "fixed") : nil
+    try await post("/api/routines/day-override", body: Body(change: Change(type: action, blockId: action == "edit" ? nil : blockID, block: block)))
   }
 
   /// Record the user's own order for today's plan.
