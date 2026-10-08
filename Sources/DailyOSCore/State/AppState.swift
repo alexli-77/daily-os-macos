@@ -544,16 +544,25 @@ open class AppState {
   }
 
   /// Edit a plan row for today from the row editor (LEO-332, LEO-334): its
-  /// text, its colour (`auto` = by source) and an update note, any of which may
-  /// be nil for "unchanged". Applied locally first; a live store also records
-  /// it, as one `update`.
-  open func updatePlanRow(candidateID: String, rank: Int, text: String?, color: String?, note: String?) async -> ActionOutcome {
+  /// text, its colour (`auto` = by source), an update note and whether it is
+  /// today's MIT, any of which may be nil for "unchanged". Applied locally
+  /// first; a live store also records it, as one `update`.
+  open func updatePlanRow(candidateID: String, rank: Int, text: String?, color: String?, note: String?, mit: Bool? = nil) async -> ActionOutcome {
     guard let index = plan.firstIndex(where: { $0.id == candidateID }) else {
       return .failed("这条计划已经不在了。")
     }
     if let text { plan[index].text = text }
     if let color { plan[index].colorTag = color == "auto" ? nil : color }
     if let note { plan[index].note = note }
+    if let mit {
+      // The other rows keep the MIT their rank gave them until the service
+      // says otherwise; pinning it down here keeps them from flipping.
+      for other in plan.indices where plan[other].isMIT == nil {
+        plan[other].isMIT = PlanImportance.forRank(other + 1) == .mit
+      }
+      plan[index].isMIT = mit
+      plan[index].mitByUser = true
+    }
     return .ok(nil)
   }
 

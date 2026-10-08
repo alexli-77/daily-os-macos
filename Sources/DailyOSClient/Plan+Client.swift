@@ -37,6 +37,10 @@ struct TodayPlanResponse: Decodable {
     let start: String?
     /// The colour the user gave the row today (LEO-334).
     let color: String?
+    /// Today's MIT, resolved by the service. Absent = not the MIT, on a
+    /// service that knows the field; see `knowsMIT`.
+    let mit: Bool?
+    let mitByUser: Bool?
   }
 
   let plan: Plan?
@@ -82,6 +86,9 @@ extension DailyOSClient {
       return TodayPlan(items: [], staleDate: nil, hasPlan: false)
     }
 
+    // A service that knows about MIT marks at least one row (or says the user
+    // took it off); one that predates the field marks none, and the rank decides.
+    let knowsMIT = response.todos.contains { $0.mit != nil }
     let items = response.todos
       .sorted { $0.rank < $1.rank }
       .map { todo -> TodoItem in
@@ -101,7 +108,9 @@ extension DailyOSClient {
           note: response.notes?[todo.candidateId],
           carriedFrom: response.carriedFrom?[todo.candidateId],
           pinnedStart: todo.start.flatMap(DayStart.minute(fromClock:)),
-          colorTag: todo.color
+          colorTag: todo.color,
+          isMIT: knowsMIT ? (todo.mit ?? false) : nil,
+          mitByUser: todo.mitByUser ?? false
         )
       }
 
@@ -133,7 +142,8 @@ extension DailyOSClient {
     minutes: Int? = nil,
     start: String? = nil,
     text: String? = nil,
-    color: String? = nil
+    color: String? = nil,
+    mit: Bool? = nil
   ) async throws {
     struct Request: Encodable {
       let candidateId: String
@@ -147,10 +157,12 @@ extension DailyOSClient {
       let text: String?
       /// A colour name or `auto`, on `update` only.
       let color: String?
+      /// Make the row today's MIT or take it off, on `update` only.
+      let mit: Bool?
     }
     try await post(
       "/api/today/todo-feedback",
-      body: Request(candidateId: candidateID, rank: rank, event: event, note: note, minutes: minutes, start: start, text: text, color: color)
+      body: Request(candidateId: candidateID, rank: rank, event: event, note: note, minutes: minutes, start: start, text: text, color: color, mit: mit)
     )
   }
 
