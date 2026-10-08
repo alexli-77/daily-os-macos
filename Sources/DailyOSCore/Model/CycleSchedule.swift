@@ -25,16 +25,50 @@ public struct CycleScheduleState: Sendable, Equatable {
   }
 
   public struct Day: Sendable, Equatable, Identifiable {
+    /// A meal or a fixed routine from the rhythm settings.
+    public struct Block: Sendable, Equatable {
+      public let label: String
+      public let start: Int
+      public let end: Int
+      public init(label: String, start: Int, end: Int) {
+        self.label = label
+        self.start = start
+        self.end = end
+      }
+    }
+
     /// `YYYY-MM-DD`.
     public let date: String
     public let weekday: String
     public let restDay: Bool
+    /// Minutes from midnight.
+    public let workStart: Int
+    public let workEnd: Int
+    public let blocks: [Block]
     public var id: String { date }
 
-    public init(date: String, weekday: String, restDay: Bool) {
+    public init(date: String, weekday: String, restDay: Bool, workStart: Int = 9 * 60 + 30, workEnd: Int = 18 * 60 + 30, blocks: [Block] = []) {
       self.date = date
       self.weekday = weekday
       self.restDay = restDay
+      self.workStart = workStart
+      self.workEnd = workEnd
+      self.blocks = blocks
+    }
+  }
+
+  /// An event on the user's calendar (Feishu). Not editable here.
+  public struct Event: Sendable, Equatable {
+    public let date: String
+    /// Minutes from midnight; nil for an all-day event.
+    public let start: Int?
+    public let end: Int?
+    public let title: String
+    public init(date: String, start: Int?, end: Int?, title: String) {
+      self.date = date
+      self.start = start
+      self.end = end
+      self.title = title
     }
   }
 
@@ -48,8 +82,11 @@ public struct CycleScheduleState: Sendable, Equatable {
   public let running: Bool
   /// Why the last generation failed, if it did.
   public let error: String?
+  public let events: [Event]
+  /// The service's clock now, minutes from midnight, for the now line.
+  public let nowMinute: Int?
 
-  public init(cycleID: String, today: String, items: [Item], days: [Day], schedule: CycleSchedule?, running: Bool, error: String? = nil) {
+  public init(cycleID: String, today: String, items: [Item], days: [Day], schedule: CycleSchedule?, running: Bool, error: String? = nil, events: [Event] = [], nowMinute: Int? = nil) {
     self.cycleID = cycleID
     self.today = today
     self.items = items
@@ -57,6 +94,13 @@ public struct CycleScheduleState: Sendable, Equatable {
     self.schedule = schedule
     self.running = running
     self.error = error
+    self.events = events
+    self.nowMinute = nowMinute
+  }
+
+  /// The cycle's days in weeks of seven, for the week view.
+  public var weeks: [[Day]] {
+    stride(from: 0, to: days.count, by: 7).map { Array(days[$0..<min($0 + 7, days.count)]) }
   }
 
   /// Items grouped by role, in the cycle file's order.

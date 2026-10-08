@@ -5,7 +5,16 @@ import DailyOSCore
 
 struct CycleScheduleResponse: Decodable {
   struct Item: Decodable { let key: String; let text: String; let okr: String; let mit: Bool }
-  struct Day: Decodable { let date: String; let weekday: String; let restDay: Bool }
+  struct Day: Decodable {
+    struct Hours: Decodable { let start: String; let end: String }
+    struct Block: Decodable { let label: String; let start: String; let end: String }
+    let date: String
+    let weekday: String
+    let restDay: Bool
+    let workingHours: Hours?
+    let blocks: [Block]?
+  }
+  struct Event: Decodable { let date: String; let start: String?; let end: String?; let title: String }
   let id: String
   let today: String
   let schedule: ScheduleWire?
@@ -13,6 +22,8 @@ struct CycleScheduleResponse: Decodable {
   let days: [Day]
   let running: Bool
   let error: String?
+  let events: [Event]?
+  let now: String?
 }
 
 struct ScheduleWire: Codable {
@@ -53,10 +64,32 @@ extension DailyOSClient {
       cycleID: response.id,
       today: response.today,
       items: response.items.map { .init(key: $0.key, text: $0.text, okr: $0.okr, mit: $0.mit) },
-      days: response.days.map { .init(date: $0.date, weekday: $0.weekday, restDay: $0.restDay) },
+      days: response.days.map { day in
+        .init(
+          date: day.date,
+          weekday: day.weekday,
+          restDay: day.restDay,
+          workStart: day.workingHours.flatMap { DayStart.minute(fromClock: $0.start) } ?? 9 * 60 + 30,
+          workEnd: day.workingHours.flatMap { DayStart.minute(fromClock: $0.end) } ?? 18 * 60 + 30,
+          blocks: (day.blocks ?? []).compactMap { block in
+            guard let start = DayStart.minute(fromClock: block.start), let end = DayStart.minute(fromClock: block.end) else { return nil }
+            return .init(label: block.label, start: start, end: end)
+          }
+        )
+      },
       schedule: response.schedule?.model,
       running: response.running,
-      error: response.error
+      error: response.error,
+      events: (response.events ?? []).map { event in
+        .init(
+          date: event.date,
+          start: event.start.flatMap(DayStart.minute(fromClock:)),
+          // "24:00" is not a clock DayStart accepts; it is the end of the day.
+          end: event.end == "24:00" ? 24 * 60 : event.end.flatMap(DayStart.minute(fromClock:)),
+          title: event.title
+        )
+      },
+      nowMinute: response.now.flatMap(DayStart.minute(fromClock:))
     )
   }
 
