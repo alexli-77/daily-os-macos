@@ -241,7 +241,7 @@ private struct CallSheetPanel: View {
           HourGrid(range: range)
           // The 作息's slots, behind everything: the time kept for each
           // category, which that category's rows go into.
-          ForEach(state.todayRoutine?.slots ?? []) { slot in
+          ForEach((state.todayRoutine?.slots ?? []).filter { !$0.habit }) { slot in
             RoutineSlotBand(slot: slot)
               .frame(width: lane, height: max(Timeline.y(slot.end, from: slot.start) - 2, 12))
               .offset(x: Timeline.gutter, y: Timeline.y(slot.start, from: origin) + 1)
@@ -591,7 +591,8 @@ private struct CallSheetRow: View {
 
   private var tint: BlockTint {
     if isResolved { return .resolved }
-    return item.colorTag.flatMap(BlockTint.named) ?? BlockTint.forTask(candidateID: item.id)
+    // A habit reads as a habit at a glance: blue, unless the user coloured it.
+    return item.colorTag.flatMap(BlockTint.named) ?? (item.isHabit ? BlockTint.named("blue") : nil) ?? BlockTint.forTask(candidateID: item.id)
   }
 
   /// Three columns (LEO-335): the content, then what the row *is* (MIT and
@@ -728,7 +729,16 @@ private struct CallSheetRow: View {
           .opacity(isResolved ? 0.4 : 1)
           .padding(.top, 1)
       }
-      if !compact {
+      if item.isHabit {
+        Text("习惯")
+          .font(Typo.caption)
+          .foregroundStyle(Palette.rowColor("blue") ?? Palette.ink2)
+          .padding(.horizontal, 6)
+          .padding(.vertical, 1)
+          .overlay(Capsule().strokeBorder(Palette.rowColor("blue") ?? Palette.ink3, lineWidth: 1))
+          .opacity(isResolved ? 0.5 : 1)
+          .padding(.top, isMIT ? 0 : 1)
+      } else if !compact {
         source
           .padding(.top, isMIT ? 0 : 2)
       }

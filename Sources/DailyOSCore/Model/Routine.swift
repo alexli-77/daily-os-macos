@@ -79,12 +79,15 @@ public struct RoutineCategory: Codable, Sendable, Equatable, Identifiable {
   public var label: String
   /// A `Palette.rowColorNames` name.
   public var color: String
+  /// A habit category: each slot of it is a to-do on Today, not a band.
+  public var habit: Bool?
   public var id: String { key }
 
-  public init(key: String, label: String, color: String) {
+  public init(key: String, label: String, color: String, habit: Bool? = nil) {
     self.key = key
     self.label = label
     self.color = color
+    self.habit = habit
   }
 }
 
@@ -152,15 +155,18 @@ public struct TodayRoutine: Sendable, Equatable {
     public let category: String?
     public let color: String?
     public let floor: Bool
+    /// A habit slot: the Today sheet has a row for it, so no band is drawn.
+    public let habit: Bool
     public var id: String { "\(start)-\(title)" }
 
-    public init(start: Int, end: Int, title: String, category: String?, color: String?, floor: Bool) {
+    public init(start: Int, end: Int, title: String, category: String?, color: String?, floor: Bool, habit: Bool = false) {
       self.start = start
       self.end = end
       self.title = title
       self.category = category
       self.color = color
       self.floor = floor
+      self.habit = habit
     }
   }
 

@@ -692,6 +692,10 @@ private struct CategoriesPanel: View {
             .menuStyle(.borderlessButton).fixedSize()
             Text(category.label).font(Typo.body).foregroundStyle(Palette.ink)
             Spacer()
+            Toggle("习惯", isOn: Binding(get: { category.habit ?? false }, set: { on in update(category.key) { $0.habit = on ? true : nil } }))
+              .toggleStyle(.checkbox)
+              .font(Typo.caption)
+              .help("习惯类：这一类的每个格子在「今天」都是一条能打勾、能拖、能删的 to-do")
             Button { onChange(period.categories.filter { $0.key != category.key }) } label: { Image(systemName: "minus.circle") }
               .buttonStyle(.plain).foregroundStyle(Palette.ink3)
               .help("删掉这个类别；用了它的时间块会变成不分类")
