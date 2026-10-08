@@ -1069,8 +1069,23 @@ check(!PlanSource(candidateID: "weekly:0:x").isIssue, "要务不是链接，不�
 check(PlanSource(candidateID: "p1", sourceRef: "DEMO-12").label == "DEMO-12", "已经带引用的行照旧用引用")
 check(PlanSource(candidateID: "something-else").label == "日程", "认不出的前缀才回到「日程」")
 
+// MARK: - 自己定 MIT
+//
+// MIT 以前永远是计划第一条，用户改不了；第一条常常是个会。现在服务端可以说哪条是 MIT，
+// 用户也可以自己加、自己拿掉。
+
+let mitState = AppState.previewOwner()
+mitState.plan = ["a", "b", "c"].map { TodoItem(id: $0, text: $0, kind: .priority) }
+_ = await mitState.updatePlanRow(candidateID: "c", rank: 3, text: nil, color: nil, note: nil, mit: true)
+check(mitState.plan.map { $0.isMIT } == [true, false, true], "把第三条设成 MIT，第一条按排序建议的 MIT 留着，不会跟着变")
+check(mitState.plan[2].mitByUser && !mitState.plan[0].mitByUser, "自己定的和计划建议的分得开")
+_ = await mitState.updatePlanRow(candidateID: "a", rank: 1, text: nil, color: nil, note: nil, mit: false)
+check(mitState.plan.map { $0.isMIT } == [false, false, true], "建议的那条也能拿掉")
+_ = await mitState.updatePlanRow(candidateID: "b", rank: 2, text: "改个说法", color: nil, note: nil)
+check(mitState.plan.map { $0.isMIT } == [false, false, true], "只改文字不碰 MIT")
+
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 回归集")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 回归集")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

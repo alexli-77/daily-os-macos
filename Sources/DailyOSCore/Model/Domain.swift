@@ -571,6 +571,12 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
   /// The colour the user gave this row today (LEO-334), one of
   /// `Palette.rowColorNames`. Nil = coloured by source.
   public var colorTag: String?
+  /// Whether this row is today's MIT, as the service resolved it: the user's
+  /// own choice for the day, else the plan's suggestion. Nil when the service
+  /// predates the field — the row's rank decides then (`PlanImportance`).
+  public var isMIT: Bool?
+  /// True when `isMIT` is the user's choice rather than the plan's suggestion.
+  public var mitByUser: Bool
 
   public init(
     id: String,
@@ -583,7 +589,9 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
     note: String? = nil,
     carriedFrom: String? = nil,
     pinnedStart: Int? = nil,
-    colorTag: String? = nil
+    colorTag: String? = nil,
+    isMIT: Bool? = nil,
+    mitByUser: Bool = false
   ) {
     self.id = id
     self.text = text
@@ -596,6 +604,8 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
     self.carriedFrom = carriedFrom
     self.pinnedStart = pinnedStart
     self.colorTag = colorTag
+    self.isMIT = isMIT
+    self.mitByUser = mitByUser
   }
 }
 

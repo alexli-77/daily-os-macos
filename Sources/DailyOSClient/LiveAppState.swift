@@ -521,12 +521,12 @@ public final class LiveAppState: AppState {
     await reload()
   }
 
-  public override func updatePlanRow(candidateID: String, rank: Int, text: String?, color: String?, note: String?) async -> ActionOutcome {
+  public override func updatePlanRow(candidateID: String, rank: Int, text: String?, color: String?, note: String?, mit: Bool? = nil) async -> ActionOutcome {
     guard let client else { return .failed("没有连接到服务。") }
-    let outcome = await super.updatePlanRow(candidateID: candidateID, rank: rank, text: text, color: color, note: note)
+    let outcome = await super.updatePlanRow(candidateID: candidateID, rank: rank, text: text, color: color, note: note, mit: mit)
     guard case .ok = outcome else { return outcome }
     do {
-      try await client.recordPlanFeedback(candidateID: candidateID, rank: rank, event: "update", note: note, text: text, color: color)
+      try await client.recordPlanFeedback(candidateID: candidateID, rank: rank, event: "update", note: note, text: text, color: color, mit: mit)
       // A capture's text changed service-side too; 随手记 should say so.
       if text != nil && candidateID.hasPrefix("todo_inbox:") { await reload() }
       return .ok("已改好")

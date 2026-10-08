@@ -358,7 +358,7 @@ private struct CallSheetPanel: View {
 
   private var subtitle: String {
     let start = DayStart.resolve(generatedAt: state.planGeneratedAt, workStart: state.planWorkStartMinute)
-    return "拖到任意钟点（吸附到半点），拖下边缘改时长 · 没拖过的从 \(DaySchedule.clock(start)) 起按估时自动排"
+    return "点一条打开编辑 · 拖到任意钟点，拖下边缘改时长 · 没拖过的从 \(DaySchedule.clock(start)) 起按估时自动排"
   }
 
   /// Whole hours from the first thing on the day to the last, so the earliest
@@ -425,7 +425,12 @@ private struct CallSheetPanel: View {
 
 // MARK: - One row
 
-/// 时段 | 圆圈 | 任务 | 来源
+/// 圆圈 | 任务 | MIT·来源 | 时长
+///
+/// Every control on a row lives in one place (the row editor, opened by
+/// clicking the row) except the circle, which stays one click from done. They
+/// used to be spread over five spots — circle, hover buttons, the estimate,
+/// the title, the pin — and the edit itself was the one with nothing to see.
 private struct CallSheetRow: View {
 
   @Environment(AppState.self) private var state
@@ -442,18 +447,15 @@ private struct CallSheetRow: View {
   /// and the controls only take space while they are showing.
   var compact = false
 
-  @State private var isHovering = false
-  // Restored after the call-sheet rewrite dropped them (74ef388): the old
-  // PlanRow let you change a row's estimate and leave it an update note, and
-  // the call sheet is *more* dependent on the estimate than the list was —
-  // every slot below a row is pushed by it.
-  @State private var isEditingEstimate = false
   @State private var isConfirmingDelete = false
-  /// The row editor (LEO-334): click the text, edit text / colour / an update.
+  /// The row editor: click the row; every edit is staged there and sent on 保存.
   @State private var isEditingRow = false
   @State private var editText = ""
   @State private var editColor: String?
   @State private var editNote = ""
+  @State private var editState: TodoState = .open
+  @State private var editMIT = false
+  @State private var editMinutes: Int?
 
   private var item: TodoItem { row.item }
   private var isEditable: Bool { item.state == .open || item.state == .partial }
@@ -461,8 +463,12 @@ private struct CallSheetRow: View {
   /// Meal rows sit after the plan but can still land on a low rank in a short
   /// plan; they are never the day's most important thing.
   private var isMIT: Bool {
-    isPlanRow && !item.id.hasPrefix("rhythm:") && PlanImportance.forRank(row.rank) == .mit
+    canBeMIT && (item.isMIT ?? (PlanImportance.forRank(row.rank) == .mit))
   }
+
+  /// A meal or routine is never the day's MIT, and a capture off the plan has
+  /// nowhere to record it.
+  private var canBeMIT: Bool { isPlanRow && !item.id.hasPrefix("rhythm:") }
 
   /// Fixed locale: the wire format is always `yyyy-MM-dd`, and a user whose
   /// region formats dates differently must still parse it.
@@ -497,10 +503,9 @@ private struct CallSheetRow: View {
   /// the same place (LEO-334).
   /// Room for MIT plus the longest source label, a Linear key like CUTTO-1038.
   private static let tagsWidth: CGFloat = 130
-  /// The estimate and the pin only. The hover controls float over the row
-  /// instead of reserving space: reserved, they kept ~120pt empty on every row
-  /// that was not being hovered, and that came out of the title.
-  private static let actionsWidth: CGFloat = 90
+  /// The length only. The start time is the hour column's job and a pin is
+  /// not something to look at every row for; both live in the row editor.
+  private static let actionsWidth: CGFloat = 52
 
   /// One line for the row's state, kept right under the title.
   private var statusText: (text: String, color: Color)? {
@@ -543,22 +548,25 @@ private struct CallSheetRow: View {
         text: $editText,
         color: $editColor,
         note: $editNote,
+        rowState: $editState,
+        isMIT: $editMIT,
+        minutes: $editMinutes,
+        allowedStates: allowedStates,
+        canBeMIT: canBeMIT,
+        mitByUser: item.mitByUser,
+        showsEstimate: isEditable,
+        timeRange: timeRange,
         autoColor: BlockTint.forTask(candidateID: item.id).ink,
+        onUnpin: onUnpin.map { unpin in { isEditingRow = false; unpin() } },
+        onDelete: { isEditingRow = false; isConfirmingDelete = true },
         onCancel: { isEditingRow = false },
         onSave: saveEdits
       )
     }
-    .popover(isPresented: estimateBinding, arrowEdge: .bottom) {
-      EstimateEditor(item: item, rank: row.rank) {
-        withAnimation(.snappy(duration: 0.2)) { isEditingEstimate = false }
-      }
-      .padding(Metrics.sm)
-      .frame(width: 420)
-      .environment(state)
-    }
     .contentShape(Rectangle())
-    .onHover { isHovering = $0 }
-    .onTapGesture { selectedID = item.id }
+    .onTapGesture(perform: openEditor)
+    .help("点一下编辑：改文字、标完成 / 做了一半 / 顺延、设 MIT、改时长")
+    .accessibilityAction(named: "编辑", openEditor)
     .confirmationDialog("删除这一条？", isPresented: $isConfirmingDelete) {
       Button("删除", role: .destructive, action: remove)
       Button("取消", role: .cancel) {}
@@ -572,14 +580,8 @@ private struct CallSheetRow: View {
     Binding(get: { isEditingRow }, set: { if !$0 && isEditingRow { saveEdits() } })
   }
 
-  private var estimateBinding: Binding<Bool> {
-    Binding(get: { isEditingEstimate && isEditable }, set: { if !$0 { isEditingEstimate = false } })
-  }
-
   private var mainLine: some View {
-    let showsControls = isHovering || selectedID == item.id
-    return HStack(alignment: .top, spacing: Metrics.sm) {
-      slot
+    HStack(alignment: .top, spacing: Metrics.sm) {
       StateCircle(state: item.state) {
         set(item.state == .done ? .open : .done)
       }
@@ -610,23 +612,6 @@ private struct CallSheetRow: View {
       actions
         .frame(width: compact ? nil : Self.actionsWidth, alignment: .topTrailing)
     }
-    // The state buttons and delete, floated just left of the estimate while the
-    // row is hovered or selected. In the hierarchy at all times — faded, not
-    // removed — so VoiceOver and the keyboard still reach them.
-    .overlay(alignment: .topTrailing) {
-      HStack(spacing: Metrics.xxs) {
-        RowActionBar(state: item.state, isVisible: showsControls, allowed: allowedStates, set: set)
-        deleteButton
-      }
-      .padding(.horizontal, Metrics.xxs)
-      .background {
-        Capsule()
-          .fill(Palette.page)
-          .overlay(Capsule().fill(tint.fill))
-          .opacity(showsControls ? 1 : 0)
-      }
-      .padding(.trailing, (compact ? 64 : Self.actionsWidth) + Metrics.sm)
-    }
   }
 
   /// The middle column: MIT first, where it is seen, and the source under it,
@@ -653,35 +638,28 @@ private struct CallSheetRow: View {
     }
   }
 
-  /// The right column: everything you can do to the row, against the row's end.
+  /// The right column: the row's length. Here rather than under the title: a
+  /// title that wraps fills a short block, and the estimate under it was
+  /// clipped away (LEO-332).
   private var actions: some View {
-    HStack(alignment: .top, spacing: Metrics.xs) {
-      // Here rather than under the title: a title that wraps fills a short
-      // block, and the estimate under it was clipped away (LEO-332). Always
-      // shown — it is the block's length, and clicking it changes it.
-      estimateLabel
-        .padding(.top, 2)
-
-      if let onUnpin {
-        Button(action: onUnpin) {
-          Image(systemName: "pin.fill")
-            .font(.system(size: 9, weight: .semibold))
-            .frame(width: 20, height: 20)
-            .foregroundStyle(tint.ink.opacity(0.8))
-            .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .help("固定在这个钟点 · 点一下取消固定，回到自动排")
-        .accessibilityLabel("取消固定")
-      }
-    }
+    Text((row.minutes ?? item.estimatedMinutes).map(DaySchedule.duration) ?? "没估时")
+      .font(Typo.caption)
+      .foregroundStyle(Palette.ink3)
+      .lineLimit(1)
+      .fixedSize()
+      .padding(.top, 2)
   }
 
-  /// No ✓ (the circle is complete) and no 恢复未做 (LEO-336): a done row goes
-  /// back by clicking the circle again, a deferred or partial row by clicking
-  /// its lit button again — see `set`.
-  private var allowedStates: Set<TodoState> {
-    isPlanRow ? [.partial, .deferred] : [.deferred]
+  /// The states the editor offers, in its order. An inbox row cannot be
+  /// `partial` — the service's inbox endpoint has no such status.
+  private var allowedStates: [TodoState] {
+    isPlanRow ? [.open, .done, .partial, .deferred] : [.open, .done, .deferred]
+  }
+
+  /// "13:00–13:30", for the editor: the row no longer prints its own start.
+  private var timeRange: String? {
+    guard let start = row.start, let end = row.end else { return nil }
+    return "\(DaySchedule.clock(start))–\(DaySchedule.clock(end))"
   }
 
   /// The row's text, at most as many lines as the block has room for. Click it
@@ -696,9 +674,6 @@ private struct CallSheetRow: View {
       // Without this the stack hands the title less height than its lines need
       // and a two-line title collapses to one.
       .fixedSize(horizontal: false, vertical: true)
-      .contentShape(Rectangle())
-      .onTapGesture(perform: openEditor)
-      .help("点一下编辑这一条")
   }
 
   private func openEditor() {
@@ -706,6 +681,9 @@ private struct CallSheetRow: View {
     editText = item.text
     editColor = item.colorTag
     editNote = ""
+    editState = item.state
+    editMIT = isMIT
+    editMinutes = item.estimatedMinutes
     isEditingRow = true
   }
 
@@ -718,35 +696,28 @@ private struct CallSheetRow: View {
     let newText = !text.isEmpty && text != item.text ? text : nil
     let newColor = editColor != item.colorTag ? (editColor ?? "auto") : nil
     let newNote = note.isEmpty ? nil : note
-    guard newText != nil || newColor != nil || newNote != nil else { return }
+    let newMIT = canBeMIT && editMIT != isMIT ? editMIT : nil
+    let newState = editState != item.state ? editState : nil
+    let newMinutes = isEditable && editMinutes != item.estimatedMinutes ? editMinutes : nil
+    let clearsMinutes = isEditable && editMinutes == nil && item.estimatedMinutes != nil
+    let edits = newText != nil || newColor != nil || newNote != nil || newMIT != nil
+    guard edits || newState != nil || newMinutes != nil || clearsMinutes else { return }
+    let candidateID = item.id
+    let rank = row.rank
     Task {
-      let outcome = await state.updatePlanRow(candidateID: item.id, rank: row.rank, text: newText, color: newColor, note: newNote)
-      switch outcome {
-      case .ok(let message): state.toast = message ?? "已改好"
-      case .failed(let why), .unsupported(let why): state.toast = why
+      var failure: String?
+      if edits, isPlanRow {
+        let outcome = await state.updatePlanRow(candidateID: candidateID, rank: rank, text: newText, color: newColor, note: newNote, mit: newMIT)
+        if case .failed(let why) = outcome { failure = why } else if case .unsupported(let why) = outcome { failure = why }
       }
+      if failure == nil, newMinutes != nil || clearsMinutes {
+        let outcome = await state.setPlanEstimate(candidateID: candidateID, rank: rank, minutes: newMinutes)
+        if case .failed(let why) = outcome { failure = why } else if case .unsupported(let why) = outcome { failure = why }
+      }
+      // Last, so a rename and a tick in one save land as edited-then-ticked.
+      if failure == nil, let newState { failure = await send(newState) }
+      state.toast = failure ?? "已改好"
     }
-  }
-
-  /// 删除 — fades in with the other row controls. Asks first: for a capture it
-  /// deletes the capture itself, which the four-state circle cannot undo.
-  private var deleteButton: some View {
-    let visible = isHovering || selectedID == item.id
-    return Button {
-      isConfirmingDelete = true
-    } label: {
-      Image(systemName: "trash")
-        .font(.system(size: 10, weight: .semibold))
-        .frame(width: 20, height: 20)
-        .foregroundStyle(Palette.ink3)
-        .contentShape(Circle())
-    }
-    .buttonStyle(.plain)
-    .help("从今天删除")
-    .accessibilityLabel("从今天删除")
-    .allowsHitTesting(visible)
-    .opacity(visible ? 1 : 0)
-    .animation(.easeOut(duration: 0.12), value: visible)
   }
 
   private var isCapture: Bool { !isPlanRow || item.id.hasPrefix("todo_inbox:") }
@@ -773,53 +744,6 @@ private struct CallSheetRow: View {
     }
   }
 
-  /// The start time, like a calendar entry. Fixed width so every block's text
-  /// starts on the same vertical line; the length is the block's height.
-  private var slot: some View {
-    Text(row.start.map(DaySchedule.clock) ?? "—")
-      .font(Typo.caption)
-      .lineLimit(1)
-      .fixedSize()
-      .foregroundStyle(row.isLate ? Palette.mint600 : tint.ink.opacity(0.8))
-      .monospacedDigit()
-      .frame(width: 40, alignment: .leading)
-      .padding(.top, 2)
-  }
-
-  /// The duration under the time, and the way in to changing it. A button only
-  /// while the row is still open work: a finished row's estimate no longer
-  /// moves anything on the sheet.
-  @ViewBuilder private var estimateLabel: some View {
-    let text = (row.minutes ?? item.estimatedMinutes).map(DaySchedule.duration) ?? "没估时"
-    if isEditable {
-      Button {
-        withAnimation(.snappy(duration: 0.2)) { isEditingEstimate.toggle() }
-      } label: {
-        HStack(spacing: 2) {
-          Text(text)
-          Image(systemName: "stopwatch").font(.system(size: 9, weight: .medium))
-            .opacity(isHovering || isEditingEstimate ? 1 : 0)
-        }
-        .font(Typo.caption)
-        .foregroundStyle(isEditingEstimate ? Palette.mint600 : Palette.ink3)
-        .contentShape(Rectangle())
-      }
-      .buttonStyle(.plain)
-      .help(item.estimatedMinutes == nil ? "这条没有估时，点一下自己填" : "点一下改估时")
-    } else {
-      // Same shape as the button above, stopwatch slot included, so a done row's
-      // estimate lines up with the open rows' instead of sitting ~13pt further
-      // right (LEO-336).
-      HStack(spacing: 2) {
-        Text(text)
-        Image(systemName: "stopwatch").font(.system(size: 9, weight: .medium)).opacity(0)
-      }
-      .font(Typo.caption)
-      .foregroundStyle(Palette.ink3)
-      .accessibilityElement(children: .combine)
-    }
-  }
-
   /// Linear key / 要务 / 随手记 — see `PlanSource`. Only an issue key is
   /// styled as a reference; the others are categories, not links.
   private var source: some View {
@@ -832,49 +756,74 @@ private struct CallSheetRow: View {
       .fixedSize()
   }
 
+  /// The circle: done, or back to open.
   private func set(_ requested: TodoState) {
-    // The button that is already lit takes the row back to open.
     let target = requested == item.state && requested != .open ? .open : requested
     guard target != item.state else { return }
-    if isPlanRow {
-      let event = switch target {
-      case .done: "complete"
-      case .partial: "partial"
-      case .deferred: "defer"
-      default: "reopen"
+    Task {
+      let failure = await send(target)
+      if isPlanRow {
+        state.toast = failure ?? (target == .done ? "已完成" : "已恢复")
+      } else if let failure {
+        state.toast = failure
       }
-      Task {
-        let outcome = await state.planFeedback(
-          candidateID: item.id, rank: row.rank, event: event, note: nil
-        )
-        state.toast = switch outcome {
-        case .ok: ["complete": "已完成", "partial": "标了部分，时段按一半算",
-                   "defer": "顺到明天，不占今天"][event] ?? "已恢复"
-        case .failed(let why), .unsupported(let why): why
-        }
-      }
-    } else {
+    }
+  }
+
+  /// Puts the row in exactly `target`. Returns why it failed, or nil.
+  private func send(_ target: TodoState) async -> String? {
+    guard isPlanRow else {
       state.setTodo(item.id, to: target)
+      return nil
+    }
+    let event = switch target {
+    case .done: "complete"
+    case .partial: "partial"
+    case .deferred: "defer"
+    default: "reopen"
+    }
+    switch await state.planFeedback(candidateID: item.id, rank: row.rank, event: event, note: nil) {
+    case .ok: return nil
+    case .failed(let why), .unsupported(let why): return why
     }
   }
 }
 
 // MARK: - Row editor
 
-/// What clicking a row's text opens (LEO-334), after Calendar's event popover:
-/// the text, a colour for today, and an update to leave on the row.
+/// Everything you can do to a row, in one popover (after Calendar's event
+/// popover): the text, its state, MIT, length, colour, an update, and the two
+/// ways off the sheet's normal flow — back to automatic layout, or deleted.
+///
+/// Staged, not live: nothing is sent until 保存 (or clicking away, like
+/// Calendar). Half the controls used to apply on click and half on save, and
+/// a popover that does both cannot be cancelled.
 private struct RowEditor: View {
   @Binding var text: String
   /// Nil = coloured by source.
   @Binding var color: String?
   @Binding var note: String
+  @Binding var rowState: TodoState
+  @Binding var isMIT: Bool
+  @Binding var minutes: Int?
+  let allowedStates: [TodoState]
+  let canBeMIT: Bool
+  /// The MIT shown is the user's own choice, not the plan's suggestion.
+  let mitByUser: Bool
+  let showsEstimate: Bool
+  /// "13:00–13:30", or nil for a row with no slot.
+  let timeRange: String?
   /// The colour the row has when none is chosen, for the 按来源 swatch.
   let autoColor: Color
+  /// Set when the row is pinned to a time; releases it to automatic layout.
+  let onUnpin: (() -> Void)?
+  let onDelete: () -> Void
   let onCancel: () -> Void
   let onSave: () -> Void
 
   /// Matches the service's cap and the daily_plan prompt's rule.
   static let maxLength = 150
+  private static let presets = [15, 30, 45, 60, 90, 120]
 
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.sm) {
@@ -894,8 +843,60 @@ private struct RowEditor: View {
       .padding(Metrics.sm)
       .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
 
-      VStack(alignment: .leading, spacing: Metrics.xxs) {
-        Text("颜色 · 只对今天").font(Typo.caption).foregroundStyle(Palette.ink3)
+      if timeRange != nil || onUnpin != nil {
+        HStack(spacing: Metrics.xs) {
+          if let timeRange {
+            Text(timeRange).monospacedDigit()
+          }
+          if let onUnpin {
+            Text("· 放在这个钟点")
+            Spacer(minLength: 0)
+            Button("回到自动排", action: onUnpin)
+              .buttonStyle(QuietButtonStyle(tone: .neutral))
+              .help("不再固定在这个钟点，跟着前面的条目和估时自动排")
+          }
+        }
+        .font(Typo.caption)
+        .foregroundStyle(Palette.ink3)
+      }
+
+      field("状态") {
+        HStack(spacing: Metrics.xxs) {
+          ForEach(allowedStates, id: \.self) { option in
+            Button(Self.label(option)) { rowState = option }
+              .buttonStyle(EstimateChipStyle(isCurrent: rowState == option))
+              .accessibilityAddTraits(rowState == option ? [.isSelected] : [])
+          }
+        }
+      }
+
+      if canBeMIT {
+        field("MIT") {
+          Toggle(isOn: $isMIT) {
+            Text(mitCaption).font(Typo.caption).foregroundStyle(Palette.ink3)
+          }
+          .toggleStyle(.switch)
+          .controlSize(.mini)
+        }
+      }
+
+      if showsEstimate {
+        field("时长") {
+          HStack(spacing: Metrics.xxs) {
+            ForEach(Self.presets, id: \.self) { preset in
+              Button(Fmt.minutes(preset)) { minutes = preset }
+                .buttonStyle(EstimateChipStyle(isCurrent: minutes == preset))
+            }
+            if minutes != nil {
+              Button("清除") { minutes = nil }
+                .buttonStyle(QuietButtonStyle(tone: .neutral))
+                .help("不知道要多久：回到没估时")
+            }
+          }
+        }
+      }
+
+      field("颜色 · 只对今天") {
         HStack(spacing: Metrics.xs) {
           swatch(autoColor, selected: color == nil, label: "按来源") { color = nil }
           ForEach(Palette.rowColorNames, id: \.self) { name in
@@ -904,14 +905,18 @@ private struct RowEditor: View {
         }
       }
 
-      VStack(alignment: .leading, spacing: Metrics.xxs) {
-        Text("添加更新").font(Typo.caption).foregroundStyle(Palette.ink3)
+      field("添加更新") {
         TextField("做到哪一步了、卡在哪（可留空）", text: $note, axis: .vertical)
           .textFieldStyle(.roundedBorder)
           .lineLimit(1...3)
       }
 
       HStack {
+        Button(role: .destructive, action: onDelete) {
+          Label("删除", systemImage: "trash")
+        }
+        .buttonStyle(QuietButtonStyle(tone: .neutral))
+        .help("从今天的通告单上拿掉")
         Spacer()
         Button("取消", action: onCancel)
           .buttonStyle(QuietButtonStyle(tone: .neutral))
@@ -922,7 +927,31 @@ private struct RowEditor: View {
       }
     }
     .padding(Metrics.md)
-    .frame(width: 340)
+    .frame(width: 380)
+  }
+
+  /// Says whose MIT it is: a suggestion the user has not touched reads
+  /// differently from one they chose, so taking it off does not feel like
+  /// overruling themselves.
+  private var mitCaption: String {
+    if mitByUser { return isMIT ? "今天最重要的一件 · 你定的" : "不是今天的 MIT · 你定的" }
+    return isMIT ? "今天最重要的一件 · 计划建议的" : "设为今天最重要的一件"
+  }
+
+  private static func label(_ state: TodoState) -> String {
+    switch state {
+    case .open, .deleted: "没做"
+    case .done: "完成"
+    case .partial: "做了一部分"
+    case .deferred: "顺到明天"
+    }
+  }
+
+  private func field<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    VStack(alignment: .leading, spacing: Metrics.xxs) {
+      Text(title).font(Typo.caption).foregroundStyle(Palette.ink3)
+      content()
+    }
   }
 
   private func swatch(_ fill: Color, selected: Bool, label: String, action: @escaping () -> Void) -> some View {
