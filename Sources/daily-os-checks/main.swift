@@ -1109,8 +1109,15 @@ check(scheduleState.roles.map(\.role) == ["工作", "享乐"], "角色按要务�
 check(scheduleState.roles.first?.items.map(\.key) == ["a", "c"], "同一角色的要务排在一起")
 check(scheduleState.minutes(on: "2026-10-08") == 210, "一天的合计把这天的格子都加上")
 
+// MARK: - KR 标签
+// KR 前面不再带目标编号「01-」；标题本身以 KR1 开头时，标签整个省掉，不说两遍。
+
+check(KeyResultLabel.text(id: "01-KR1", title: "KR1 完成作品集") == nil, "标题已经写了 KR1，就不再重复")
+check(KeyResultLabel.text(id: "02-KR3", title: "坚持每日一画") == "KR3", "去掉目标编号，只留 KR3")
+check(KeyResultLabel.text(id: "KR2", title: "做分享") == "KR2", "本来就没编号的照旧")
+
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 回归集")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, KR 标签, 回归集")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")
