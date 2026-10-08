@@ -71,14 +71,17 @@ public struct DaySchedule: Sendable, Equatable {
     public let kind: Kind
     /// A second line, e.g. what the routine is for. Nil when there is none.
     public let note: String?
+    /// The 作息 block this came from; Today can change it for the day.
+    public let routineBlockID: String?
 
-    public init(id: String, label: String, start: Int, end: Int, kind: Kind = .meal, note: String? = nil) {
+    public init(id: String, label: String, start: Int, end: Int, kind: Kind = .meal, note: String? = nil, routineBlockID: String? = nil) {
       self.id = id
       self.label = label
       self.start = start
       self.end = end
       self.kind = kind
       self.note = note
+      self.routineBlockID = routineBlockID
     }
   }
 

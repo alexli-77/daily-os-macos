@@ -136,7 +136,19 @@ open class AppState {
   }
 
   // Transient
-  public var toast: String?
+  public var toast: String? {
+    // A plain toast must not inherit the previous one's 撤销: it would undo
+    // something the line on screen no longer mentions.
+    didSet { toastUndo = nil }
+  }
+  /// When set, the toast offers 撤销 and runs this. Cleared with the toast.
+  public var toastUndo: (@MainActor () -> Void)?
+
+  /// A toast that can be taken back.
+  public func toast(_ text: String, undo: (@MainActor () -> Void)?) {
+    toast = text
+    toastUndo = undo
+  }
 
   /// Why the service cannot be reached, when it cannot.
   ///
@@ -522,6 +534,23 @@ open class AppState {
   /// service.
   open func loadDayHistory(date: String?) async -> Result<DayHistory, DayHistoryError> {
     .success(MockData.dayHistory(date: date))
+  }
+
+  // MARK: 临时安排 / 只改今天
+
+  /// Something that came up today. See `AdhocRequest`.
+  open func addAdhoc(_ request: AdhocRequest) async -> (outcome: ActionOutcome, undo: AdhocUndo?) {
+    (.unsupported("没有连接到服务。"), nil)
+  }
+
+  open func undoAdhoc(_ undo: AdhocUndo) async -> ActionOutcome {
+    .unsupported("没有连接到服务。")
+  }
+
+  /// Change one 作息 block for today only: `edit` (with the new values),
+  /// `hide`, or `reset` to the template.
+  open func changeTodayRoutineBlock(blockID: String, action: String, label: String? = nil, start: Int? = nil, end: Int? = nil) async -> ActionOutcome {
+    .unsupported("没有连接到服务。")
   }
 
   // MARK: 作息

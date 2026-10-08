@@ -442,16 +442,52 @@ public final class LiveAppState: AppState {
       }
     }
     do {
-      try await client.recordPlanFeedback(candidateID: candidateID, rank: rank, event: event, note: note)
+      let scheduleNote = try await client.recordPlanFeedback(candidateID: candidateID, rank: rank, event: event, note: note)
       // Removing a capture's row deletes the capture service-side (LEO-329);
-      // reload so 随手记 stops listing it.
-      if event == "remove" && candidateID.hasPrefix("todo_inbox:") { await reload() }
-      return .ok(nil)
+      // reload so 随手记 stops listing it. Putting a removed row back needs
+      // the row itself, which only a reload brings.
+      if (event == "remove" && candidateID.hasPrefix("todo_inbox:")) || (event == "reopen" && !plan.contains { $0.id == candidateID }) {
+        await reload()
+      }
+      return .ok(scheduleNote)
     } catch {
       let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
       lastActionError = reason
       await reload()
       return .failed(reason)
+    }
+  }
+
+  public override func addAdhoc(_ request: AdhocRequest) async -> (outcome: ActionOutcome, undo: AdhocUndo?) {
+    guard let client else { return (.failed("没有连接到服务。"), nil) }
+    do {
+      let result = try await client.addAdhoc(request)
+      await reload()
+      return (.ok(result.text), result.undo)
+    } catch {
+      return (.failed((error as? ClientError)?.errorDescription ?? error.localizedDescription), nil)
+    }
+  }
+
+  public override func undoAdhoc(_ undo: AdhocUndo) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      try await client.undoAdhoc(undo)
+      await reload()
+      return .ok("已撤销临时安排")
+    } catch {
+      return .failed((error as? ClientError)?.errorDescription ?? error.localizedDescription)
+    }
+  }
+
+  public override func changeTodayRoutineBlock(blockID: String, action: String, label: String?, start: Int?, end: Int?) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      try await client.changeDayOverride(blockID: blockID, action: action, label: label, start: start.map(DaySchedule.clock), end: end.map(DaySchedule.clock))
+      await reload()
+      return .ok("只改了今天，作息模板没动")
+    } catch {
+      return .failed((error as? ClientError)?.errorDescription ?? error.localizedDescription)
     }
   }
 

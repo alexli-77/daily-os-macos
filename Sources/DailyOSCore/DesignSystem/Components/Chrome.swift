@@ -13,18 +13,37 @@ public struct ToastOverlay: ViewModifier {
   public func body(content: Content) -> some View {
     content.overlay(alignment: .bottom) {
       if let toast = state.toast {
-        Text(toast)
-          .font(Typo.caption)
-          .foregroundStyle(Palette.paper)
-          .padding(.horizontal, Metrics.sm)
-          .padding(.vertical, Metrics.xs)
-          .background(Palette.ink.opacity(0.92), in: Capsule())
-          .padding(.bottom, Metrics.lg)
-          .transition(.move(edge: .bottom).combined(with: .opacity))
-          .task(id: toast) {
-            try? await Task.sleep(for: .seconds(2.2))
-            withAnimation(.easeOut(duration: 0.2)) { state.toast = nil }
+        HStack(spacing: Metrics.sm) {
+          Text(toast)
+            .font(Typo.caption)
+            .foregroundStyle(Palette.paper)
+          // Every change Today makes to the schedule can be taken back here:
+          // the agreed rule is write back without asking, but never without
+          // a way back.
+          if let undo = state.toastUndo {
+            Button("撤销") {
+              state.toastUndo = nil
+              state.toast = nil
+              undo()
+            }
+            .buttonStyle(.plain)
+            .font(Typo.caption.bold())
+            .foregroundStyle(Palette.mint200)
           }
+        }
+        .padding(.horizontal, Metrics.sm)
+        .padding(.vertical, Metrics.xs)
+        .background(Palette.ink.opacity(0.92), in: Capsule())
+        .padding(.bottom, Metrics.lg)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .task(id: toast) {
+          // Long enough to read a sentence and reach 撤销.
+          try? await Task.sleep(for: .seconds(state.toastUndo == nil ? 2.2 : 6))
+          withAnimation(.easeOut(duration: 0.2)) {
+            state.toast = nil
+            state.toastUndo = nil
+          }
+        }
       }
     }
     .animation(.easeOut(duration: 0.2), value: state.toast)
