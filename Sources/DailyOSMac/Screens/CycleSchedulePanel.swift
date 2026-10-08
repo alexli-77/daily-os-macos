@@ -194,7 +194,7 @@ struct CycleSchedulePanel: View {
               chip(Self.clean(text), fill: text.hasPrefix("截止") ? Palette.q1.opacity(0.15) : Palette.surfaceSunken, ink: text.hasPrefix("截止") ? Palette.q1 : Palette.ink2)
             }
             ForEach(layout.unplaced) { session in
-              chip("排不下 · \(Self.clean(session.label))", fill: Palette.mint100, ink: Palette.mint800)
+              chip("排不下 · \(Self.clean(session.title))", fill: Palette.mint100, ink: Palette.mint800)
                 .onTapGesture { if editable { editing = session } }
             }
           }
@@ -280,12 +280,18 @@ struct CycleSchedulePanel: View {
   @ViewBuilder private func blockView(_ block: CycleWeekLayout.Placed, isPast: Bool, height: CGFloat) -> some View {
     let style = Self.style(block.kind)
     let time = "\(DaySchedule.clock(block.start))–\(DaySchedule.clock(min(block.end, 24 * 60 - 1)))"
+    // A step leads; the 要务 it belongs to follows in small type, so a day
+    // reads as what gets done rather than as the cycle's list again.
+    let parent = block.session.flatMap { $0.step == nil ? nil : Self.clean($0.label) }
     let content = VStack(alignment: .leading, spacing: 1) {
       Text(Self.clean(block.title))
         .font(.system(size: 11, weight: block.kind == .bigRock ? .semibold : .medium))
         .lineLimit(height > 40 ? 2 : 1)
       if height > 30 {
         Text(time).font(.system(size: 10).monospacedDigit()).opacity(0.85)
+      }
+      if let parent, height > 56 {
+        Text(parent).font(.system(size: 9)).opacity(0.75).lineLimit(1)
       }
     }
     .foregroundStyle(style.ink)
@@ -504,7 +510,7 @@ struct CycleSchedulePanel: View {
 
   private func help(_ session: ScheduleSession, total: Int) -> String {
     let when = session.start.map { "\($0) 起 " } ?? ""
-    return "\(Self.clean(session.label))\n\(Self.short(session.date)) \(when)\(DaySchedule.duration(total))\(session.bigRock ? " · 大石头" : "")"
+    return "\(Self.clean(session.title))\n\(Self.short(session.date)) \(when)\(DaySchedule.duration(total))\(session.bigRock ? " · 大石头" : "")"
   }
 
   static func dayNumber(_ date: String) -> String {
@@ -579,7 +585,14 @@ private struct SessionEditor: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.sm) {
-      Text(CycleSchedulePanel.clean(draft.label)).font(Typo.bodyStrong).lineLimit(3)
+      Text(CycleSchedulePanel.clean(draft.label)).font(Typo.caption).foregroundStyle(Palette.ink3).lineLimit(2)
+      TextField("这一次具体做什么，比如「整理回访表格，分析国内外用户」", text: Binding(
+        get: { draft.step ?? "" },
+        set: { draft.step = $0.isEmpty ? nil : String($0.prefix(80)) }
+      ), axis: .vertical)
+      .textFieldStyle(.roundedBorder)
+      .font(Typo.bodyStrong)
+      .lineLimit(1...3)
       Picker("哪天", selection: $draft.date) {
         ForEach(days) { day in
           Text("\(CycleSchedulePanel.short(day.date)) \(day.weekday.replacingOccurrences(of: "星期", with: "周"))").tag(day.date)

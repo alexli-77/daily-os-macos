@@ -1014,7 +1014,9 @@ private struct RoutineSlotBand: View {
     let color = slot.color.flatMap(Palette.rowColor) ?? Palette.ink3
     ZStack(alignment: .topTrailing) {
       RoundedRectangle(cornerRadius: 6, style: .continuous).fill(color.opacity(0.07))
-      Text([slot.category ?? slot.title, slot.floor ? "保底" : nil].compactMap { $0 }.joined(separator: " · "))
+      // What the slot is for, by name — "英语口语", not "习惯" — then its
+      // category and whether it is a floor.
+      Text([slot.title, slot.category, slot.floor ? "保底" : nil].compactMap { $0 }.joined(separator: " · "))
         .font(Typo.caption)
         .foregroundStyle(color.opacity(0.9))
         .padding(.horizontal, Metrics.xs)

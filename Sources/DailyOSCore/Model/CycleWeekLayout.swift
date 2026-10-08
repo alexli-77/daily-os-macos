@@ -56,7 +56,7 @@ public enum CycleWeekLayout {
     }
     for session in sessions {
       guard session.bigRock, let start = session.start.flatMap(DayStart.minute(fromClock:)) else { continue }
-      blocks.append(Placed(id: session.id, kind: .bigRock, title: session.label, start: start, end: start + session.minutes, session: session))
+      blocks.append(Placed(id: session.id, kind: .bigRock, title: session.title, start: start, end: start + session.minutes, session: session))
       busy.append((start, start + session.minutes))
     }
 
@@ -71,7 +71,7 @@ public enum CycleWeekLayout {
     var unplaced: [ScheduleSession] = []
     for session in untimed {
       if let start = firstFree(from: from, minutes: session.minutes, busy: busy) {
-        blocks.append(Placed(id: session.id, kind: .suggested, title: session.label, start: start, end: start + session.minutes, session: session))
+        blocks.append(Placed(id: session.id, kind: .suggested, title: session.title, start: start, end: start + session.minutes, session: session))
         busy.append((start, start + session.minutes))
       } else {
         unplaced.append(session)
