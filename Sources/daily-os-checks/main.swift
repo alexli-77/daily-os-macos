@@ -1109,8 +1109,44 @@ check(scheduleState.roles.map(\.role) == ["工作", "享乐"], "角色按要务�
 check(scheduleState.roles.first?.items.map(\.key) == ["a", "c"], "同一角色的要务排在一起")
 check(scheduleState.minutes(on: "2026-10-08") == 210, "一天的合计把这天的格子都加上")
 
+// MARK: - 排期周视图
+//
+// 没定时段的格子要摆进当天的空档里：避开飞书日程、吃饭和大石头；今天从现在往后摆；摆不下的进「全天」。
+
+let weekState = CycleScheduleState(
+  cycleID: "c", today: "2026-10-09",
+  items: [
+    .init(key: "x", text: "速写", okr: "名利", mit: false),
+    .init(key: "m", text: "方案 **MIT**", okr: "工作", mit: true),
+  ],
+  days: [
+    .init(date: "2026-10-09", weekday: "星期五", restDay: false, workStart: 9 * 60, workEnd: 18 * 60, blocks: [.init(label: "午餐", start: 12 * 60, end: 13 * 60)]),
+    .init(date: "2026-10-10", weekday: "星期六", restDay: true, workStart: 9 * 60, workEnd: 18 * 60),
+  ],
+  schedule: CycleSchedule(sessions: [
+    ScheduleSession(id: "rock", itemKey: "m", label: "方案", date: "2026-10-10", start: "09:00", minutes: 120, bigRock: true),
+    ScheduleSession(id: "sketch", itemKey: "x", label: "速写", date: "2026-10-10", minutes: 60),
+    ScheduleSession(id: "plan", itemKey: "m", label: "方案", date: "2026-10-10", minutes: 60),
+    ScheduleSession(id: "late", itemKey: "x", label: "速写", date: "2026-10-09", minutes: 60),
+    ScheduleSession(id: "huge", itemKey: "x", label: "速写", date: "2026-10-09", minutes: 240),
+  ], deadlines: [ScheduleDeadline(itemKey: "m", label: "方案", date: "2026-10-10")]),
+  running: false,
+  events: [.init(date: "2026-10-10", start: 11 * 60 + 30, end: 12 * 60, title: "日会"), .init(date: "2026-10-10", start: nil, end: nil, title: "团建")],
+  nowMinute: 20 * 60 + 5
+)
+let saturday = CycleWeekLayout.layout(weekState.days[1], in: weekState)
+let placed = Dictionary(uniqueKeysWithValues: saturday.blocks.compactMap { block in block.session.map { ($0.id, block) } })
+check(placed["rock"]?.kind == .bigRock && placed["rock"]?.start == 9 * 60, "大石头就在它占的时段")
+check(placed["plan"]?.start == 12 * 60, "MIT 先摆：11:00 被大石头占到、11:30 有日会，从 12:00 开始")
+check(placed["sketch"]?.start == 13 * 60 && placed["sketch"]?.kind == .suggested, "其余的接在后面，标成建议时段")
+check(saturday.allDay == ["团建", "截止 · 方案"], "全天日程和截止日在顶上")
+let friday = CycleWeekLayout.layout(weekState.days[0], in: weekState)
+check(friday.blocks.first { $0.session?.id == "late" }?.start == 20 * 60 + 15, "今天从现在（凑到下一个一刻钟）往后摆")
+check(friday.unplaced.map(\.id) == ["huge"], "今天剩下的时间放不下的，进「排不下」")
+check(weekState.weeks.count == 1 && weekState.weeks[0].count == 2, "按七天一周分")
+
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 回归集")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, 回归集")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")
