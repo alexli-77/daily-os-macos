@@ -453,6 +453,36 @@ public final class LiveAppState: AppState {
     }
   }
 
+  public override func loadCycleSchedule(cycleID: String) async -> Result<CycleScheduleState, CycleScheduleError> {
+    guard let client else { return .failure(CycleScheduleError("没有连接到服务。")) }
+    do {
+      return .success(try await client.cycleSchedule(cycleID: cycleID))
+    } catch {
+      return .failure(CycleScheduleError((error as? ClientError)?.errorDescription ?? error.localizedDescription))
+    }
+  }
+
+  public override func generateCycleSchedule(cycleID: String) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      return .ok(try await client.generateCycleSchedule(cycleID: cycleID))
+    } catch {
+      return .failed((error as? ClientError)?.errorDescription ?? error.localizedDescription)
+    }
+  }
+
+  public override func saveCycleSchedule(cycleID: String, sessions: [ScheduleSession], deadlines: [ScheduleDeadline]) async -> Result<CycleSchedule, CycleScheduleError> {
+    guard let client else { return .failure(CycleScheduleError("没有连接到服务。")) }
+    do {
+      guard let saved = try await client.saveCycleSchedule(cycleID: cycleID, sessions: sessions, deadlines: deadlines) else {
+        return .failure(CycleScheduleError("服务没有返回排期。"))
+      }
+      return .success(saved)
+    } catch {
+      return .failure(CycleScheduleError((error as? ClientError)?.errorDescription ?? error.localizedDescription))
+    }
+  }
+
   public override func loadDayHistory(date: String?) async -> Result<DayHistory, DayHistoryError> {
     guard let client else { return .failure(DayHistoryError("没有连接到服务。")) }
     do {

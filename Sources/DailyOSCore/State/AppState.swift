@@ -520,6 +520,24 @@ open class AppState {
     .success(MockData.dayHistory(date: date))
   }
 
+  // MARK: 双周排期
+
+  /// A cycle's schedule, its 要务 and days. The base store has none to give.
+  open func loadCycleSchedule(cycleID: String) async -> Result<CycleScheduleState, CycleScheduleError> {
+    .failure(CycleScheduleError("没有连接到服务，看不到排期。"))
+  }
+
+  /// Ask the service to lay the cycle out from today on. Returns at once; the
+  /// caller polls `loadCycleSchedule` until `running` clears.
+  open func generateCycleSchedule(cycleID: String) async -> ActionOutcome {
+    .unsupported("没有连接到服务。")
+  }
+
+  /// Save the user's edits to a schedule, whole. Returns what the service kept.
+  open func saveCycleSchedule(cycleID: String, sessions: [ScheduleSession], deadlines: [ScheduleDeadline]) async -> Result<CycleSchedule, CycleScheduleError> {
+    .failure(CycleScheduleError("没有连接到服务。"))
+  }
+
   open func setPlanEstimate(candidateID: String, rank: Int, minutes: Int?) async -> ActionOutcome {
     guard let index = plan.firstIndex(where: { $0.id == candidateID }) else {
       return .failed("这条计划已经不在了。")
