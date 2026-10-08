@@ -35,6 +35,7 @@ struct ScheduleWire: Codable {
     let start: String?
     let minutes: Int
     let bigRock: Bool?
+    let step: String?
   }
   struct Deadline: Codable { let itemKey: String; let label: String; let date: String }
   let generatedAt: String?
@@ -48,7 +49,7 @@ struct ScheduleWire: Codable {
       generatedAt: generatedAt.flatMap(TodoWireDate.timestamp),
       editedAt: editedAt.flatMap(TodoWireDate.timestamp),
       sessions: sessions.map {
-        ScheduleSession(id: $0.id ?? UUID().uuidString, itemKey: $0.itemKey, label: $0.label, date: $0.date, start: $0.start, minutes: $0.minutes, bigRock: $0.bigRock ?? false)
+        ScheduleSession(id: $0.id ?? UUID().uuidString, itemKey: $0.itemKey, label: $0.label, date: $0.date, start: $0.start, minutes: $0.minutes, bigRock: $0.bigRock ?? false, step: $0.step)
       },
       deadlines: deadlines.map { ScheduleDeadline(itemKey: $0.itemKey, label: $0.label, date: $0.date) },
       note: note
@@ -111,7 +112,7 @@ extension DailyOSClient {
       "/api/cycles/schedule",
       body: Request(
         id: cycleID,
-        sessions: sessions.map { .init(id: $0.id, itemKey: $0.itemKey, label: $0.label, date: $0.date, start: $0.start, minutes: $0.minutes, bigRock: $0.bigRock) },
+        sessions: sessions.map { .init(id: $0.id, itemKey: $0.itemKey, label: $0.label, date: $0.date, start: $0.start, minutes: $0.minutes, bigRock: $0.bigRock, step: $0.step) },
         deadlines: deadlines.map { .init(itemKey: $0.itemKey, label: $0.label, date: $0.date) }
       )
     )

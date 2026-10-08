@@ -163,8 +163,13 @@ public struct ScheduleSession: Sendable, Equatable, Identifiable {
   public var start: String?
   public var minutes: Int
   public var bigRock: Bool
+  /// What this session does — one step of the 要务, e.g. "整理回访表格，分析国内外用户".
+  public var step: String?
 
-  public init(id: String, itemKey: String, label: String, date: String, start: String? = nil, minutes: Int, bigRock: Bool = false) {
+  /// The step when there is one, else the 要务 itself.
+  public var title: String { step.flatMap { $0.isEmpty ? nil : $0 } ?? label }
+
+  public init(id: String, itemKey: String, label: String, date: String, start: String? = nil, minutes: Int, bigRock: Bool = false, step: String? = nil) {
     self.id = id
     self.itemKey = itemKey
     self.label = label
@@ -172,6 +177,7 @@ public struct ScheduleSession: Sendable, Equatable, Identifiable {
     self.start = start
     self.minutes = minutes
     self.bigRock = bigRock
+    self.step = step
   }
 }
 

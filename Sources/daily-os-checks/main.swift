@@ -1168,8 +1168,13 @@ check(routineMode.blocks.last?.minutes == 60, "到 24:00 结束的块是 60 分�
 check(AppSection.workGroup == [.today, .cycles, .routine, .okr, .countdown], "作息在周期后面")
 check(AppSection.routine.shortcut == "3" && AppSection.schedules.shortcut == "8", "快捷键跟着侧栏顺序走")
 
+// MARK: - 排期的每一步
+check(ScheduleSession(id: "1", itemKey: "k", label: "回捞用户", date: "2026-10-08", minutes: 60, step: "整理回访表格").title == "整理回访表格", "有这一步就显示这一步")
+check(ScheduleSession(id: "2", itemKey: "k", label: "回捞用户", date: "2026-10-08", minutes: 60).title == "回捞用户", "没有就显示要务本身")
+check(ScheduleSession(id: "3", itemKey: "k", label: "回捞用户", date: "2026-10-08", minutes: 60, step: "").title == "回捞用户", "空的一步不算")
+
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 回归集")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 回归集")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")
