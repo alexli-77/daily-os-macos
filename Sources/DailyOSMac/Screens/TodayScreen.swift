@@ -158,20 +158,15 @@ private struct CallSheetPanel: View {
   @Binding var selectedID: TodoItem.ID?
 
   @State private var isStarting = false
-  @State private var showsAdhoc = false
+  /// Where an empty-time click asked to add something, minutes from midnight.
+  @State private var addAt: Int?
+  /// A 作息 block being dragged or stretched for today: its shown start / end.
+  @State private var fixedDrag: (id: String, start: Int, end: Int)?
   /// A drag in progress on the timeline, so the block can follow the pointer
   /// (snapped) before anything is sent.
   @State private var drag: TimelineDrag?
 
   var body: some View {
-    callSheet
-      .sheet(isPresented: $showsAdhoc) {
-        AdhocSheet(rows: schedule.rows, now: schedule.now) { showsAdhoc = false }
-          .environment(state)
-      }
-  }
-
-  private var callSheet: some View {
     Panel("今天的通告单", subtitle: subtitle) {
       VStack(alignment: .leading, spacing: Metrics.sm) {
         if let startedAt = state.planRunStartedAt { StartedNote(at: startedAt) }
@@ -210,9 +205,6 @@ private struct CallSheetPanel: View {
         .fixedSize()
         .help("今天按哪种作息过。切换后时段格子跟着变；已经排好的 to-do 不会自己挪，要按新格子重排就点「重新生成」。")
       }
-      Button { showsAdhoc = true } label: { Label("临时安排", systemImage: "plus") }
-        .buttonStyle(QuietButtonStyle(tone: .neutral))
-        .help("今天临时多了件事（比如晚上去打球）：放进今天，作息今天给它让位，排期跟着记上")
       if !schedule.rows.isEmpty {
         Button(isRunning ? "正在生成…" : "重新生成", action: generate)
           .buttonStyle(QuietButtonStyle())
@@ -255,9 +247,40 @@ private struct CallSheetPanel: View {
               .offset(x: Timeline.gutter, y: Timeline.y(slot.start, from: origin) + 1)
               .allowsHitTesting(false)
           }
+          // Empty time is the add button, like a calendar: click, write or
+          // pick a 要务 from this cycle, done.
+          Color.clear
+            .contentShape(Rectangle())
+            .frame(width: lane, height: Timeline.y(range.upperBound, from: origin))
+            .offset(x: Timeline.gutter)
+            .onTapGesture(coordinateSpace: .local) { point in
+              let minute = origin + Int(point.y / Timeline.pointsPerMinute)
+              addAt = min(23 * 60 + 30, max(origin, minute / 30 * 30))
+            }
+          if let addAt {
+            Color.clear
+              .frame(width: 1, height: 1)
+              .offset(x: Timeline.gutter + 60, y: Timeline.y(addAt, from: origin))
+              .popover(isPresented: Binding(get: { self.addAt != nil }, set: { if !$0 { self.addAt = nil } }), arrowEdge: .trailing) {
+                QuickAdd(start: addAt) { self.addAt = nil }
+                  .environment(state)
+              }
+          }
           ForEach(blocks) { block in
+            let shown = fixedDrag?.id == block.id ? (fixedDrag!.start, fixedDrag!.end) : (block.start, block.end)
             RoutineFixedBlock(block: block)
-              .timelineSlot(start: block.start, end: block.end, origin: origin, lane: lane, placement: columns["block:\(block.id)"])
+              .overlay(alignment: .bottom) {
+                if block.routineBlockID != nil {
+                  ResizeHandle(onChanged: { stretchFixed(block, by: $0) }, onEnded: { commitFixed(block) })
+                }
+              }
+              .gesture(
+                DragGesture(minimumDistance: 4)
+                  .onChanged { value in moveFixed(block, by: value.translation.height) }
+                  .onEnded { _ in commitFixed(block) },
+                including: block.routineBlockID == nil ? .none : .all
+              )
+              .timelineSlot(start: shown.0, end: shown.1, origin: origin, lane: lane, placement: columns["block:\(block.id)"])
           }
           ForEach(slotted, id: \.element.id) { index, row in
             taskBlock(index: index, row: row, origin: origin, compact: (columns["row:\(row.id)"]?.count ?? 1) > 1)
@@ -376,6 +399,38 @@ private struct CallSheetPanel: View {
     }
   }
 
+  // MARK: 作息 blocks, today only
+
+  private func moveFixed(_ block: DaySchedule.FixedBlock, by height: CGFloat) {
+    let length = block.end - block.start
+    let start = TimelineDrag.snap(block.start + Int((height / Timeline.pointsPerMinute).rounded()), step: 15)
+    let clamped = max(0, min(24 * 60 - length, start))
+    fixedDrag = (block.id, clamped, clamped + length)
+  }
+
+  private func stretchFixed(_ block: DaySchedule.FixedBlock, by height: CGFloat) {
+    let end = TimelineDrag.snap(block.end + Int((height / Timeline.pointsPerMinute).rounded()), step: 15)
+    fixedDrag = (block.id, block.start, max(block.start + 15, min(24 * 60, end)))
+  }
+
+  /// Dropped: the block moves or stretches for today; the 作息 template does not.
+  private func commitFixed(_ block: DaySchedule.FixedBlock) {
+    guard let drag = fixedDrag, drag.id == block.id, let blockID = block.routineBlockID else { fixedDrag = nil; return }
+    fixedDrag = nil
+    guard drag.start != block.start || drag.end != block.end else { return }
+    Task {
+      let outcome = await state.changeTodayRoutineBlock(blockID: blockID, action: "edit", label: block.label, start: drag.start, end: drag.end)
+      switch outcome {
+      case .ok:
+        let store = state
+        state.toast("\(block.label) 今天改到 \(DaySchedule.clock(drag.start))–\(DaySchedule.clock(min(drag.end, 24 * 60 - 1)))（只改今天）", undo: {
+          Task { @MainActor in _ = await store.changeTodayRoutineBlock(blockID: blockID, action: "reset") }
+        })
+      case .failed(let why), .unsupported(let why): state.toast = why
+      }
+    }
+  }
+
   private func unpin(_ row: DaySchedule.Row) {
     Task {
       let outcome = await state.placePlanItem(row.id, rank: row.rank, start: nil)
@@ -388,7 +443,7 @@ private struct CallSheetPanel: View {
 
   private var subtitle: String {
     let start = DayStart.resolve(generatedAt: state.planGeneratedAt, workStart: state.planWorkStartMinute)
-    return "点一条打开编辑 · 拖到任意钟点，拖下边缘改时长 · 没拖过的从 \(DaySchedule.clock(start)) 起按估时自动排"
+    return "点空白处加一项 · 点一条编辑或删除 · 拖动改时间，拖下边缘改时长 · 没拖过的从 \(DaySchedule.clock(start)) 起按估时自动排"
   }
 
   /// Whole hours from the first thing on the day to the last, so the earliest
@@ -1040,109 +1095,62 @@ private struct RowEditor: View {
   }
 }
 
-// MARK: - 临时安排
+// MARK: - Quick add
 
-/// Something that came up today. Pick a 要务 or write it, set the time; the
-/// rows it would sit on top of are listed with what to do with each (挪到明天
-/// by default). Saved in one go, and the toast offers 撤销 for all of it.
-private struct AdhocSheet: View {
+/// What an empty-time click opens: what to do — typed, or one of this
+/// cycle's 要务 picked (backfilling the 双周排期) — and for how long. A 要务
+/// added here counts as one of the cycle's sessions; the 作息 makes room for
+/// today. 撤销 on the toast takes all of it back.
+private struct QuickAdd: View {
   @Environment(AppState.self) private var state
-  let rows: [DaySchedule.Row]
-  let now: Int
+  let start: Int
   let onClose: () -> Void
 
   @State private var title = ""
   @State private var itemKey: String?
-  @State private var start: Int
-  @State private var end: Int
-  @State private var extra = false
+  @State private var minutes = 60
   @State private var items: [CycleScheduleState.Item] = []
-  @State private var choices: [String: AdhocRequest.Displace?] = [:]
   @State private var isSaving = false
+  @FocusState private var focused: Bool
 
-  private static let clocks: [Int] = Array(stride(from: 6 * 60, through: 24 * 60, by: 15))
-
-  init(rows: [DaySchedule.Row], now: Int, onClose: @escaping () -> Void) {
-    self.rows = rows
-    self.now = now
-    self.onClose = onClose
-    let first = min(23 * 60, (now + 29) / 30 * 30)
-    _start = State(initialValue: first)
-    _end = State(initialValue: min(24 * 60, first + 120))
-  }
-
-  /// Open rows whose slot overlaps the new one.
-  private var displaced: [DaySchedule.Row] {
-    rows.filter { row in
-      guard let rowStart = row.start, let rowEnd = row.end else { return false }
-      guard row.item.state == .open || row.item.state == .partial else { return false }
-      return rowStart < end && start < rowEnd
-    }
-  }
+  private static let lengths = [30, 60, 90, 120, 180]
 
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.sm) {
-      Text("临时安排").font(Typo.heading)
-      Text("放进今天；这段时间作息今天给它让位，模板不动。是本期要务的话，算作本期的一次。")
-        .font(Typo.caption).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
-      TextField("要做什么，比如「去打球」", text: $title).textFieldStyle(.roundedBorder)
+      Text("\(DaySchedule.clock(start)) 加一项").font(Typo.caption).foregroundStyle(Palette.ink3)
+      TextField("做什么", text: $title)
+        .textFieldStyle(.roundedBorder)
+        .focused($focused)
+        .onSubmit(save)
       if !items.isEmpty {
         VStack(alignment: .leading, spacing: Metrics.xxs) {
-          Text("是本期的哪条要务吗？").font(Typo.caption).foregroundStyle(Palette.ink3)
-          ScrollView(.horizontal) {
-            HStack(spacing: Metrics.xxs) {
-              ForEach(items) { item in
-                Button(CycleSchedulePanel.clean(item.text).prefix(16) + (item.text.count > 16 ? "…" : "")) {
-                  if itemKey == item.key { itemKey = nil } else {
-                    itemKey = item.key
-                    if title.trimmingCharacters(in: .whitespaces).isEmpty { title = CycleSchedulePanel.clean(item.text) }
-                  }
-                }
-                .buttonStyle(QuietButtonStyle(tone: itemKey == item.key ? .accent : .neutral))
-                .help(item.text)
-              }
+          Text("或者从本期要务里选").font(Typo.caption).foregroundStyle(Palette.ink3)
+          FlowChips(items: items, selected: itemKey) { item in
+            if itemKey == item.key { itemKey = nil } else {
+              itemKey = item.key
+              title = CycleSchedulePanel.clean(item.text)
             }
           }
         }
       }
-      HStack {
-        Picker("从", selection: $start) { ForEach(Self.clocks.dropLast(), id: \.self) { Text(DaySchedule.clock($0)).tag($0) } }
-        Picker("到", selection: $end) { ForEach(Self.clocks, id: \.self) { Text($0 == 24 * 60 ? "24:00" : DaySchedule.clock($0)).tag($0) } }
-      }
-      if itemKey != nil {
-        Toggle("这是额外的，不抵掉本期后面的一次", isOn: $extra)
-      }
-      if !displaced.isEmpty {
-        VStack(alignment: .leading, spacing: Metrics.xxs) {
-          Text("这段时间原来排着：").font(Typo.caption).foregroundStyle(Palette.ink3)
-          ForEach(displaced) { row in
-            HStack {
-              Text(row.item.text).font(Typo.body).lineLimit(1)
-              Spacer()
-              Picker("", selection: Binding(get: { choices[row.id] ?? .some(.tomorrow) }, set: { choices[row.id] = $0 })) {
-                Text("挪到明天").tag(AdhocRequest.Displace?.some(.tomorrow))
-                Text("今天不做").tag(AdhocRequest.Displace?.some(.drop))
-                Text("不动").tag(AdhocRequest.Displace?.none)
-              }
-              .labelsHidden().fixedSize()
-            }
-          }
+      HStack(spacing: Metrics.xxs) {
+        ForEach(Self.lengths, id: \.self) { length in
+          Button(Fmt.minutes(length)) { minutes = length }
+            .buttonStyle(QuietButtonStyle(tone: minutes == length ? .accent : .neutral))
         }
-      }
-      if end <= start {
-        Text("结束要晚于开始").font(Typo.caption).foregroundStyle(Palette.warn)
       }
       HStack {
         Spacer()
         Button("取消", action: onClose).buttonStyle(QuietButtonStyle(tone: .neutral)).keyboardShortcut(.cancelAction)
-        Button(isSaving ? "放进去…" : "放进今天", action: save)
+        Button(isSaving ? "加上…" : "加上", action: save)
           .buttonStyle(MossButtonStyle(prominent: true))
           .keyboardShortcut(.defaultAction)
-          .disabled(isSaving || end <= start || title.trimmingCharacters(in: .whitespaces).isEmpty)
+          .disabled(isSaving || title.trimmingCharacters(in: .whitespaces).isEmpty)
       }
     }
-    .padding(Metrics.lg)
-    .frame(width: 480)
+    .padding(Metrics.md)
+    .frame(width: 380)
+    .onAppear { focused = true }
     .task {
       guard let cycle = state.currentCycle, case .success(let loaded) = await state.loadCycleSchedule(cycleID: cycle.id) else { return }
       items = loaded.items
@@ -1150,36 +1158,52 @@ private struct AdhocSheet: View {
   }
 
   private func save() {
+    let text = title.trimmingCharacters(in: .whitespaces)
+    guard !text.isEmpty, !isSaving else { return }
     isSaving = true
+    let end = min(24 * 60, start + minutes)
     let request = AdhocRequest(
-      title: title.trimmingCharacters(in: .whitespaces),
-      itemKey: itemKey,
-      start: DaySchedule.clock(start),
-      end: end == 24 * 60 ? "24:00" : DaySchedule.clock(end),
-      extra: extra,
-      displaced: displaced.compactMap { row in
-        guard let action = choices[row.id] ?? .some(.tomorrow) else { return nil }
-        return .init(candidateID: row.id, rank: row.rank, action: action)
-      }
+      title: text, itemKey: itemKey, start: DaySchedule.clock(start), end: end == 24 * 60 ? "24:00" : DaySchedule.clock(end),
+      extra: false, displaced: []
     )
     Task {
       let (outcome, undo) = await state.addAdhoc(request)
       isSaving = false
       switch outcome {
-      case .ok(let text):
+      case .ok(let summary):
         onClose()
         var takeBack: (@MainActor () -> Void)?
         if let undo {
           let store = state
-          takeBack = {
-            Task { @MainActor in store.toast = (await store.undoAdhoc(undo)).message }
-          }
+          takeBack = { Task { @MainActor in store.toast = (await store.undoAdhoc(undo)).message } }
         }
-        state.toast(text ?? "放进今天了", undo: takeBack)
+        state.toast(summary ?? "加上了", undo: takeBack)
       case .failed(let why), .unsupported(let why):
         state.toast = why
       }
     }
+  }
+}
+
+/// This cycle's 要务 as wrapping chips.
+private struct FlowChips: View {
+  let items: [CycleScheduleState.Item]
+  let selected: String?
+  let onPick: (CycleScheduleState.Item) -> Void
+
+  var body: some View {
+    ScrollView {
+      LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 4)], alignment: .leading, spacing: 4) {
+        ForEach(items) { item in
+          Button { onPick(item) } label: {
+            Text(CycleSchedulePanel.clean(item.text)).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+          }
+          .buttonStyle(QuietButtonStyle(tone: selected == item.key ? .accent : .neutral))
+          .help(item.text)
+        }
+      }
+    }
+    .frame(maxHeight: 150)
   }
 }
 
