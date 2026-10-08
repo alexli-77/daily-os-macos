@@ -40,6 +40,7 @@ struct DayRoutinePayload: Decodable {
     let category: String?
     let color: String?
     let floor: Bool?
+    let habit: Bool?
   }
   let period: String
   let dayType: String
@@ -56,7 +57,7 @@ struct DayRoutinePayload: Decodable {
       slots: slots.compactMap { slot in
         guard let start = DayStart.minute(fromClock: slot.start) else { return nil }
         let end = slot.end == "24:00" ? 24 * 60 : (DayStart.minute(fromClock: slot.end) ?? start)
-        return .init(start: start, end: end, title: slot.title, category: slot.category, color: slot.color, floor: slot.floor ?? false)
+        return .init(start: start, end: end, title: slot.title, category: slot.category, color: slot.color, floor: slot.floor ?? false, habit: slot.habit ?? false)
       }
     )
   }

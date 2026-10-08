@@ -41,6 +41,8 @@ struct TodayPlanResponse: Decodable {
     /// service that knows the field; see `knowsMIT`.
     let mit: Bool?
     let mitByUser: Bool?
+    /// In a habit slot of today's 作息.
+    let habit: Bool?
   }
 
   let plan: Plan?
@@ -110,7 +112,8 @@ extension DailyOSClient {
           pinnedStart: todo.start.flatMap(DayStart.minute(fromClock:)),
           colorTag: todo.color,
           isMIT: knowsMIT ? (todo.mit ?? false) : nil,
-          mitByUser: todo.mitByUser ?? false
+          mitByUser: todo.mitByUser ?? false,
+          isHabit: todo.habit ?? false
         )
       }
 

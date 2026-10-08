@@ -577,6 +577,8 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
   public var isMIT: Bool?
   /// True when `isMIT` is the user's choice rather than the plan's suggestion.
   public var mitByUser: Bool
+  /// A habit (a slot of a habit category in today's 作息), not a one-off item.
+  public var isHabit: Bool
 
   public init(
     id: String,
@@ -591,7 +593,8 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
     pinnedStart: Int? = nil,
     colorTag: String? = nil,
     isMIT: Bool? = nil,
-    mitByUser: Bool = false
+    mitByUser: Bool = false,
+    isHabit: Bool = false
   ) {
     self.id = id
     self.text = text
@@ -606,6 +609,7 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
     self.colorTag = colorTag
     self.isMIT = isMIT
     self.mitByUser = mitByUser
+    self.isHabit = isHabit
   }
 }
 

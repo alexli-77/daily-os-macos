@@ -1064,6 +1064,7 @@ check(PlanSource(candidateID: "linear:ABC-12").label == "ABC-12" && PlanSource(c
 check(PlanSource(candidateID: "weekly:3:a1b2c3d4").label == "要务", "周期要务行显示「要务」")
 check(PlanSource(candidateID: "todo_inbox:todo-1").label == "随手记", "随手记行显示「随手记」")
 check(PlanSource(candidateID: "rhythm:meal:午餐").label == "作息", "服务端加上的吃饭行显示「作息」")
+check(PlanSource(candidateID: "rhythm:habit:english").label == "习惯", "作息里的习惯格子作为一行，显示「习惯」")
 check(PlanSource(candidateID: "vault:notes/a.md").label == "笔记", "vault 行显示「笔记」")
 check(!PlanSource(candidateID: "weekly:0:x").isIssue, "要务不是链接，不加下划线")
 check(PlanSource(candidateID: "p1", sourceRef: "DEMO-12").label == "DEMO-12", "已经带引用的行照旧用引用")

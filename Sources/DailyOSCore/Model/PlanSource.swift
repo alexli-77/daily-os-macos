@@ -30,6 +30,9 @@ public struct PlanSource: Sendable, Equatable {
       self.init(label: "随手记", isIssue: false)
     case "vault":
       self.init(label: "笔记", isIssue: false)
+    case "rhythm" where candidateID.hasPrefix("rhythm:habit:"):
+      // A habit slot of today's 作息, as a row (it can be ticked or let go).
+      self.init(label: "习惯", isIssue: false)
     case "rhythm":
       // Meal rows the service adds to today's sheet (LEO-332).
       self.init(label: "作息", isIssue: false)
