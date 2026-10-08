@@ -178,6 +178,9 @@ private struct CallSheetPanel: View {
             action: isRunning ? nil : (generate as () -> Void)
           )
         } else {
+          // The day's progress right under the subtitle, above the banners and
+          // the timeline, where it is read first (LEO-336).
+          SheetFooter(schedule: schedule)
           if !schedule.lateRows.isEmpty {
             OverdueBanner(rows: schedule.lateRows, pushAll: pushLateToNow)
           }
@@ -185,7 +188,6 @@ private struct CallSheetPanel: View {
             StaleCaptureBanner(captures: state.staleCaptures, abandon: abandon)
           }
           sheet
-          SheetFooter(schedule: schedule)
         }
       }
     } actions: {
@@ -613,9 +615,6 @@ private struct CallSheetRow: View {
     // removed — so VoiceOver and the keyboard still reach them.
     .overlay(alignment: .topTrailing) {
       HStack(spacing: Metrics.xxs) {
-        // No ✓: the circle on the left is complete. 恢复未做 only once there is
-        // something to undo — on an untouched row it was a lit button that did
-        // nothing (LEO-332).
         RowActionBar(state: item.state, isVisible: showsControls, allowed: allowedStates, set: set)
         deleteButton
       }
@@ -630,11 +629,11 @@ private struct CallSheetRow: View {
     }
   }
 
-  /// The middle column: MIT first, where it is seen, and the source under it,
-  /// both on the column's left edge. A row sharing its width with an
-  /// overlapping block keeps MIT and drops the source.
+  /// The middle column: MIT first, where it is seen, then the source on the
+  /// same line. A row sharing its width with an overlapping block keeps MIT and
+  /// drops the source.
   private var tags: some View {
-    VStack(alignment: .leading, spacing: 2) {
+    HStack(alignment: .top, spacing: Metrics.xs) {
       if isMIT {
         Text("MIT")
           .font(Typo.caption)
@@ -649,7 +648,7 @@ private struct CallSheetRow: View {
       }
       if !compact {
         source
-          .padding(.top, isMIT ? 0 : 2)
+          .padding(.top, 2)
       }
     }
   }
@@ -678,10 +677,11 @@ private struct CallSheetRow: View {
     }
   }
 
+  /// No ✓ (the circle is complete) and no 恢复未做 (LEO-336): a done row goes
+  /// back by clicking the circle again, a deferred or partial row by clicking
+  /// its lit button again — see `set`.
   private var allowedStates: Set<TodoState> {
-    var states: Set<TodoState> = isPlanRow ? [.partial, .deferred] : [.deferred]
-    if item.state != .open { states.insert(.open) }
-    return states
+    isPlanRow ? [.partial, .deferred] : [.deferred]
   }
 
   /// The row's text, at most as many lines as the block has room for. Click it
@@ -823,7 +823,9 @@ private struct CallSheetRow: View {
       .fixedSize()
   }
 
-  private func set(_ target: TodoState) {
+  private func set(_ requested: TodoState) {
+    // The button that is already lit takes the row back to open.
+    let target = requested == item.state && requested != .open ? .open : requested
     guard target != item.state else { return }
     if isPlanRow {
       let event = switch target {
@@ -863,7 +865,7 @@ private struct RowEditor: View {
   let onSave: () -> Void
 
   /// Matches the service's cap and the daily_plan prompt's rule.
-  static let maxLength = 40
+  static let maxLength = 150
 
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.sm) {
@@ -1364,7 +1366,6 @@ private struct SheetFooter: View {
       .frame(height: 2)
       Text(tail).font(Typo.caption).foregroundStyle(Palette.ink2).monospacedDigit()
     }
-    .padding(.top, Metrics.xs)
   }
 
   private var fraction: Double {
