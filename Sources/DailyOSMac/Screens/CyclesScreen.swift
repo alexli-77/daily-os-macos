@@ -864,7 +864,9 @@ private struct AlignedPriorities: View {
             VStack(alignment: .leading, spacing: Metrics.xxs) {
               ForEach(objective.keyResults) { kr in
                 HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
-                  Text(kr.id).font(Typo.mono).foregroundStyle(Palette.ink3)
+                  if let label = KeyResultLabel.text(id: kr.id, title: kr.title) {
+                    Text(label).font(Typo.mono).foregroundStyle(Palette.ink3)
+                  }
                   Text(kr.title).font(Typo.caption).foregroundStyle(Palette.ink3)
                 }
                 .fixedSize(horizontal: false, vertical: true)
