@@ -159,7 +159,8 @@ public struct RowActionBar: View {
         .contentShape(Circle())
     }
     .buttonStyle(.plain)
-    .help(label)
+    // A lit button undoes itself when clicked again; say so.
+    .help(state == target ? "\(label) · 再点一下撤回" : label)
     .accessibilityLabel(label)
     .accessibilityAddTraits(state == target ? [.isSelected] : [])
   }
