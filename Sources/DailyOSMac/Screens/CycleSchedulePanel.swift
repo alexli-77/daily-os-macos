@@ -16,6 +16,13 @@ struct CycleSchedulePanel: View {
   let editable: Bool
   /// A day's header was clicked: zoom into that day.
   var onOpenDay: ((String) -> Void)?
+  /// Offer 收起 / 展开 (LEO-337). On the Today page, where the schedule sits
+  /// above the day and makes the page long; the cycle page keeps it open.
+  var collapsible = false
+
+  /// Remembered across launches: someone who folds it away does not want it
+  /// back open every morning.
+  @AppStorage("today.scheduleCollapsed") private var collapsed = false
 
   private enum Phase: Equatable {
     case loading
@@ -42,7 +49,9 @@ struct CycleSchedulePanel: View {
     Panel {
       VStack(alignment: .leading, spacing: Metrics.sm) {
         header
-        content
+        if !(collapsible && collapsed) {
+          content
+        }
       }
     }
     .task(id: cycle.id) { await load() }
@@ -75,6 +84,15 @@ struct CycleSchedulePanel: View {
         .buttonStyle(QuietButtonStyle())
         .disabled(isStarting || data.running)
         .help("从今天起重新排，今天以前的不动。用模型额度。")
+      }
+      if collapsible {
+        Button {
+          withAnimation(.snappy(duration: 0.2)) { collapsed.toggle() }
+        } label: {
+          Label(collapsed ? "展开" : "收起", systemImage: collapsed ? "chevron.down" : "chevron.up")
+        }
+        .buttonStyle(QuietButtonStyle(tone: .neutral))
+        .help(collapsed ? "展开排期" : "收起排期，今天页短一些")
       }
     }
   }

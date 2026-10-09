@@ -52,7 +52,7 @@ struct TodayScreen: View {
       Group {
         if view == .cycle, let cycle = shownCycle, state.isViewingSelf {
           // The cycle, day by day; a day's header zooms into that day.
-          CycleSchedulePanel(cycle: cycle, editable: cycle.isWritable, onOpenDay: openDay)
+          CycleSchedulePanel(cycle: cycle, editable: cycle.isWritable, onOpenDay: openDay, collapsible: true)
         } else if sideBySide {
           HStack(alignment: .top, spacing: Metrics.md) {
             mainColumn.frame(maxWidth: .infinity, alignment: .top)
