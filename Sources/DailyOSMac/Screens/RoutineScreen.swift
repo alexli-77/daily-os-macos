@@ -122,9 +122,6 @@ struct RoutineScreen: View {
 
   private func detail(_ period: RoutinePeriod) -> some View {
     ScreenScaffold(period.name, subtitle: subtitle(period)) {
-      if let summary = period.summary, !summary.isEmpty {
-        Text(summary).font(Typo.body).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
-      }
       if let problems = routine?.problems, !problems.isEmpty {
         VStack(alignment: .leading, spacing: 2) {
           ForEach(problems, id: \.self) { Text($0) }
@@ -154,12 +151,19 @@ struct RoutineScreen: View {
     }
   }
 
+  /// One line: where, when, and the period's own summary. Wake and sleep
+  /// times are left out when the summary already says them.
   private func subtitle(_ period: RoutinePeriod) -> String {
+    let summary = period.summary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    func said(_ clock: String) -> Bool {
+      summary.contains(clock) || (clock.hasPrefix("0") && summary.contains(String(clock.dropFirst())))
+    }
     var parts: [String] = []
     if let subtitle = period.subtitle, !subtitle.isEmpty { parts.append(subtitle) }
     parts.append("\(Self.short(period.from)) – \(Self.short(period.to))")
-    if let wake = period.wake { parts.append("\(wake) 起") }
-    if let sleep = period.sleep { parts.append("\(sleep) 睡") }
+    if let wake = period.wake, !said(wake) { parts.append("\(wake) 起") }
+    if let sleep = period.sleep, !said(sleep) { parts.append("\(sleep) 睡") }
+    if !summary.isEmpty { parts.append(summary) }
     return parts.joined(separator: " · ")
   }
 

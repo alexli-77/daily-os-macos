@@ -38,10 +38,6 @@ struct TodayScreen: View {
   var body: some View {
     ScreenScaffold("今天", subtitle: subtitle) {
       let sideBySide = contentWidth >= Self.railBreakpoint && !railStacked
-      // Above the split rather than inside a column: it is one line about the
-      // day, the same line the morning card opened with, and it belongs to the
-      // whole screen rather than to the call sheet.
-      CountdownStrip()
       Group {
         if sideBySide {
           HStack(alignment: .top, spacing: Metrics.md) {
@@ -137,10 +133,12 @@ struct TodayScreen: View {
     )
   }
 
+  /// One line: the date, the cycle, and the countdowns that make the morning card.
   private var subtitle: String {
-    let date = Fmt.dayHeading()
-    guard let cycle = state.currentCycle else { return date }
-    return "\(date) · 当前周期 \(Fmt.cycleTitle(cycle))"
+    var parts = [Fmt.dayHeading()]
+    if let cycle = state.currentCycle { parts.append(cycle.label) }
+    parts += Countdown.forCard(state.countdowns).map { "\($0.title) \($0.daysLabel)" }
+    return parts.joined(separator: " · ")
   }
 }
 

@@ -287,51 +287,6 @@ private struct CountdownEditor: View {
   }
 }
 
-// MARK: - The strip on Today
-
-/// The same sentence the morning card opens with, on the screen you actually
-/// have open at 14:00.
-///
-/// One line, no panel, no heading. It is context for the day, not a section of
-/// it — the moment this grows a title and a border it starts competing with the
-/// call sheet, which is the thing you came to this screen for. Draws nothing
-/// at all when there is nothing inside the horizon.
-struct CountdownStrip: View {
-  @Environment(AppState.self) private var state
-
-  private var items: [Countdown] { Countdown.forCard(state.countdowns) }
-
-  var body: some View {
-    if !items.isEmpty {
-      Button {
-        state.section = .countdown
-      } label: {
-        HStack(spacing: Metrics.xs) {
-          Image(systemName: "hourglass")
-            .font(Typo.caption)
-            .foregroundStyle(Palette.inkMuted)
-          ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-            if index > 0 {
-              Text("·").font(Typo.caption).foregroundStyle(Palette.line)
-            }
-            HStack(spacing: Metrics.xxs) {
-              Text(item.title).font(Typo.caption).foregroundStyle(Palette.inkMuted)
-              Text(item.daysLabel)
-                .font(Typo.tabularCaption)
-                .foregroundStyle(Palette.foreground(for: item.tone))
-            }
-          }
-          Spacer(minLength: 0)
-        }
-        .contentShape(Rectangle())
-      }
-      .buttonStyle(.plain)
-      .help("去倒数日")
-      .accessibilityLabel("倒数日：\(items.map { "\($0.title) \($0.daysLabel)" }.joined(separator: "，"))")
-    }
-  }
-}
-
 // MARK: - Previews
 
 #Preview("倒数日") {
