@@ -1380,6 +1380,9 @@ struct CycleSections: View {
       if let problem = cycle.frontmatterError {
         BrokenFrontmatterBanner(cycle: cycle, problem: problem)
       }
+      if state.visibleCycles.count > 1 {
+        Panel { CycleTrend().padding(-Metrics.sm) }
+      }
       section(.priorities)
       if opensReview ?? isClosing {
         section(.retro)
@@ -1459,9 +1462,21 @@ struct CycleSwitcher: View {
         Button("新建周期…") { isCreating = true }
       }
     } label: {
-      Label(label, systemImage: "calendar")
+      HStack(spacing: Metrics.xxs) {
+        Image(systemName: "calendar")
+        Text(label)
+        Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+      }
+      .font(Typo.label)
+      .foregroundStyle(Palette.ink)
+      .padding(.horizontal, Metrics.sm)
+      .padding(.vertical, 5)
+      .background(Palette.surfaceSunken, in: Capsule())
+      .contentShape(Capsule())
     }
-    .menuStyle(.button)
+    .menuStyle(.borderlessButton)
+    .menuIndicator(.hidden)
+    .tint(Palette.ink)
     .fixedSize()
     .help("换一个周期，或新建")
   }

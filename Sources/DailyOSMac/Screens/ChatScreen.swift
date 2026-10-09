@@ -358,10 +358,10 @@ private struct CommandPalette: View {
           } label: {
             Text(command.label)
               .font(Typo.label)
-              .foregroundStyle(Palette.moss)
-              .padding(.horizontal, Metrics.xs)
+              .foregroundStyle(Palette.ink)
+              .padding(.horizontal, Metrics.sm)
               .padding(.vertical, Metrics.xxs)
-              .background(Palette.mossSoft, in: Capsule())
+              .background(Palette.surfaceSunken, in: Capsule())
           }
           .buttonStyle(.plain)
           .help("\(command.keyword) — \(command.detail)")

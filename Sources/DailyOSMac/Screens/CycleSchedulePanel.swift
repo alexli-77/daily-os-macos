@@ -53,8 +53,11 @@ struct CycleSchedulePanel: View {
 
   /// 排期 and the one action.
   private var header: some View {
-    HStack(alignment: .center, spacing: Metrics.sm) {
-      Text("排期").inkStyle(Typo.heading)
+    HStack(alignment: .firstTextBaseline, spacing: Metrics.sm) {
+      // The schedule's one-line guide follows the title.
+      (Text("排期").font(Typo.heading).foregroundColor(Palette.ink)
+        + Text(data?.schedule?.note.map { "    \($0)" } ?? "").font(Typo.body).foregroundColor(Palette.ink2))
+        .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: Metrics.xs)
       if editable, let data, !data.items.isEmpty {
         Button(generateTitle(data)) {
@@ -96,9 +99,6 @@ struct CycleSchedulePanel: View {
               }
             }
             if let error = data.error { Text("上次没排成：\(error)").font(Typo.caption).foregroundStyle(Palette.warn) }
-            if let note = data.schedule?.note {
-              Text(note).font(Typo.body).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
-            }
             week(data)
             legend
           }
