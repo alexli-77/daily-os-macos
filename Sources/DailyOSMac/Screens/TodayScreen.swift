@@ -38,10 +38,6 @@ struct TodayScreen: View {
   var body: some View {
     ScreenScaffold("今天", subtitle: subtitle) {
       let sideBySide = contentWidth >= Self.railBreakpoint && !railStacked
-      // Above the split rather than inside a column: it is one line about the
-      // day, the same line the morning card opened with, and it belongs to the
-      // whole screen rather than to the call sheet.
-      CountdownStrip()
       Group {
         if sideBySide {
           HStack(alignment: .top, spacing: Metrics.md) {
@@ -137,10 +133,12 @@ struct TodayScreen: View {
     )
   }
 
+  /// One line: the date, the cycle, and the countdowns that make the morning card.
   private var subtitle: String {
-    let date = Fmt.dayHeading()
-    guard let cycle = state.currentCycle else { return date }
-    return "\(date) · 当前周期 \(Fmt.cycleTitle(cycle))"
+    var parts = [Fmt.dayHeading()]
+    if let cycle = state.currentCycle { parts.append(cycle.label) }
+    parts += Countdown.forCard(state.countdowns).map { "\($0.title) \($0.daysLabel)" }
+    return parts.joined(separator: " · ")
   }
 }
 
@@ -1330,7 +1328,7 @@ private struct RoutineSlotBand: View {
   var body: some View {
     let color = slot.color.flatMap(Palette.rowColor) ?? Palette.ink3
     ZStack(alignment: .topTrailing) {
-      RoundedRectangle(cornerRadius: 6, style: .continuous).fill(color.opacity(0.07))
+      RoundedRectangle(cornerRadius: 6, style: .continuous).fill(color.opacity(slot.floor ? 0.12 : 0.07))
       if slot.blockID == nil {
         Text(Self.label(slot))
           .font(Typo.caption)
@@ -1339,7 +1337,13 @@ private struct RoutineSlotBand: View {
           .padding(.top, 2)
       }
     }
-    .overlay(alignment: .leading) { Rectangle().fill(color.opacity(0.6)).frame(width: 3) }
+    .overlay(alignment: .leading) { Rectangle().fill(color.opacity(slot.floor ? 0.9 : 0.6)).frame(width: slot.floor ? 4 : 3) }
+    .overlay {
+      // A floor is the least this category gets today: drawn solid and firm.
+      if slot.floor {
+        RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(color.opacity(0.8), lineWidth: 1.5)
+      }
+    }
     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
   }
 
@@ -1367,6 +1371,7 @@ private struct SlotHandles: View {
     VStack(spacing: 0) {
       HStack(spacing: 0) {
         Spacer(minLength: 0)
+        if slot.floor { FloorTag(color: color) }
         Text(RoutineSlotBand.label(slot))
           .font(Typo.caption)
           .foregroundStyle(color.opacity(0.9))
