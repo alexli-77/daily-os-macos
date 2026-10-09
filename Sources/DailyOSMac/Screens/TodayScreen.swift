@@ -214,8 +214,6 @@ private struct CallSheetPanel: View {
   /// A drag in progress on the timeline, so the block can follow the pointer
   /// (snapped) before anything is sent.
   @State private var drag: TimelineDrag?
-  /// A 作息 slot being dragged or stretched for today: its shown start / end.
-  @State private var slotDrag: (id: String, start: Int, end: Int)?
   /// The row whose state menu is showing. It opens on hovering the circle and
   /// stays while the pointer is on the circle or on the menu itself.
   @State private var menuRowID: String?
@@ -294,16 +292,6 @@ private struct CallSheetPanel: View {
         let lane = max(geo.size.width - Timeline.gutter, 1)
         ZStack(alignment: .topLeading) {
           HourGrid(range: range)
-          // The 作息's slots, behind everything: the time kept for each
-          // category, which that category's rows go into. The wash lets clicks
-          // through to the add button; the name and the bottom edge do not.
-          ForEach(bandSlots) { slot in
-            let shown = shownSlot(slot)
-            RoutineSlotBand(slot: slot, title: poolTitle(slot))
-              .frame(width: lane, height: max(Timeline.y(shown.end, from: shown.start) - 2, 12))
-              .offset(x: Timeline.gutter, y: Timeline.y(shown.start, from: origin) + 1)
-              .allowsHitTesting(false)
-          }
           // Empty time is the add button, like a calendar: click, write or
           // pick a 要务 from this cycle, done.
           Color.clear
@@ -322,22 +310,6 @@ private struct CallSheetPanel: View {
                 QuickAdd(start: addAt) { self.addAt = nil }
                   .environment(state)
               }
-          }
-          // A slot's name moves it, its bottom edge stretches it, a click edits
-          // it — all for today only. Above the add button, under the rows.
-          ForEach(bandSlots.filter { $0.blockID != nil }) { slot in
-            let shown = shownSlot(slot)
-            SlotHandles(
-              slot: slot,
-              title: poolTitle(slot),
-              shownStart: shown.start,
-              shownEnd: shown.end,
-              onMove: { moveSlot(slot, by: $0) },
-              onStretch: { stretchSlot(slot, by: $0) },
-              onEnd: { commitSlot(slot) }
-            )
-            .frame(width: lane, height: max(Timeline.y(shown.end, from: shown.start) - 2, 12))
-            .offset(x: Timeline.gutter, y: Timeline.y(shown.start, from: origin) + 1)
           }
           ForEach(blocks) { block in
             let shown = fixedDrag?.id == block.id ? (fixedDrag!.start, fixedDrag!.end) : (block.start, block.end)
@@ -469,72 +441,6 @@ private struct CallSheetPanel: View {
     }
   }
 
-  // MARK: 作息 slots, today only
-
-  /// Slots drawn as bands: the ones with no 固定日程 row of their own (the
-  /// flexible pool, or one deleted for today).
-  private var bandSlots: [TodayRoutine.Slot] {
-    let rows = Set(schedule.rows.map(\.id))
-    return (state.todayRoutine?.slots ?? []).filter { slot in
-      guard !slot.habit else { return false }
-      guard let block = slot.blockID else { return true }
-      return !rows.contains("rhythm:block:\(block)") && !rows.contains("rhythm:habit:\(block)")
-    }
-  }
-
-  /// A slot that repeats a 固定日程 already on today's sheet is that
-  /// 固定日程's spare time, free for anything. Named for what it is, so the
-  /// sheet does not show 「作品集 redesign」 twice.
-  private func poolTitle(_ slot: TodayRoutine.Slot) -> String? {
-    let key = Self.titleKey(slot.title)
-    let rows = Set(schedule.rows.map(\.id))
-    let repeated = (state.todayRoutine?.slots ?? []).contains { other in
-      other.id != slot.id && Self.titleKey(other.title) == key
-        && other.blockID.map { rows.contains("rhythm:block:\($0)") || rows.contains("rhythm:habit:\($0)") } == true
-    }
-    return repeated ? "弹性时间" : nil
-  }
-
-  /// A title as compared: a note for the day in brackets does not make a new one.
-  private static func titleKey(_ title: String) -> String {
-    title.replacingOccurrences(of: "\\s*[（(][^（）()]*[）)]\\s*$", with: "", options: .regularExpression)
-      .trimmingCharacters(in: .whitespaces).lowercased()
-  }
-
-  private func shownSlot(_ slot: TodayRoutine.Slot) -> (start: Int, end: Int) {
-    if let slotDrag, slotDrag.id == slot.id { return (slotDrag.start, slotDrag.end) }
-    return (slot.start, slot.end)
-  }
-
-  private func moveSlot(_ slot: TodayRoutine.Slot, by height: CGFloat) {
-    let length = slot.end - slot.start
-    let start = TimelineDrag.snap(slot.start + Int((height / Timeline.pointsPerMinute).rounded()), step: 15)
-    let clamped = max(0, min(24 * 60 - length, start))
-    slotDrag = (slot.id, clamped, clamped + length)
-  }
-
-  private func stretchSlot(_ slot: TodayRoutine.Slot, by height: CGFloat) {
-    let end = TimelineDrag.snap(slot.end + Int((height / Timeline.pointsPerMinute).rounded()), step: 15)
-    slotDrag = (slot.id, slot.start, max(slot.start + 15, min(24 * 60, end)))
-  }
-
-  private func commitSlot(_ slot: TodayRoutine.Slot) {
-    guard let drag = slotDrag, drag.id == slot.id, let blockID = slot.blockID else { slotDrag = nil; return }
-    guard drag.start != slot.start || drag.end != slot.end else { slotDrag = nil; return }
-    Task {
-      let outcome = await state.changeTodayRoutineBlock(blockID: blockID, action: "edit", label: slot.title, start: drag.start, end: drag.end)
-      slotDrag = nil
-      switch outcome {
-      case .ok:
-        let store = state
-        state.toast("\(slot.title) 今天改到 \(DaySchedule.clock(drag.start))–\(DaySchedule.clock(min(drag.end, 24 * 60 - 1)))", undo: {
-          Task { @MainActor in _ = await store.changeTodayRoutineBlock(blockID: blockID, action: "reset") }
-        })
-      case .failed(let why), .unsupported(let why): state.toast = why
-      }
-    }
-  }
-
   /// Where a row is drawn: its slot, or where it is being dragged to.
   private func shownStart(_ row: DaySchedule.Row) -> Int {
     if let drag, drag.id == row.id, drag.kind == .move { return drag.value }
@@ -638,9 +544,8 @@ private struct CallSheetPanel: View {
   /// Whole hours from the first thing on the day to the last, so the earliest
   /// routine and the projected end both fit.
   private var timelineRange: ClosedRange<Int> {
-    let slots = state.todayRoutine?.slots ?? []
-    let starts = state.planMealBlocks.map(\.start) + schedule.rows.compactMap(\.start) + slots.map(\.start)
-    let ends = state.planMealBlocks.map(\.end) + schedule.rows.compactMap(\.end) + slots.map(\.end)
+    let starts = state.planMealBlocks.map(\.start) + schedule.rows.compactMap(\.start)
+    let ends = state.planMealBlocks.map(\.end) + schedule.rows.compactMap(\.end)
     let lower = max(0, (starts.min() ?? schedule.now) / 60 * 60)
     let upper = min(24 * 60, ((ends.max() ?? lower) + 59) / 60 * 60)
     return lower...max(upper, lower + 60)
@@ -1555,89 +1460,6 @@ private struct RoutineDayEditor: View {
       case .failed(let why), .unsupported(let why):
         state.toast = why
       }
-    }
-  }
-}
-
-// MARK: - 作息 slots
-
-/// One slot of today's 作息, drawn behind the rows: a faint wash of the
-/// category's colour and a bar on the left. Its name is drawn by
-/// `SlotHandles`, which can be grabbed; only a slot with no 作息 block behind
-/// it draws its own.
-private struct RoutineSlotBand: View {
-  let slot: TodayRoutine.Slot
-  /// Shown instead of the slot's own name (弹性时间).
-  var title: String?
-
-  var body: some View {
-    let color = slot.color.flatMap(Palette.rowColor) ?? Palette.ink3
-    ZStack(alignment: .topTrailing) {
-      RoundedRectangle(cornerRadius: 6, style: .continuous).fill(color.opacity(slot.floor ? 0.12 : 0.07))
-      if slot.blockID == nil {
-        Text(title ?? Self.label(slot))
-          .font(Typo.caption)
-          .foregroundStyle(color.opacity(0.9))
-          .padding(.horizontal, Metrics.xs)
-          .padding(.top, 2)
-      }
-    }
-    .overlay(alignment: .leading) { Rectangle().fill(color.opacity(slot.floor ? 0.9 : 0.6)).frame(width: slot.floor ? 4 : 3) }
-    .overlay {
-      // A floor is the least this category gets today: drawn solid and firm.
-      if slot.floor {
-        RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(color.opacity(0.8), lineWidth: 1.5)
-      }
-    }
-    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-  }
-
-  /// "英语口语", or "作品集 redesign · 作品集" when the category says more.
-  static func label(_ slot: TodayRoutine.Slot) -> String {
-    guard let category = slot.category, !slot.title.localizedCaseInsensitiveContains(category) else { return slot.title }
-    return "\(slot.title) · \(category)"
-  }
-}
-
-/// The parts of a 作息 slot you can grab: its name (drag to move it, click to
-/// change it) and its bottom edge (drag to stretch). The rest of the slot is
-/// empty time, and clicking it adds a to-do.
-private struct SlotHandles: View {
-  let slot: TodayRoutine.Slot
-  var title: String?
-  let shownStart: Int
-  let shownEnd: Int
-  let onMove: (CGFloat) -> Void
-  let onStretch: (CGFloat) -> Void
-  let onEnd: () -> Void
-  @State private var isEditing = false
-
-  var body: some View {
-    let color = slot.color.flatMap(Palette.rowColor) ?? Palette.ink3
-    VStack(spacing: 0) {
-      HStack(spacing: 0) {
-        Spacer(minLength: 0)
-        if slot.floor { FloorTag(color: color) }
-        Text(title ?? RoutineSlotBand.label(slot))
-          .font(Typo.caption)
-          .foregroundStyle(color.opacity(0.9))
-          .padding(.horizontal, Metrics.xs)
-          .padding(.vertical, 2)
-          .contentShape(Rectangle())
-          .onTapGesture { isEditing = true }
-          .gesture(
-            DragGesture(minimumDistance: 4, coordinateSpace: .named(Timeline.space))
-              .onChanged { onMove($0.translation.height) }
-              .onEnded { _ in onEnd() }
-          )
-          .pointerStyleLink()
-          .help("点一下改今天的时间，拖动挪位置")
-          .popover(isPresented: $isEditing, arrowEdge: .trailing) {
-            RoutineDayEditor(blockID: slot.blockID ?? "", label: slot.title, start: slot.start, end: slot.end, isPresented: $isEditing)
-          }
-      }
-      Spacer(minLength: 0)
-      ResizeHandle(onChanged: onStretch, onEnded: onEnd)
     }
   }
 }
