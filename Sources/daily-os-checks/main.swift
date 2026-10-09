@@ -1194,8 +1194,8 @@ let routineMode = RoutineMode(id: "m", label: "作品集日", blocks: [
 check(routineMode.minutesByCategory().map(\.key) == ["portfolio", "habit", "rest"], "类别按时长从多到少")
 check(routineMode.minutesByCategory().first { $0.key == "habit" }?.minutes == 150, "同类的几块加在一起")
 check(routineMode.blocks.last?.minutes == 60, "到 24:00 结束的块是 60 分钟，不是负数")
-check(AppSection.workGroup == [.today, .cycles, .routine, .okr, .countdown], "作息在周期后面")
-check(AppSection.routine.shortcut == "3" && AppSection.schedules.shortcut == "8", "快捷键跟着侧栏顺序走")
+check(AppSection.workGroup == [.today, .routine, .okr, .countdown], "周期并进今天，作息紧跟其后")
+check(AppSection.routine.shortcut == "2" && AppSection.schedules.shortcut == "7" && AppSection.cycles.shortcut == nil, "快捷键跟着侧栏顺序走")
 
 // MARK: - 排期的每一步
 check(ScheduleSession(id: "1", itemKey: "k", label: "回捞用户", date: "2026-10-08", minutes: 60, step: "整理回访表格").title == "整理回访表格", "有这一步就显示这一步")

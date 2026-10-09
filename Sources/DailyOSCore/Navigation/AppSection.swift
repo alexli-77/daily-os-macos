@@ -64,19 +64,20 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
   public var shortcut: KeyEquivalent? {
     switch self {
     case .today: "1"
-    case .cycles: "2"
-    case .routine: "3"
-    case .okr: "4"
-    case .countdown: "5"
-    case .runs: "6"
-    case .artifacts: "7"
-    case .schedules: "8"
-    case .settings: nil
+    case .routine: "2"
+    case .okr: "3"
+    case .countdown: "4"
+    case .runs: "5"
+    case .artifacts: "6"
+    case .schedules: "7"
+    case .cycles, .settings: nil
     }
   }
 
   /// The sidebar groups. Work you do, then work the machine did, then config.
-  public static let workGroup: [AppSection] = [.today, .cycles, .routine, .okr, .countdown]
+  /// 周期 is part of 今天 now (日 / 双周 on top, 要务 · OKR · 复盘 under it);
+  /// the case stays so old links and saved selections still land somewhere.
+  public static let workGroup: [AppSection] = [.today, .routine, .okr, .countdown]
   public static let systemGroup: [AppSection] = [.runs, .artifacts, .schedules]
 
   /// The iOS tabs. Everything in `systemGroup` plus settings lives behind

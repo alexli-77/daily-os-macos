@@ -21,6 +21,17 @@ struct TodayScreen: View {
   @State private var selectedTaskID: TodoItem.ID?
   @State private var showsExecution = false
   @State private var showsPastDays = false
+  /// The past day a click on the calendar asked to see.
+  @State private var pastDay: String?
+  /// 日 or 双周. Not remembered: the page always opens on today.
+  @State private var view: PlanView = .day
+  @State private var isCreatingCycle = false
+
+  enum PlanView: String, CaseIterable, Identifiable {
+    case day, cycle
+    var id: String { rawValue }
+    var label: String { self == .day ? "日" : "双周" }
+  }
   /// The rail (时间 + 团队) sits beside the call sheet on a wide window and
   /// drops under it on a narrow one. This flag lets the user force the stacked
   /// form even when there is room — some people want the call sheet full-width.
@@ -39,7 +50,10 @@ struct TodayScreen: View {
     ScreenScaffold("今天", subtitle: subtitle) {
       let sideBySide = contentWidth >= Self.railBreakpoint && !railStacked
       Group {
-        if sideBySide {
+        if view == .cycle, let cycle = shownCycle, state.isViewingSelf {
+          // The cycle, day by day; a day's header zooms into that day.
+          CycleSchedulePanel(cycle: cycle, editable: cycle.isWritable, onOpenDay: openDay)
+        } else if sideBySide {
           HStack(alignment: .top, spacing: Metrics.md) {
             mainColumn.frame(maxWidth: .infinity, alignment: .top)
             rail.frame(width: Metrics.listIdeal)
@@ -52,10 +66,21 @@ struct TodayScreen: View {
         }
       }
       .background(widthReader)
+      // Under the calendar: the cycle's 要务 beside its OKR, then 复盘 · 总结.
+      if let cycle = shownCycle {
+        CycleSections(cycle: cycle)
+      }
     } toolbar: {
       HStack(spacing: Metrics.sm) {
+        Picker("", selection: $view) {
+          ForEach(PlanView.allCases) { Text($0.label).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+        CycleSwitcher(isCreating: $isCreatingCycle)
         WeatherStrip()
-        if contentWidth >= Self.railBreakpoint {
+        if contentWidth >= Self.railBreakpoint, view == .day {
           // Icon reflects the current layout: a right panel when the rail is
           // beside the plan, a bottom strip when it is stacked under it.
           Button {
@@ -76,6 +101,7 @@ struct TodayScreen: View {
         .buttonStyle(MossButtonStyle(prominent: false))
         .accessibilityLabel("往日")
         .help("看前几天的计划和复盘")
+        if view == .day {
         Button {
           withAnimation(.snappy(duration: 0.2)) { showsExecution.toggle() }
         } label: {
@@ -85,10 +111,16 @@ struct TodayScreen: View {
         .accessibilityLabel(showsExecution ? "收起执行情况" : "执行情况")
         .accessibilityAddTraits(showsExecution ? [.isSelected] : [])
         .help(showsExecution ? "收起执行情况" : "查看执行情况")
+        }
       }
     }
     .onReceive(clock) { now = $0 }
-    .sheet(isPresented: $showsPastDays) { PastDaysSheet() }
+    .sheet(isPresented: $showsPastDays, onDismiss: { pastDay = nil }) { PastDaysSheet(initialDate: pastDay) }
+    .sheet(isPresented: $isCreatingCycle) { NewCycleSheet() }
+    .onAppear {
+      // The page shows this cycle unless another was picked.
+      if state.selectedCycleID == nil, let current = state.currentCycle { state.selectedCycleID = current.id }
+    }
   }
 
   /// The day itself: the plan as a call sheet, optionally under the execution
@@ -134,6 +166,30 @@ struct TodayScreen: View {
   }
 
   /// One line: the date, the cycle, and the countdowns that make the morning card.
+  /// The cycle under the calendar: the one picked, else this one.
+  private var shownCycle: Cycle? { state.selectedCycle ?? state.currentCycle }
+
+  /// A day's header on the 双周 view: today zooms into 日; a past day opens
+  /// that day as it was; a day not yet here has nothing more to show.
+  private func openDay(_ date: String) {
+    let today = Self.dayFormatter.string(from: now)
+    if date == today {
+      withAnimation(.snappy(duration: 0.2)) { view = .day }
+    } else if date < today {
+      pastDay = date
+      showsPastDays = true
+    } else {
+      state.toast = "这一天还没到，在双周里排它"
+    }
+  }
+
+  private static let dayFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter
+  }()
+
   private var subtitle: String {
     var parts = [Fmt.dayHeading()]
     if let cycle = state.currentCycle { parts.append(cycle.label) }

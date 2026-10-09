@@ -25,6 +25,8 @@ struct PastDaysSheet: View {
   @State private var dates: [String] = []
   @State private var today = ""
   @State private var selected: String?
+  /// Open on this day, when the calendar asked for it.
+  var initialDate: String?
 
   var body: some View {
     VStack(spacing: 0) {
@@ -39,7 +41,7 @@ struct PastDaysSheet: View {
     .frame(minWidth: 780, idealWidth: 860, minHeight: 540, idealHeight: 640)
     .background(Palette.paper)
     // nil: the service picks the most recent day before today with a plan.
-    .task { await load(nil) }
+    .task { await load(initialDate) }
   }
 
   private var header: some View {

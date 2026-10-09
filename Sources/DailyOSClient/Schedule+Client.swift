@@ -13,6 +13,18 @@ struct CycleScheduleResponse: Decodable {
     let restDay: Bool
     let workingHours: Hours?
     let blocks: [Block]?
+    let fixed: [Fixed]?
+    struct Fixed: Decodable {
+      let candidateId: String
+      let start: String
+      let end: String
+      let title: String
+      let text: String
+      let floor: Bool?
+      let color: String?
+      let itemKeys: [String]?
+      let state: String?
+    }
   }
   struct Event: Decodable { let date: String; let start: String?; let end: String?; let title: String }
   let id: String
@@ -24,6 +36,7 @@ struct CycleScheduleResponse: Decodable {
   let error: String?
   let events: [Event]?
   let now: String?
+  let states: [String: String]?
 }
 
 struct ScheduleWire: Codable {
@@ -36,6 +49,10 @@ struct ScheduleWire: Codable {
     let minutes: Int
     let bigRock: Bool?
     let step: String?
+    var skipped: Bool? = nil
+    var movedFrom: String? = nil
+    var adhoc: Bool? = nil
+    var takenBy: String? = nil
   }
   struct Deadline: Codable { let itemKey: String; let label: String; let date: String }
   let generatedAt: String?
@@ -49,7 +66,7 @@ struct ScheduleWire: Codable {
       generatedAt: generatedAt.flatMap(TodoWireDate.timestamp),
       editedAt: editedAt.flatMap(TodoWireDate.timestamp),
       sessions: sessions.map {
-        ScheduleSession(id: $0.id ?? UUID().uuidString, itemKey: $0.itemKey, label: $0.label, date: $0.date, start: $0.start, minutes: $0.minutes, bigRock: $0.bigRock ?? false, step: $0.step)
+        ScheduleSession(id: $0.id ?? UUID().uuidString, itemKey: $0.itemKey, label: $0.label, date: $0.date, start: $0.start, minutes: $0.minutes, bigRock: $0.bigRock ?? false, step: $0.step, skipped: $0.skipped ?? false, movedFrom: $0.movedFrom, adhoc: $0.adhoc ?? false, takenBy: $0.takenBy)
       },
       deadlines: deadlines.map { ScheduleDeadline(itemKey: $0.itemKey, label: $0.label, date: $0.date) },
       note: note
@@ -75,6 +92,11 @@ extension DailyOSClient {
           blocks: (day.blocks ?? []).compactMap { block in
             guard let start = DayStart.minute(fromClock: block.start), let end = DayStart.minute(fromClock: block.end) else { return nil }
             return .init(label: block.label, start: start, end: end)
+          },
+          fixed: (day.fixed ?? []).compactMap { row in
+            guard let start = DayStart.minute(fromClock: row.start) else { return nil }
+            let end = row.end == "24:00" ? 24 * 60 : (DayStart.minute(fromClock: row.end) ?? start)
+            return .init(candidateID: row.candidateId, start: start, end: end, title: row.title, text: row.text, floor: row.floor ?? false, color: row.color, itemKeys: row.itemKeys ?? [], state: row.state)
           }
         )
       },
@@ -90,7 +112,8 @@ extension DailyOSClient {
           title: event.title
         )
       },
-      nowMinute: response.now.flatMap(DayStart.minute(fromClock:))
+      nowMinute: response.now.flatMap(DayStart.minute(fromClock:)),
+      states: response.states ?? [:]
     )
   }
 
@@ -112,7 +135,12 @@ extension DailyOSClient {
       "/api/cycles/schedule",
       body: Request(
         id: cycleID,
-        sessions: sessions.map { .init(id: $0.id, itemKey: $0.itemKey, label: $0.label, date: $0.date, start: $0.start, minutes: $0.minutes, bigRock: $0.bigRock, step: $0.step) },
+        sessions: sessions.map {
+          .init(
+            id: $0.id, itemKey: $0.itemKey, label: $0.label, date: $0.date, start: $0.start, minutes: $0.minutes, bigRock: $0.bigRock, step: $0.step,
+            skipped: $0.skipped ? true : nil, movedFrom: $0.movedFrom, adhoc: $0.adhoc ? true : nil, takenBy: $0.takenBy
+          )
+        },
         deadlines: deadlines.map { .init(itemKey: $0.itemKey, label: $0.label, date: $0.date) }
       )
     )

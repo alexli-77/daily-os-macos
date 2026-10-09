@@ -744,12 +744,6 @@ private struct AlignedPriorities: View {
           .font(Typo.caption)
           .foregroundStyle(Palette.inkMuted)
           .padding(.bottom, Metrics.sm)
-      } else if !table && showsOKR && width > 0 {
-        // The drawer costs 360pt and answers the same question this view does,
-        // so on a narrow window it is the reason the columns did not fit.
-        Text("收起右侧 OKR 可以并排显示")
-          .mutedStyle(Typo.caption)
-          .padding(.bottom, Metrics.sm)
       }
 
       if table {
@@ -1123,7 +1117,7 @@ private struct LabeledBody: View {
 /// in two tenses: the file exists now, and the planning run that fills in its
 /// 要务 is still going. A capsule that disappears after two seconds can carry
 /// neither.
-private struct NewCycleSheet: View {
+struct NewCycleSheet: View {
   @Environment(AppState.self) private var state
   @Environment(\.dismiss) private var dismiss
 
@@ -1369,4 +1363,112 @@ private struct CycleOKRInspector: View {
   CyclesScreen()
     .environment(AppState.previewEmpty())
     .frame(width: 1_040, height: 760)
+}
+
+// MARK: - On the one page
+
+/// A cycle's own sections, under the calendar on the 今天 page: 要务 beside
+/// the OKR they serve, then 复盘 and 总结 — folded until the cycle's last two
+/// days, when looking back is the job.
+struct CycleSections: View {
+  @Environment(AppState.self) private var state
+  let cycle: Cycle
+  @State private var opensReview: Bool?
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Metrics.md) {
+      if let problem = cycle.frontmatterError {
+        BrokenFrontmatterBanner(cycle: cycle, problem: problem)
+      }
+      section(.priorities)
+      if opensReview ?? isClosing {
+        section(.retro)
+        section(.review)
+      } else {
+        Button {
+          withAnimation(.snappy(duration: 0.2)) { opensReview = true }
+        } label: {
+          HStack {
+            Text("复盘 · 总结").inkStyle(Typo.heading)
+            Spacer()
+            Image(systemName: "chevron.down").foregroundStyle(Palette.ink3)
+          }
+          .padding(Metrics.panelPadding)
+          .frame(maxWidth: .infinity)
+          .background(Palette.surface, in: RoundedRectangle(cornerRadius: Metrics.radiusMedium, style: .continuous))
+          .overlay(RoundedRectangle(cornerRadius: Metrics.radiusMedium, style: .continuous).strokeBorder(Palette.line, lineWidth: Metrics.hairline))
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointerStyleLink()
+      }
+    }
+    .onChange(of: cycle.id) { opensReview = nil }
+  }
+
+  /// The last two days of the cycle, or after it.
+  private var isClosing: Bool {
+    let days = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: .now), to: cycle.end).day ?? 0
+    return days <= 1
+  }
+
+  private var editable: Bool { state.isViewingSelf && cycle.isWritable }
+
+  @ViewBuilder private func section(_ kind: CycleSectionKind) -> some View {
+    if let section = cycle.section(kind) {
+      CycleSectionPanel(cycle: cycle, section: section, editable: editable)
+    } else {
+      MissingSectionPanel(cycle: cycle, kind: kind, editable: editable)
+    }
+  }
+}
+
+/// Which cycle the page shows — this one, a planned one, a past one — whose
+/// (yours or a teammate's), and a new one.
+struct CycleSwitcher: View {
+  @Environment(AppState.self) private var state
+  @Binding var isCreating: Bool
+
+  private var teammates: [TeamMember] { state.members.filter { !$0.isSelf } }
+
+  var body: some View {
+    @Bindable var state = state
+    Menu {
+      ForEach(state.visibleCycleGroups) { group in
+        Section(group.kind.title) {
+          ForEach(group.cycles) { cycle in
+            Button {
+              state.selectedCycleID = cycle.id
+            } label: {
+              if cycle.id == state.selectedCycle?.id { Label(cycle.label, systemImage: "checkmark") } else { Text(cycle.label) }
+            }
+          }
+        }
+      }
+      if !teammates.isEmpty {
+        Divider()
+        Picker("看谁的", selection: $state.viewingMemberID) {
+          ForEach(state.members) { member in
+            Text(member.isSelf ? "我" : member.displayName).tag(member.id)
+          }
+        }
+        .pickerStyle(.inline)
+      }
+      if state.isViewingSelf {
+        Divider()
+        Button("新建周期…") { isCreating = true }
+      }
+    } label: {
+      Label(label, systemImage: "calendar")
+    }
+    .menuStyle(.button)
+    .fixedSize()
+    .help("换一个周期，或新建")
+  }
+
+  private var label: String {
+    let cycle = state.selectedCycle?.label ?? "周期"
+    if !state.isViewingSelf, let member = state.viewingMember { return "\(member.displayName) · \(cycle)" }
+    return cycle
+  }
 }
