@@ -34,7 +34,6 @@ let package = Package(
     // `swift run daily-os-checks` works with only the Command Line Tools
     // installed. A test target would need a full Xcode on every machine and in
     // CI, which is a lot of setup to assert a hash function.
-    .testTarget(name: "DecodeTmp", dependencies: ["DailyOSClient", "DailyOSCore"], path: "Tests/DecodeTmp"),
     .executableTarget(name: "daily-os-checks", dependencies: ["DailyOSCore"]),
     // Manual, local-only: points the real client at a real service and reports
     // whether the decoders survive real files. Never runs in CI — it needs a
