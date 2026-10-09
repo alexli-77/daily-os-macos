@@ -26,6 +26,11 @@ struct CycleSchedulePanel: View {
   @State private var phase: Phase = .loading
   @State private var data: CycleScheduleState?
   @State private var isStarting = false
+  /// The one poll that watches a running schedule. Single-flight: every `load()`
+  /// used to start a new poll while the run was going, and every poll calls
+  /// `load()` — so polls doubled every 5 s, buried the app's URLSession under
+  /// thousands of requests, and every other page waited behind them forever.
+  @State private var pollTask: Task<Void, Never>?
   @State private var confirmsRegenerate = false
   @State private var editing: ScheduleSession?
   @State private var drag: Drag?
@@ -41,6 +46,10 @@ struct CycleSchedulePanel: View {
       }
     }
     .task(id: cycle.id) { await load() }
+    .onDisappear {
+      pollTask?.cancel()
+      pollTask = nil
+    }
     .confirmationDialog("重新排今天以后的日子？", isPresented: $confirmsRegenerate) {
       Button("重新排") { generate() }
       Button("取消", role: .cancel) {}
@@ -498,19 +507,26 @@ struct CycleSchedulePanel: View {
       switch outcome {
       case .ok(let message):
         state.toast = message ?? "开始排期"
-        await poll()
+        // `load()` starts the one poll if the run is going.
+        await load()
       case .failed(let why), .unsupported(let why):
         state.toast = why
       }
     }
   }
 
-  /// Every 5 s for up to 5 minutes, until the run clears.
-  private func poll() async {
-    for _ in 0..<60 {
-      await load()
-      if data?.running != true { return }
-      try? await Task.sleep(for: .seconds(5))
+  /// Every 5 s for up to 5 minutes, until the run clears. Does nothing if a
+  /// poll is already running.
+  private func startPolling() {
+    guard pollTask == nil else { return }
+    pollTask = Task {
+      for _ in 0..<60 {
+        try? await Task.sleep(for: .seconds(5))
+        guard !Task.isCancelled else { break }
+        await load()
+        if data?.running != true { break }
+      }
+      pollTask = nil
     }
   }
 
@@ -520,7 +536,7 @@ struct CycleSchedulePanel: View {
     case .success(let loaded):
       data = loaded
       phase = .loaded
-      if loaded.running && !isStarting { Task { await poll() } }
+      if loaded.running && !isStarting { startPolling() }
     case .failure(let error):
       if data == nil { phase = .failed(error.message) }
     }
