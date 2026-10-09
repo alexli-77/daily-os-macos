@@ -14,6 +14,8 @@ struct CycleSchedulePanel: View {
   @Environment(AppState.self) private var state
   let cycle: Cycle
   let editable: Bool
+  /// A day's header was clicked: zoom into that day.
+  var onOpenDay: ((String) -> Void)?
 
   private enum Phase: Equatable {
     case loading
@@ -26,7 +28,6 @@ struct CycleSchedulePanel: View {
   @State private var isStarting = false
   @State private var confirmsRegenerate = false
   @State private var editing: ScheduleSession?
-  @State private var selectedWeek: Int?
   @State private var drag: Drag?
   @State private var adding: AddRequest?
 
@@ -50,21 +51,10 @@ struct CycleSchedulePanel: View {
     }
   }
 
-  /// 排期, the two weeks beside it, and the one action.
+  /// 排期 and the one action.
   private var header: some View {
     HStack(alignment: .center, spacing: Metrics.sm) {
       Text("排期").inkStyle(Typo.heading)
-      if let data, data.schedule != nil, data.weeks.count > 1 {
-        let index = weekIndex(data)
-        Picker("", selection: Binding(get: { index }, set: { selectedWeek = $0 })) {
-          ForEach(data.weeks.indices, id: \.self) { i in
-            Text("第 \(i + 1) 周 · \(Self.short(data.weeks[i].first?.date ?? ""))–\(Self.short(data.weeks[i].last?.date ?? ""))").tag(i)
-          }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .fixedSize()
-      }
       Spacer(minLength: Metrics.xs)
       if editable, let data, !data.items.isEmpty {
         Button(generateTitle(data)) {
@@ -123,42 +113,50 @@ struct CycleSchedulePanel: View {
   private static let pointsPerMinute: CGFloat = 0.8
   private static let firstHour = 7
   private static let lastHour = 24
-  private static let minColumn: CGFloat = 96
+  private static let minColumn: CGFloat = 116
 
   private func y(_ minute: Int) -> CGFloat { CGFloat(minute - Self.firstHour * 60) * Self.pointsPerMinute }
 
-  private func weekIndex(_ data: CycleScheduleState) -> Int {
-    if let chosen = selectedWeek { return min(chosen, max(data.weeks.count - 1, 0)) }
-    return data.weeks.firstIndex { week in week.contains { $0.date == data.today } } ?? 0
-  }
-
+  /// The whole cycle, day by day. The hours stay put while the days scroll
+  /// sideways; it opens on today.
   private func week(_ data: CycleScheduleState) -> some View {
-    let weeks = data.weeks
-    let index = weekIndex(data)
-    let days = weeks.isEmpty ? [] : weeks[index]
-    return VStack(alignment: .leading, spacing: Metrics.xs) {
-      GeometryReader { geo in
-        let column = max(Self.minColumn, (geo.size.width - Self.gutter) / CGFloat(max(days.count, 1)))
-        ScrollView(.horizontal) {
-          VStack(alignment: .leading, spacing: 0) {
-            weekHeader(days, data: data, column: column)
-            allDayStrip(days, data: data, column: column)
-            ZStack(alignment: .topLeading) {
-              hourGrid(width: Self.gutter + column * CGFloat(days.count))
-              HStack(spacing: 0) {
-                Color.clear.frame(width: Self.gutter)
-                ForEach(days) { day in
-                  dayColumn(day, data: data, column: column, days: days)
+    let days = data.days
+    let allDay = allDayHeight(days, data: data)
+    return GeometryReader { geo in
+      let column = max(Self.minColumn, (geo.size.width - Self.gutter) / CGFloat(max(days.count, 1)))
+      HStack(alignment: .top, spacing: 0) {
+        VStack(alignment: .trailing, spacing: 0) {
+          Color.clear.frame(height: 48)
+          if allDay > 0 {
+            Text("全天").font(Typo.caption).foregroundStyle(Palette.ink3)
+              .padding(.trailing, 6).padding(.top, 4)
+              .frame(height: allDay, alignment: .topTrailing)
+          }
+          hourLabels.frame(height: y(Self.lastHour * 60), alignment: .topLeading)
+        }
+        .frame(width: Self.gutter)
+        ScrollViewReader { proxy in
+          ScrollView(.horizontal) {
+            VStack(alignment: .leading, spacing: 0) {
+              weekHeader(days, data: data, column: column)
+              allDayStrip(days, data: data, column: column)
+              ZStack(alignment: .topLeading) {
+                hourLines(width: column * CGFloat(days.count))
+                HStack(spacing: 0) {
+                  ForEach(days) { day in
+                    dayColumn(day, data: data, column: column, days: days)
+                  }
                 }
               }
+              .frame(height: y(Self.lastHour * 60))
+              .coordinateSpace(name: "schedule.week")
             }
-            .frame(height: y(Self.lastHour * 60))
-            .coordinateSpace(name: "schedule.week")
           }
+          .onAppear { proxy.scrollTo(data.today, anchor: .leading) }
         }
       }
-      .frame(height: weekHeight(days, data: data))
     }
+    .frame(height: weekHeight(days, data: data))
   }
 
   private func weekHeight(_ days: [CycleScheduleState.Day], data: CycleScheduleState) -> CGFloat {
@@ -175,7 +173,6 @@ struct CycleSchedulePanel: View {
 
   private func weekHeader(_ days: [CycleScheduleState.Day], data: CycleScheduleState, column: CGFloat) -> some View {
     HStack(spacing: 0) {
-      Color.clear.frame(width: Self.gutter, height: 48)
       ForEach(days) { day in
         let isToday = day.date == data.today
         VStack(spacing: 2) {
@@ -190,6 +187,11 @@ struct CycleSchedulePanel: View {
         }
         .frame(width: column, height: 48)
         .background(day.restDay ? Palette.mint50.opacity(0.6) : Color.clear)
+        .contentShape(Rectangle())
+        .onTapGesture { onOpenDay?(day.date) }
+        .modifier(SchedulePointer(enabled: onOpenDay != nil))
+        .help(onOpenDay == nil ? "" : "看这一天")
+        .id(day.date)
       }
     }
   }
@@ -198,8 +200,6 @@ struct CycleSchedulePanel: View {
     let height = allDayHeight(days, data: data)
     if height > 0 {
       HStack(alignment: .top, spacing: 0) {
-        Text("全天").font(Typo.caption).foregroundStyle(Palette.ink3)
-          .frame(width: Self.gutter, alignment: .trailing).padding(.trailing, 6).padding(.top, 4)
         ForEach(days) { day in
           let layout = CycleWeekLayout.layout(day, in: data)
           VStack(alignment: .leading, spacing: 2) {
@@ -230,16 +230,21 @@ struct CycleSchedulePanel: View {
       .background(fill, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
   }
 
-  private func hourGrid(width: CGFloat) -> some View {
+  private var hourLabels: some View {
+    ZStack(alignment: .topTrailing) {
+      ForEach(Self.firstHour...Self.lastHour, id: \.self) { hour in
+        Text(String(format: "%02d:00", hour)).font(Typo.tabularCaption).foregroundStyle(Palette.ink3)
+          .frame(width: Self.gutter - 6, alignment: .trailing)
+          .offset(y: y(hour * 60) - 7)
+      }
+    }
+  }
+
+  private func hourLines(width: CGFloat) -> some View {
     ZStack(alignment: .topLeading) {
       ForEach(Self.firstHour...Self.lastHour, id: \.self) { hour in
-        HStack(spacing: 4) {
-          Text(String(format: "%02d:00", hour)).font(Typo.tabularCaption).foregroundStyle(Palette.ink3)
-            .frame(width: Self.gutter - 6, alignment: .trailing)
-          Rectangle().fill(Palette.rule).frame(height: Metrics.hairline)
-        }
-        .frame(width: width, alignment: .leading)
-        .offset(y: y(hour * 60) - 7)
+        Rectangle().fill(Palette.rule).frame(width: width, height: Metrics.hairline)
+          .offset(y: y(hour * 60))
       }
     }
   }
@@ -291,15 +296,21 @@ struct CycleSchedulePanel: View {
   }
 
   @ViewBuilder private func blockView(_ block: CycleWeekLayout.Placed, isPast: Bool, height: CGFloat) -> some View {
-    let style = Self.style(block.kind)
+    let style = Self.style(block)
     let time = "\(DaySchedule.clock(block.start))–\(DaySchedule.clock(min(block.end, 24 * 60 - 1)))"
     // A step leads; the 要务 it belongs to follows in small type, so a day
     // reads as what gets done rather than as the cycle's list again.
     let parent = block.session.flatMap { $0.step == nil ? nil : Self.clean($0.label) }
     let content = VStack(alignment: .leading, spacing: 1) {
-      Text(Self.clean(block.title))
-        .font(.system(size: 11, weight: block.kind == .bigRock ? .semibold : .medium))
-        .lineLimit(height > 40 ? 2 : 1)
+      HStack(alignment: .firstTextBaseline, spacing: 3) {
+        if let mark = Self.stateMark(block.state) {
+          Image(systemName: mark.symbol).font(.system(size: 9, weight: .bold)).foregroundStyle(mark.color)
+        }
+        Text(Self.clean(block.title))
+          .font(.system(size: 11, weight: block.kind == .bigRock || block.floor ? .semibold : .medium))
+          .strikethrough(block.state == "complete", color: style.ink.opacity(0.6))
+          .lineLimit(height > 40 ? 2 : 1)
+      }
       if height > 30 {
         Text(time).font(.system(size: 10).monospacedDigit()).opacity(0.85)
       }
@@ -313,9 +324,8 @@ struct CycleSchedulePanel: View {
     .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .topLeading)
     .background(style.fill, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
     .overlay {
-      if block.kind == .suggested {
-        RoundedRectangle(cornerRadius: 5, style: .continuous)
-          .strokeBorder(Palette.mint400, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+      if block.floor {
+        RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(style.ink.opacity(0.7), lineWidth: 1.2)
       }
     }
     .help("\(Self.clean(block.title))\n\(time)\(Self.kindNote(block.kind))")
@@ -338,12 +348,28 @@ struct CycleSchedulePanel: View {
     }
   }
 
-  private static func style(_ kind: CycleWeekLayout.Kind) -> (fill: Color, ink: Color) {
-    switch kind {
+  private static func style(_ block: CycleWeekLayout.Placed) -> (fill: Color, ink: Color) {
+    switch block.kind {
     case .event: (Palette.series[4].opacity(0.85), Palette.page)
     case .routine: (Palette.surfaceSunken, Palette.ink3)
     case .bigRock: (Palette.mint600, Palette.page)
     case .suggested: (Palette.mint100, Palette.mint800)
+    case .fixed: (fixedInk(block).opacity(0.16), fixedInk(block))
+    }
+  }
+
+  private static func fixedInk(_ block: CycleWeekLayout.Placed) -> Color {
+    block.color.flatMap(Palette.rowColor) ?? Palette.mint800
+  }
+
+  /// How a block was left: done, half, 未做, pushed on.
+  private static func stateMark(_ state: String?) -> (symbol: String, color: Color)? {
+    switch state {
+    case "complete": ("checkmark", Palette.mint600)
+    case "partial": ("circle.lefthalf.filled", Palette.mint600)
+    case "missed": ("xmark", Palette.q1)
+    case "defer": ("arrow.right", Palette.ink3)
+    default: nil
     }
   }
 
@@ -353,18 +379,14 @@ struct CycleSchedulePanel: View {
     case .routine: "\n作息"
     case .bigRock: "\n大石头"
     case .suggested: "\n时间不定，拖到钟点上固定"
+    case .fixed: "\n固定日程"
     }
   }
 
   private var legend: some View {
     HStack(spacing: Metrics.md) {
       legendItem(Palette.mint600, "大石头")
-      HStack(spacing: 4) {
-        RoundedRectangle(cornerRadius: 3).fill(Palette.mint100)
-          .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(Palette.mint400, style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
-          .frame(width: 14, height: 10)
-        Text("当天做，时间不定")
-      }
+      legendItem(Palette.mint100, "当天做，时间不定")
       legendItem(Palette.series[4].opacity(0.85), "飞书日程")
     }
     .font(Typo.caption).foregroundStyle(Palette.ink3)
@@ -636,5 +658,12 @@ private struct SessionEditor: View {
     }
     .padding(Metrics.md)
     .frame(width: 400)
+  }
+}
+
+private struct SchedulePointer: ViewModifier {
+  let enabled: Bool
+  func body(content: Content) -> some View {
+    if enabled { content.pointerStyleLink() } else { content }
   }
 }

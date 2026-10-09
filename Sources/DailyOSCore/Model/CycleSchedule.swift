@@ -45,9 +45,39 @@ public struct CycleScheduleState: Sendable, Equatable {
     public let workStart: Int
     public let workEnd: Int
     public let blocks: [Block]
+    /// The day's 固定日程: 作息 slots, each holding the 要务 assigned to it.
+    public let fixed: [Fixed]
     public var id: String { date }
 
-    public init(date: String, weekday: String, restDay: Bool, workStart: Int = 9 * 60 + 30, workEnd: Int = 18 * 60 + 30, blocks: [Block] = []) {
+    /// One 固定日程 on the day, as the calendar draws it.
+    public struct Fixed: Sendable, Equatable {
+      public let candidateID: String
+      public let start: Int
+      public let end: Int
+      public let title: String
+      /// The title and what it holds that day.
+      public let text: String
+      public let floor: Bool
+      public let color: String?
+      /// The 要务 inside it that day.
+      public let itemKeys: [String]
+      /// complete / partial / missed / defer, up to today.
+      public let state: String?
+      public init(candidateID: String, start: Int, end: Int, title: String, text: String, floor: Bool = false, color: String? = nil, itemKeys: [String] = [], state: String? = nil) {
+        self.candidateID = candidateID
+        self.start = start
+        self.end = end
+        self.title = title
+        self.text = text
+        self.floor = floor
+        self.color = color
+        self.itemKeys = itemKeys
+        self.state = state
+      }
+    }
+
+    public init(date: String, weekday: String, restDay: Bool, workStart: Int = 9 * 60 + 30, workEnd: Int = 18 * 60 + 30, blocks: [Block] = [], fixed: [Fixed] = []) {
+      self.fixed = fixed
       self.date = date
       self.weekday = weekday
       self.restDay = restDay
@@ -85,8 +115,11 @@ public struct CycleScheduleState: Sendable, Equatable {
   public let events: [Event]
   /// The service's clock now, minutes from midnight, for the now line.
   public let nowMinute: Int?
+  /// How each session was left, by session id, up to today.
+  public let states: [String: String]
 
-  public init(cycleID: String, today: String, items: [Item], days: [Day], schedule: CycleSchedule?, running: Bool, error: String? = nil, events: [Event] = [], nowMinute: Int? = nil) {
+  public init(cycleID: String, today: String, items: [Item], days: [Day], schedule: CycleSchedule?, running: Bool, error: String? = nil, events: [Event] = [], nowMinute: Int? = nil, states: [String: String] = [:]) {
+    self.states = states
     self.cycleID = cycleID
     self.today = today
     self.items = items
@@ -165,11 +198,21 @@ public struct ScheduleSession: Sendable, Equatable, Identifiable {
   public var bigRock: Bool
   /// What this session does — one step of the 要务, e.g. "整理回访表格，分析国内外用户".
   public var step: String?
+  /// Not happening (dropped on Today, or taken by an ad-hoc session). Kept so
+  /// saving from here does not bring it back, and so Today can undo it.
+  public var skipped: Bool = false
+  public var movedFrom: String?
+  public var adhoc: Bool = false
+  public var takenBy: String?
 
   /// The step when there is one, else the 要务 itself.
   public var title: String { step.flatMap { $0.isEmpty ? nil : $0 } ?? label }
 
-  public init(id: String, itemKey: String, label: String, date: String, start: String? = nil, minutes: Int, bigRock: Bool = false, step: String? = nil) {
+  public init(id: String, itemKey: String, label: String, date: String, start: String? = nil, minutes: Int, bigRock: Bool = false, step: String? = nil, skipped: Bool = false, movedFrom: String? = nil, adhoc: Bool = false, takenBy: String? = nil) {
+    self.skipped = skipped
+    self.movedFrom = movedFrom
+    self.adhoc = adhoc
+    self.takenBy = takenBy
     self.id = id
     self.itemKey = itemKey
     self.label = label

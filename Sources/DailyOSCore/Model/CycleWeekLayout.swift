@@ -17,6 +17,8 @@ public enum CycleWeekLayout {
     case bigRock
     /// An untimed session, placed in free time as a suggestion.
     case suggested
+    /// A 固定日程: a 作息 slot, holding the 要务 assigned to it that day.
+    case fixed
   }
 
   public struct Placed: Sendable, Equatable, Identifiable {
@@ -26,6 +28,11 @@ public enum CycleWeekLayout {
     public let start: Int
     public let end: Int
     public let session: ScheduleSession?
+    /// complete / partial / missed / defer, up to today.
+    public var state: String? = nil
+    /// A 固定日程's category colour.
+    public var color: String? = nil
+    public var floor: Bool = false
   }
 
   public struct DayLayout: Sendable, Equatable {
@@ -40,7 +47,9 @@ public enum CycleWeekLayout {
 
   public static func layout(_ day: CycleScheduleState.Day, in state: CycleScheduleState) -> DayLayout {
     let events = state.events.filter { $0.date == day.date }
-    let sessions = state.schedule?.sessions.filter { $0.date == day.date } ?? []
+    // Sessions inside a 固定日程 are drawn as that 固定日程, not on their own.
+    let inside = Set(day.fixed.flatMap(\.itemKeys))
+    let sessions = state.schedule?.sessions.filter { $0.date == day.date && !$0.skipped && !inside.contains($0.itemKey) } ?? []
     var blocks: [Placed] = []
     var busy: [(Int, Int)] = []
 
@@ -54,9 +63,13 @@ public enum CycleWeekLayout {
       blocks.append(Placed(id: "routine:\(day.date):\(index)", kind: .routine, title: block.label, start: block.start, end: block.end, session: nil))
       busy.append((block.start, block.end))
     }
+    for row in day.fixed {
+      blocks.append(Placed(id: "fixed:\(day.date):\(row.candidateID)", kind: .fixed, title: row.text, start: row.start, end: row.end, session: nil, state: row.state, color: row.color, floor: row.floor))
+      busy.append((row.start, row.end))
+    }
     for session in sessions {
       guard session.bigRock, let start = session.start.flatMap(DayStart.minute(fromClock:)) else { continue }
-      blocks.append(Placed(id: session.id, kind: .bigRock, title: session.title, start: start, end: start + session.minutes, session: session))
+      blocks.append(Placed(id: session.id, kind: .bigRock, title: session.title, start: start, end: start + session.minutes, session: session, state: state.states[session.id]))
       busy.append((start, start + session.minutes))
     }
 
@@ -71,7 +84,7 @@ public enum CycleWeekLayout {
     var unplaced: [ScheduleSession] = []
     for session in untimed {
       if let start = firstFree(from: from, minutes: session.minutes, busy: busy) {
-        blocks.append(Placed(id: session.id, kind: .suggested, title: session.title, start: start, end: start + session.minutes, session: session))
+        blocks.append(Placed(id: session.id, kind: .suggested, title: session.title, start: start, end: start + session.minutes, session: session, state: state.states[session.id]))
         busy.append((start, start + session.minutes))
       } else {
         unplaced.append(session)
