@@ -261,6 +261,32 @@ public struct DaySchedule: Sendable, Equatable {
 // MARK: - Formatting
 
 extension DaySchedule {
+  /// A time as typed into a field: "13:07", "13：07", "1307", "9:30", "930",
+  /// "9". Minutes from midnight, or nil when it is not a time. 24:00 only
+  /// where an end time is being typed.
+  public static func minute(typed text: String, allowsMidnight: Bool = false) -> Int? {
+    let cleaned = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "：", with: ":")
+    var hour: Int?
+    var minute: Int?
+    if cleaned.contains(":") {
+      let parts = cleaned.split(separator: ":", omittingEmptySubsequences: false)
+      guard parts.count == 2 else { return nil }
+      hour = Int(parts[0])
+      minute = parts[1].isEmpty ? 0 : Int(parts[1])
+    } else if !cleaned.isEmpty, cleaned.allSatisfy(\.isNumber) {
+      switch cleaned.count {
+      case 1, 2: hour = Int(cleaned); minute = 0
+      case 3: hour = Int(cleaned.prefix(1)); minute = Int(cleaned.suffix(2))
+      case 4: hour = Int(cleaned.prefix(2)); minute = Int(cleaned.suffix(2))
+      default: return nil
+      }
+    }
+    guard let hour, let minute, hour >= 0, (0..<60).contains(minute) else { return nil }
+    let total = hour * 60 + minute
+    if total == 24 * 60 { return allowsMidnight ? total : nil }
+    return (0..<(24 * 60)).contains(total) ? total : nil
+  }
+
   /// `13:40`, from minutes-since-midnight. Wraps past midnight rather than
   /// printing `26:10` — a day that overruns is still a clock.
   public static func clock(_ minute: Int) -> String {

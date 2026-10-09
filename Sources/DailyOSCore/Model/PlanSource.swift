@@ -33,6 +33,9 @@ public struct PlanSource: Sendable, Equatable {
     case "rhythm" where candidateID.hasPrefix("rhythm:habit:"):
       // A habit slot of today's 作息, as a row (it can be ticked or let go).
       self.init(label: "习惯", isIssue: false)
+    case "rhythm" where candidateID.hasPrefix("rhythm:block:"):
+      // A 固定日程: a 作息 slot holding the 要务 assigned to it.
+      self.init(label: "固定日程", isIssue: false)
     case "rhythm":
       // Meal rows the service adds to today's sheet (LEO-332).
       self.init(label: "作息", isIssue: false)

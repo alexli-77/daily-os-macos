@@ -583,6 +583,12 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
   public var mitByUser: Bool
   /// A habit (a slot of a habit category in today's 作息), not a one-off item.
   public var isHabit: Bool
+  /// A 固定日程: one of today's 作息 slots, holding the 要务 assigned to it.
+  public var isFixed: Bool
+  /// A 固定日程 kept even on a busy day (保底).
+  public var isFloor: Bool
+  /// The 固定日程's 作息 category, as the user labelled it.
+  public var categoryLabel: String?
 
   public init(
     id: String,
@@ -598,7 +604,10 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
     colorTag: String? = nil,
     isMIT: Bool? = nil,
     mitByUser: Bool = false,
-    isHabit: Bool = false
+    isHabit: Bool = false,
+    isFixed: Bool = false,
+    isFloor: Bool = false,
+    categoryLabel: String? = nil
   ) {
     self.id = id
     self.text = text
@@ -614,6 +623,9 @@ public struct TodoItem: Sendable, Equatable, Identifiable {
     self.isMIT = isMIT
     self.mitByUser = mitByUser
     self.isHabit = isHabit
+    self.isFixed = isFixed
+    self.isFloor = isFloor
+    self.categoryLabel = categoryLabel
   }
 }
 
