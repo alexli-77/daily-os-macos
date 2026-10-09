@@ -34,7 +34,7 @@ private struct ConnectionPanel: View {
 
   var body: some View {
     @Bindable var store = store
-    Panel("Supabase 项目", subtitle: "本地 markdown 永远是真相源，这只是一个中转") {
+    Panel("Supabase 项目", subtitle: "只做中转，以本地 markdown 为准") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         SettingText(
           label: "项目地址",
@@ -57,10 +57,10 @@ private struct ConnectionPanel: View {
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 360)
             }
-            HintText("只能填 anon key（它本来就是公开的）。service_role key 会绕过所有 RLS 策略，服务保存时会直接拒绝。两个 key 在 Supabase 后台是挨着的，很容易拿错。")
+            HintText("只能填 anon key。service_role key 会绕过 RLS，服务会拒绝保存。两个 key 在 Supabase 后台挨着，别拿错。")
           }
         }
-        HintText("没配置、没登录、断网时，周期和其它本地功能全部照常工作——同步是附加的，不是前提。")
+        HintText("没配置、没登录或断网时，周期和其它本地功能照常可用。")
       }
     } actions: {
       SaveAction(isDirty: store.isTeamConnectionDirty, isBusy: store.isBusy) {
@@ -77,11 +77,11 @@ private struct MembershipPanel: View {
 
   var body: some View {
     @Bindable var store = store
-    Panel("成员", subtitle: "各自的文件仍然在各自机器上，同步只是传输") {
+    Panel("成员") {
       VStack(alignment: .leading, spacing: Metrics.sm) {
         if !snapshot.team.signedIn {
           VStack(alignment: .leading, spacing: Metrics.xs) {
-            Text("Supabase 已配置，这台机器还没登录。").mutedStyle()
+            Text("Supabase 已配置，本机未登录。").mutedStyle()
             TextField("邮箱", text: $store.teamEmail)
               .textFieldStyle(.roundedBorder)
               .frame(maxWidth: 280)
@@ -91,7 +91,7 @@ private struct MembershipPanel: View {
             Button("登录") { Task { await store.teamSignIn() } }
               .buttonStyle(MossButtonStyle(prominent: false))
               .disabled(store.teamEmail.isEmpty || store.teamPassword.isEmpty || store.isBusy)
-            HintText("密码直接发给本机服务，再由它转给 Supabase；服务只把动作名写进日志，不写请求体。")
+            HintText("密码经本机服务转给 Supabase，日志不记请求体。")
           }
         } else if !snapshot.team.hasTeam {
           signedInWithoutTeam
@@ -122,7 +122,7 @@ private struct MembershipPanel: View {
     VStack(alignment: .leading, spacing: Metrics.sm) {
       KeyValueRow("已登录", snapshot.team.identityLine)
       PanelDivider()
-      Text("还没有团队。建一个，或者用别人给的邀请码加入。").mutedStyle()
+      Text("还没有团队。新建一个，或用邀请码加入。").mutedStyle()
       HStack(spacing: Metrics.xs) {
         TextField("团队名称", text: $store.newTeamName)
           .textFieldStyle(.roundedBorder)
@@ -152,7 +152,7 @@ private struct MembershipPanel: View {
       PanelDivider()
       KeyValueRow("邀请码") {
         if snapshot.team.inviteCode.isEmpty {
-          Text("这台机器的缓存里没有邀请码。点「刷新」重新拉一次，或者重新生成一个。").mutedStyle()
+          Text("本机缓存里没有邀请码。点「刷新」重新拉取，或重新生成。").mutedStyle()
         } else {
           HStack(spacing: Metrics.xs) {
             Text(snapshot.team.inviteCode)

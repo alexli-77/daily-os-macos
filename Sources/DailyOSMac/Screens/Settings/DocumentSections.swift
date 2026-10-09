@@ -16,12 +16,12 @@ struct DecisionSection: View {
 
   var body: some View {
     @Bindable var store = store
-    Panel("决策规则", subtitle: "信息源优先级、每日计划规则、不要做什么") {
+    Panel("决策规则") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         KeyValueRow("文件", snapshot.decisionPolicy.notesPath, mono: true)
         KeyValueRow("记忆仓库", snapshot.decisionPolicy.repositoryPath, mono: true)
         PlainTextEditor(text: $store.draft.decisionPolicyMd, height: 380)
-        HintText("改完下一次计划或复盘立刻生效，不用重启服务。")
+        HintText("下次计划或复盘生效，无需重启。")
       }
     } actions: {
       Button("在访达中显示") { store.revealInFinder(snapshot.decisionPolicy.notesPath) }
@@ -41,7 +41,7 @@ struct DecisionSection: View {
 /// hardest kind of empty state: nothing about it says what a "rule" looks like.
 private struct ExamplePanel: View {
   var body: some View {
-    Panel("示例", subtitle: "照着改，或者整段拷过去当起点") {
+    Panel("示例") {
       OutputBlock(text: ExamplePanel.sample, height: 300)
     }
   }
@@ -99,10 +99,10 @@ struct StrategySection: View {
 
   var body: some View {
     @Bindable var store = store
-    Panel("复盘策略", subtitle: "改完下一次 review 立即生效，不用重启") {
+    Panel("复盘策略", subtitle: "下次 review 生效，无需重启") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         if snapshot.strategy.isEmpty {
-          HintText("服务没有列出任何策略文件。通常是 life-review-os 还没安装——去「技能」装一次。")
+          HintText("服务没有列出策略文件，可能是 life-review-os 没装。去「技能」安装。")
         } else {
           KeyValueRow("文件") {
             Picker("", selection: Binding(
@@ -140,7 +140,7 @@ struct StrategySection: View {
       }
     }
     if !snapshot.defaultStrategy.isEmpty {
-      Panel("内置默认规则", subtitle: "「计划条目规则」为空或被删掉时，回退到这一份") {
+      Panel("内置默认规则", subtitle: "「计划条目规则」为空时用这一份") {
         OutputBlock(text: snapshot.defaultStrategy, height: 280)
       }
     }
@@ -169,12 +169,12 @@ struct OKRSection: View {
         EmptyState(
           icon: "target",
           title: "服务没有返回 OKR 文件",
-          message: "它在记忆仓库的 10_OKR/ 下找这三个文件。先去「数据源」把记忆仓库指到一个真实目录。"
+          message: "它在记忆仓库的 10_OKR/ 下找这三个文件。先在「数据源」里设置记忆仓库目录。"
         )
       }
     } else {
       Panel("目录", subtitle: snapshot.okrDir) {
-        HintText("这三个文件同时是「今天」页 North Star 的来源。还是占位 TODO 时，那一栏会显示 not found，双周复盘也写不回 KR 进度。")
+        HintText("这三个文件也是「今天」页 North Star 的来源。还是占位 TODO 时，那一栏显示 not found，双周复盘也写不回 KR 进度。")
       } actions: {
         Button("在访达中显示") { store.revealInFinder(snapshot.okrDir) }
           .buttonStyle(QuietButtonStyle(tone: .neutral))
@@ -202,7 +202,7 @@ private struct OKRFilePanel: View {
           ),
           height: 260
         )
-        HintText("不用手写表格：每个目标写一行（可带 P0/P1），KR 用 - 或 * 开头列在下面，点「整理格式」转成标准结构，检查过再保存。")
+        HintText("每个目标写一行（可带 P0/P1），KR 用 - 或 * 开头列在下面。点「整理格式」转成标准表格，检查后保存。")
       }
     } actions: {
       Button("整理格式") { Task { await store.formatOKR(level: file.id) } }

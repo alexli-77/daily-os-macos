@@ -25,21 +25,21 @@ private struct ProfilePanel: View {
 
   var body: some View {
     @Bindable var store = store
-    Panel("个人", subtitle: "模型怎么称呼你，用什么语言，按哪个时区算日子") {
+    Panel("个人") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         SettingText(label: "显示名", text: $store.draft.displayName, placeholder: "Leon")
         SettingText(
           label: "时区",
           text: $store.draft.timezone,
           placeholder: "America/Toronto",
-          hint: "IANA 时区名。排程里的每一个时间都按它解析——留在 UTC 上，早报会在半夜到。",
+          hint: "IANA 时区名。排程时间都按它算，设成 UTC 早报会半夜到。",
           mono: true
         )
         SettingText(
           label: "语言",
           text: $store.draft.language,
           placeholder: "zh-CN",
-          hint: "写进提示词，决定生成的计划和复盘用哪种语言。",
+          hint: "计划和复盘用这个语言生成。",
           mono: true
         )
       }
@@ -73,7 +73,7 @@ private struct IdentityPanel: View {
     // of them: the console account you signed in as. The avatar and name used to
     // come from `state.account`, which is filled from `team.self.memberId` — a
     // team member id shown under a heading that says 身份.
-    Panel("身份", subtitle: "当前登录的控制台账号") {
+    Panel("身份") {
       VStack(spacing: 0) {
         HStack(spacing: Metrics.sm) {
           PixelAvatar(seed: avatarSeed, size: 44)
@@ -117,7 +117,7 @@ private struct IdentityPanel: View {
           HStack(spacing: Metrics.xs) {
             Button("退出登录") { Task { _ = await state.signOut() } }
               .buttonStyle(MossButtonStyle(prominent: false, tone: .danger))
-            Text("退出后回到登录页，可以换一个账号登进来。")
+            Text("退出后可以换账号登录。")
               .mutedStyle()
             Spacer(minLength: 0)
           }

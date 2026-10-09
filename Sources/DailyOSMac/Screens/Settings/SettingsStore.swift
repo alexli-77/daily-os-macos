@@ -267,7 +267,7 @@ final class SettingsStore {
     do {
       let node = try await ServiceLink.get("/api/env-secret?key=\(key)&reveal=1")
       guard case .string(let value) = node["value"] else {
-        banner = Banner(ok: false, text: "服务没有返回 \(key) 的明文。它只对本机的 admin 调用者揭示密钥。")
+        banner = Banner(ok: false, text: "服务没有返回 \(key) 的明文，只有本机 admin 能查看密钥。")
         return
       }
       revealedSecret = value
@@ -592,7 +592,7 @@ final class SettingsStore {
         "markdown": .string(draft.okrMarkdown[level] ?? ""),
       ]))
       draft.okrMarkdown[level] = node["formatted"].string
-      banner = Banner(ok: true, text: "已整理格式，还没有写盘——检查一遍再保存。")
+      banner = Banner(ok: true, text: "已整理格式，还没保存。检查后再保存。")
     } catch {
       banner = Banner(ok: false, text: "整理格式失败：\(message(from: error))")
     }
@@ -638,7 +638,7 @@ final class SettingsStore {
     let model = draft.model.trimmingCharacters(in: .whitespaces)
     pending = PendingAction(
       title: "改写 config.yaml？",
-      message: "llm.provider 改成 \(provider)，llm.model 改成 \(model)。下一次工作流和对话立刻按新设置跑。",
+      message: "llm.provider 改为 \(provider)，llm.model 改为 \(model)。下次工作流和对话生效。",
       confirmTitle: "保存",
       isDestructive: false
     ) { [weak self] in
@@ -653,7 +653,7 @@ final class SettingsStore {
     let value = secretDraft
     pending = PendingAction(
       title: "写入 \(key)？",
-      message: "会覆盖 .env 里已有的值，之后所有用这个服务商的调用都改用新密钥。旧值不会留副本。",
+      message: "覆盖 .env 里的现有值，该服务商的调用改用新密钥。旧值不留副本。",
       confirmTitle: "写入",
       isDestructive: true
     ) { [weak self] in
@@ -665,7 +665,7 @@ final class SettingsStore {
     let value = sourceSecretDraft
     pending = PendingAction(
       title: "写入 \(key)？",
-      message: "会覆盖 .env 里已有的值，之后这个数据源的所有请求都改用新凭据。旧值不会留副本。",
+      message: "覆盖 .env 里的现有值，该数据源改用新凭据。旧值不留副本。",
       confirmTitle: "写入",
       isDestructive: true
     ) { [weak self] in
@@ -690,7 +690,7 @@ final class SettingsStore {
   func confirmUpdateSkill() {
     pending = PendingAction(
       title: "更新技能 checkout？",
-      message: "对 \(snapshot?.skillRepo.workdir ?? "") 执行 git fetch 与 git pull --ff-only。这个目录也是 CLI 通过符号链接加载的那一份，更新后下一次运行就会用新的规则。",
+      message: "对 \(snapshot?.skillRepo.workdir ?? "") 执行 git fetch 和 git pull --ff-only。CLI 也通过符号链接加载这个目录，下次运行即用新规则。",
       confirmTitle: "更新",
       isDestructive: false
     ) { [weak self] in
@@ -703,7 +703,7 @@ final class SettingsStore {
   func confirmFeishuTest() {
     pending = PendingAction(
       title: "往飞书发一条测试消息？",
-      message: "会发到 FEISHU_CHAT_ID 指向的那个会话里，你的同事如果在那个群里也会看到。",
+      message: "发到 FEISHU_CHAT_ID 指向的会话，群里的人都能看到。",
       confirmTitle: "发送",
       isDestructive: false
     ) { [weak self] in
@@ -716,7 +716,7 @@ final class SettingsStore {
   func confirmDecisionOnboarding() {
     pending = PendingAction(
       title: "开始决策校准？",
-      message: "会在飞书里创建（或复用）一个私有群并发一张欢迎卡片。需要飞书应用已开通 im:chat 权限。",
+      message: "在飞书里创建或复用一个私有群并发欢迎卡片。需要飞书应用已开通 im:chat。",
       confirmTitle: "开始",
       isDestructive: false
     ) { [weak self] in
@@ -728,7 +728,7 @@ final class SettingsStore {
     let name = newTeamName
     pending = PendingAction(
       title: "创建团队「\(name)」？",
-      message: "会在 Supabase 上建一个团队并把你设为成员，同时生成一个邀请码。",
+      message: "在 Supabase 上建团队，把你设为成员，并生成邀请码。",
       confirmTitle: "创建",
       isDestructive: false
     ) { [weak self] in
@@ -740,7 +740,7 @@ final class SettingsStore {
     let code = joinCode
     pending = PendingAction(
       title: "用这个邀请码加入团队？",
-      message: "加入之后，你的周期会同步给团队里的其他人，他们的周期也会同步到本机缓存。",
+      message: "加入后，你的周期会同步给团队成员，他们的周期也会同步到本机。",
       confirmTitle: "加入",
       isDestructive: false
     ) { [weak self] in
@@ -751,7 +751,7 @@ final class SettingsStore {
   func confirmLeaveTeam() {
     pending = PendingAction(
       title: "退出团队？",
-      message: "退出后就看不到队友的周期了；已经同步上去的内容仍留在原团队。本机的 markdown 一个字都不会动。",
+      message: "退出后看不到队友的周期。已同步的内容留在原团队，本机 markdown 不变。",
       confirmTitle: "退出",
       isDestructive: true
     ) { [weak self] in
@@ -762,7 +762,7 @@ final class SettingsStore {
   func confirmRotateInviteCode() {
     pending = PendingAction(
       title: "重新生成邀请码？",
-      message: "旧邀请码立即失效，已经发出去还没用的那些都会作废。",
+      message: "旧邀请码立即失效，包括已发出未使用的。",
       confirmTitle: "重新生成",
       isDestructive: true
     ) { [weak self] in
@@ -773,7 +773,7 @@ final class SettingsStore {
   func confirmTeamSignOut() {
     pending = PendingAction(
       title: "退出 Supabase 登录？",
-      message: "只清掉这台机器上的团队会话，本地文件和其他功能都不受影响。注意这不是退出这个 App —— 它本来就没有登录。",
+      message: "只清除本机的团队会话，本地文件和其他功能不受影响。",
       confirmTitle: "退出",
       isDestructive: true
     ) { [weak self] in
@@ -786,7 +786,7 @@ final class SettingsStore {
       title: "清空服务日志？",
       // Says what is lost, because the answer to "为什么昨天没发早报" usually
       // lives in exactly these lines and there is no second copy.
-      message: "data/logs/ui-network.jsonl 会被清空。排查问题要用的那些记录也一起没了，而且没有备份。",
+      message: "data/logs/ui-network.jsonl 会被清空，没有备份。",
       confirmTitle: "清空",
       isDestructive: true
     ) { [weak self] in
@@ -939,13 +939,13 @@ final class SettingsStore {
     defer { isBusy = false }
     do {
       try await ServiceSupervisor.restart()
-      banner = Banner(ok: true, text: "已请求重启，正在等它回来…")
+      banner = Banner(ok: true, text: "正在重启…")
       for _ in 0..<12 {
         try? await Task.sleep(for: .milliseconds(700))
         await load()
         if loadError == nil { banner = Banner(ok: true, text: "服务已重启。"); return }
       }
-      banner = Banner(ok: false, text: "重启后服务还没回来。看看日志。")
+      banner = Banner(ok: false, text: "重启后服务没有响应，请查看日志。")
     } catch {
       banner = Banner(ok: false, text: message(from: error))
     }
@@ -961,7 +961,7 @@ final class SettingsStore {
     isBusy = true
     defer { isBusy = false }
     guard let found = RepoRoot.discover() else {
-      banner = Banner(ok: false, text: "还是没找到。服务如果从来没启动过，就还没有可找的痕迹——先在它的目录里跑一次 npm run ui。")
+      banner = Banner(ok: false, text: "没找到。如果服务从未启动过，先在它的目录里跑一次 npm run ui。")
       return
     }
     adopt(found, how: "找到了")
@@ -980,10 +980,10 @@ final class SettingsStore {
     panel.canChooseFiles = false
     panel.allowsMultipleSelection = false
     panel.prompt = "选择"
-    panel.message = "选中 daily-os 服务所在的文件夹（里面能看到 package.json 和 src 这两项）"
+    panel.message = "选择 daily-os 服务所在的文件夹（包含 package.json 和 src）"
     guard panel.runModal() == .OK, let url = panel.url else { return }
     guard RepoRoot.looksValid(url) else {
-      banner = Banner(ok: false, text: "这个文件夹里没有 daily-os 服务（找不到 package.json 和 src）。选服务代码所在的那一层。")
+      banner = Banner(ok: false, text: "这个文件夹里没有 package.json 和 src，不是 daily-os 服务目录。")
       return
     }
     adopt(url, how: "已指向")
@@ -1016,7 +1016,7 @@ final class SettingsStore {
   func confirmUninstallAgent() {
     pending = PendingAction(
       title: "取消开机自启？",
-      message: "服务会从 launchd 注销：不再开机自启，崩了也不会自动拉起，早报和复盘这些定时任务都不会再按时跑。本地文件和配置都不动，随时可以再装回来。",
+      message: "服务会从 launchd 注销：不再开机自启和崩溃重启，定时任务不再运行。本地文件和配置不变，可以随时装回。",
       confirmTitle: "取消自启",
       isDestructive: true
     ) { [weak self] in
@@ -1049,7 +1049,7 @@ final class SettingsStore {
       // Says what stops, not just what the button does. "Stop the service" and
       // "stop the morning briefing from arriving" are the same sentence, and
       // only one of them is what someone actually means to do.
-      message: "早报、复盘这些定时任务都会停，飞书那边也收不到消息了。下次登录时它会自己起来，也可以在这里手动启动。",
+      message: "定时任务会停，飞书也收不到消息。下次登录时自动启动，也可以在这里手动启动。",
       confirmTitle: "停止",
       isDestructive: true
     ) { [weak self] in

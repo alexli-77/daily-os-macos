@@ -54,8 +54,8 @@ struct SettingsScreen: View {
           Panel {
             EmptyState(
               icon: "lock",
-              title: "这台机器的配置属于所有者",
-              message: "你可以读写自己的周期和待办，但服务商、密钥和数据源由所有者管理。"
+              title: "配置由所有者管理",
+              message: "你能改自己的周期和待办。服务商、密钥和数据源只有所有者能改。"
             )
           }
         }
@@ -185,7 +185,7 @@ private struct LoadErrorPanel: View {
 
         PanelDivider()
 
-        Text("Daily OS 会自己找服务：先读 launchd 里登记的路径，再翻常见的代码目录，最后问 Spotlight。")
+        Text("查找顺序：launchd 登记的路径、常见代码目录、Spotlight。")
           .mutedStyle()
           .fixedSize(horizontal: false, vertical: true)
         HStack(spacing: Metrics.xs) {

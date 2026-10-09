@@ -11,7 +11,7 @@ import DailyOSCore
 /// you where to click in a different UI is worse than no table.
 struct GuideSection: View {
   var body: some View {
-    Panel("先做什么", subtitle: "第一次配置的顺序") {
+    Panel("先做什么") {
       GuideTable(
         headers: ["步骤", "去哪里", "做什么"],
         rows: [
@@ -24,7 +24,7 @@ struct GuideSection: View {
       )
     }
 
-    Panel("飞书指令", subtitle: "在飞书里发给机器人，必须带前缀") {
+    Panel("飞书指令", subtitle: "发给飞书机器人，须带前缀") {
       GuideTable(
         headers: ["指令", "用途", "什么时候用"],
         rows: [
@@ -47,7 +47,7 @@ struct GuideSection: View {
       )
     }
 
-    Panel("写回飞书 Weekly", subtitle: "会改外部文档，所以多一道确认") {
+    Panel("写回飞书 Weekly", subtitle: "会改外部文档") {
       GuideTable(
         headers: ["动作", "说明"],
         rows: [
@@ -58,11 +58,11 @@ struct GuideSection: View {
       )
     }
 
-    Panel("双周复盘 · OKR 写回", subtitle: "跑的是 life-review-os 技能的 biweekly 模式") {
+    Panel("双周复盘 · OKR 写回", subtitle: "life-review-os 技能 · biweekly 模式") {
       GuideTable(
         headers: ["步骤", "指令 / 位置", "说明"],
         rows: [
-          ["前置", "记忆仓库 10_OKR/", "三层 OKR 需填真值；仍是占位 TODO 时写不回 KR。在「OKR」那一页改。"],
+          ["前置", "记忆仓库 10_OKR/", "三层 OKR 要填真实值，还是占位 TODO 就写不回 KR。在「OKR」页改。"],
           ["触发", "daily-os skills run weekly-review biweekly", "在对话或飞书里发。必须带 daily-os 前缀，否则会被当成自由对话。"],
           ["看草稿", "对话 / 飞书卡片", "草稿含「计划 vs 执行」复盘、下期安排，以及结构化的 KR 进度块。"],
           ["确认写回", "点卡片「确认写回 OKR」", "确认之后才更新对应 KR；未确认不改任何文件。"],
@@ -71,9 +71,9 @@ struct GuideSection: View {
       )
     }
 
-    Panel("安装边界", subtitle: "现在能做到哪一步") {
+    Panel("安装边界") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
-        HintText("后台服务可以在「服务」那一页一键安装。还没有签名的 Mac App，也没有 DMG 安装包——服务本身仍然是一个需要自己拉下来的 Node 仓库。")
+        HintText("后台服务可在「服务」页一键安装。服务本身是 Node 仓库，要自己拉取；还没有签名的 Mac App 或 DMG。")
         OutputBlock(
           text: """
             npm ci

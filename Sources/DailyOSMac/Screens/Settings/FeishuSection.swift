@@ -34,12 +34,12 @@ private struct CredentialsPanel: View {
 
   var body: some View {
     @Bindable var store = store
-    Panel("凭据", subtitle: "官方 SDK 用这一组；填不全时服务退回 lark-cli") {
+    Panel("凭据", subtitle: "填不全时退回 lark-cli") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         KeyValueRow("自动配置") {
           VStack(alignment: .leading, spacing: Metrics.xxs) {
             ActionButton(title: "从 lark-cli 读取", action: "discover_feishu_setup", store: store)
-            HintText("先点这个，只补它报出来还缺的字段。它直接写 .env 并刷新这一屏。")
+            HintText("先点这个，再补它报缺的字段。结果写进 .env 并刷新本页。")
           }
         }
         PanelDivider()
@@ -48,20 +48,20 @@ private struct CredentialsPanel: View {
           label: "App Secret",
           key: "LARK_APP_SECRET",
           store: store,
-          hint: "SDK 发消息和 websocket 监听用的都是它。写进 \(snapshot.envPath)，这个 App 不会读回来。"
+          hint: "SDK 发消息和 websocket 监听都用它。写进 \(snapshot.envPath)，App 不会读回。"
         )
         SettingText(
           label: "会话 ID",
           text: $store.draft.feishuChatID,
           placeholder: "oc_xxx",
-          hint: "发消息、拉反馈、读群聊历史都发到这里。留空就等于没有出口。",
+          hint: "发消息、拉反馈、读群聊历史都用这个会话。留空则无处可发。",
           mono: true
         )
         SettingText(
           label: "所有者 open_id",
           text: $store.draft.ownerOpenID,
           placeholder: "ou_xxx",
-          hint: "交互层用它判断谁是你。不填的话，下面的安全默认值会把所有指令都拒掉。",
+          hint: "交互层用它识别你。不填会拒绝所有指令。",
           mono: true
         )
       }
@@ -79,18 +79,18 @@ private struct OutputPanel: View {
 
   var body: some View {
     @Bindable var store = store
-    Panel("发送", subtitle: "工作流的结果怎么发出去") {
+    Panel("发送") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         SettingToggle(
           label: "飞书输出",
           isOn: $store.draft.outputEnabled,
-          hint: "关掉之后计划和复盘照常生成、照常写盘，只是不再发到飞书。"
+          hint: "关闭后计划和复盘照常生成和写盘，只是不发飞书。"
         )
         SettingPicker(
           label: "发送方式",
           selection: $store.draft.outputProvider,
           options: [("auto", "自动"), ("sdk", "官方 SDK"), ("lark_cli", "lark-cli")],
-          hint: "自动 = App ID 和 App Secret 都填了就用 SDK，否则退回 lark-cli。"
+          hint: "自动：App ID 和 App Secret 都填了用 SDK，否则用 lark-cli。"
         )
         SettingPicker(
           label: "消息格式",
@@ -101,7 +101,7 @@ private struct OutputPanel: View {
         SettingToggle(
           label: "飞书反馈",
           isOn: $store.draft.feedbackEnabled,
-          hint: "轮询会话里以指令前缀开头的消息，把它们当成对 Daily OS 的指令。"
+          hint: "轮询会话里以指令前缀开头的消息，当作指令执行。"
         )
         SettingText(
           label: "指令前缀",
@@ -112,7 +112,7 @@ private struct OutputPanel: View {
         SettingNumber(
           label: "每次拉取条数",
           value: $store.draft.feedbackPollLimit,
-          hint: "一次往回读多少条消息找指令。服务端接受 1–100。"
+          hint: "每次往回读几条消息找指令，1–100。"
         )
       }
     } actions: {
@@ -135,12 +135,12 @@ private struct InteractionPanel: View {
 
   var body: some View {
     @Bindable var store = store
-    Panel("接收", subtitle: "在飞书里发指令回来") {
+    Panel("接收") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         SettingToggle(
           label: "交互层",
           isOn: $store.draft.interactionEnabled,
-          hint: "一个 websocket 监听，用的是上面同一组 SDK 凭据。"
+          hint: "websocket 监听，用上面的 SDK 凭据。"
         )
         SettingText(label: "指令前缀", text: $store.draft.interactionPrefix, placeholder: "daily-os", mono: true)
         SettingPicker(
@@ -151,19 +151,19 @@ private struct InteractionPanel: View {
         SettingNumber(
           label: "防抖（毫秒）",
           value: $store.draft.interactionDebounce,
-          hint: "连着发好几条时，等这么久再一起处理。"
+          hint: "连发多条时，等这么久再一起处理。"
         )
         SettingToggle(
           label: "群里必须 @",
           isOn: $store.draft.interactionRequireMention,
-          hint: "开着的话，群消息只有 @ 了机器人才算指令。"
+          hint: "开启后，群消息要 @ 机器人才算指令。"
         )
         PanelDivider()
         SettingPicker(
           label: "权限级别",
           selection: $store.draft.interactionAccessLevel,
           options: [("read_only", "只读"), ("workspace", "可写工作区"), ("full", "完全")],
-          hint: "full 会让远端指令能在本机任意执行。只在自己一个人用的部署里开它。"
+          hint: "full 允许远端指令在本机任意执行，只在自用部署里开。"
         )
         SettingLines(
           label: "管理员 open_id",
@@ -187,7 +187,7 @@ private struct InteractionPanel: View {
           label: "允许的工作区",
           text: $store.draft.interactionWorkspaces,
           placeholder: "每行一个本机路径",
-          hint: "安全默认：所有者 open_id、允许的用户、允许的会话三项都空着时，交互层拒绝所有消息——不是坏了，是还没放行任何人。",
+          hint: "所有者 open_id、允许的用户、允许的会话都为空时，交互层拒绝所有消息。",
           height: 64
         )
       }
@@ -205,7 +205,7 @@ private struct DecisionOnboardingPanel: View {
 
   var body: some View {
     @Bindable var store = store
-    Panel("决策校准群", subtitle: "Mac 这边只负责配置，磨合发生在飞书里") {
+    Panel("决策校准群") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         SettingText(label: "群名称", text: $store.draft.decisionChatName, placeholder: "Daily OS · 决策校准")
         SettingText(
@@ -217,7 +217,7 @@ private struct DecisionOnboardingPanel: View {
         SettingToggle(
           label: "启动时自动创建",
           isOn: $store.draft.decisionAutoCreate,
-          hint: "默认关着，免得客户刚启动工具就被突然拉进一个群。确认飞书应用开通了 im:chat 之后再打开。"
+          hint: "默认关闭，避免一启动就把人拉进群。需要飞书应用已开通 im:chat。"
         )
         PanelDivider()
         KeyValueRow("现在就建") {
@@ -225,7 +225,7 @@ private struct DecisionOnboardingPanel: View {
             ActionButton(title: "开始决策校准", action: "decision_onboarding_start", store: store) {
               store.confirmDecisionOnboarding()
             }
-            HintText("会创建（或复用）那个群并发一张欢迎卡片。已经发过的 24 小时内不会重复发。")
+            HintText("创建或复用该群并发欢迎卡片，24 小时内不重复发。")
           }
         }
       }
@@ -243,10 +243,10 @@ private struct ProfilesPanel: View {
   let snapshot: SettingsSnapshot
 
   var body: some View {
-    Panel("采集档案", subtitle: "同一个 lark-cli 应用下的几套采集组合") {
+    Panel("采集档案") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         if snapshot.feishuProfiles.isEmpty {
-          HintText("config.yaml 里没有 profiles，服务会退回 sources.feishu 下的那一组默认设置。")
+          HintText("config.yaml 里没有 profiles，使用 sources.feishu 下的默认设置。")
         } else {
           VStack(spacing: 0) {
             ForEach(Array(snapshot.feishuProfiles.enumerated()), id: \.element.id) { index, profile in
@@ -262,7 +262,7 @@ private struct ProfilesPanel: View {
             }
           }
         }
-        HintText("一个档案是四个采集器加一份文档清单，而配置写回是整份文件覆盖——这个 App 只认识它显示出来的字段，改一个档案就会把没显示的那些（比如文档 token 列表）抹掉。所以这里只读；要增删档案，用「服务」页的「打开 Web 控制台」。")
+        HintText("这里只读：配置写回会整份覆盖，改档案会抹掉这里没显示的字段（如文档 token 列表）。增删档案用「服务」页的「打开 Web 控制台」。")
       }
     }
   }

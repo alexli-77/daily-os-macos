@@ -122,12 +122,18 @@ public enum CycleOkrAlignment {
 public enum KeyResultLabel {
   public static func text(id: String, title: String) -> String? {
     var label = id.trimmingCharacters(in: .whitespaces)
-    if let dash = label.firstIndex(of: "-"), label[..<dash].allSatisfy(\.isNumber), !label[..<dash].isEmpty {
+    // "01-KR1" and "O1-KR1" alike: an optional letter, then the objective's number.
+    if let dash = label.firstIndex(of: "-"), isObjectiveNumber(label[..<dash]) {
       label = String(label[label.index(after: dash)...])
     }
     guard !label.isEmpty else { return nil }
     let trimmedTitle = title.trimmingCharacters(in: .whitespaces)
     if trimmedTitle.lowercased().hasPrefix(label.lowercased()) { return nil }
     return label
+  }
+
+  private static func isObjectiveNumber(_ prefix: Substring) -> Bool {
+    let digits = prefix.first?.isLetter == true ? prefix.dropFirst() : prefix
+    return !digits.isEmpty && digits.allSatisfy(\.isNumber)
   }
 }

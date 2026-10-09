@@ -34,6 +34,7 @@ extension DailyOSClient {
 struct DayRoutinePayload: Decodable {
   struct Mode: Decodable { let id: String; let label: String }
   struct Slot: Decodable {
+    let id: String?
     let start: String
     let end: String
     let title: String
@@ -57,7 +58,7 @@ struct DayRoutinePayload: Decodable {
       slots: slots.compactMap { slot in
         guard let start = DayStart.minute(fromClock: slot.start) else { return nil }
         let end = slot.end == "24:00" ? 24 * 60 : (DayStart.minute(fromClock: slot.end) ?? start)
-        return .init(start: start, end: end, title: slot.title, category: slot.category, color: slot.color, floor: slot.floor ?? false, habit: slot.habit ?? false)
+        return .init(start: start, end: end, title: slot.title, category: slot.category, color: slot.color, floor: slot.floor ?? false, habit: slot.habit ?? false, blockID: slot.id)
       }
     )
   }

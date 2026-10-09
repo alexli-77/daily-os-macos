@@ -157,9 +157,12 @@ public struct TodayRoutine: Sendable, Equatable {
     public let floor: Bool
     /// A habit slot: the Today sheet has a row for it, so no band is drawn.
     public let habit: Bool
+    /// The 作息 block this slot is; Today can move it for the day.
+    public let blockID: String?
     public var id: String { "\(start)-\(title)" }
 
-    public init(start: Int, end: Int, title: String, category: String?, color: String?, floor: Bool, habit: Bool = false) {
+    public init(start: Int, end: Int, title: String, category: String?, color: String?, floor: Bool, habit: Bool = false, blockID: String? = nil) {
+      self.blockID = blockID
       self.start = start
       self.end = end
       self.title = title

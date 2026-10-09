@@ -91,6 +91,7 @@ extension DailyOSClient {
     switch event {
     case "complete": .done
     case "partial": .partial
+    case "missed": .missed
     case "defer": .deferred
     default: .open
     }

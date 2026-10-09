@@ -66,10 +66,10 @@ struct ServiceSection: View {
         VStack(alignment: .leading, spacing: Metrics.xs) {
           Text("开机自启").mutedStyle(Typo.body)
           Text(snapshot.service.installed
-            ? "已经装成后台任务：开机自启，崩了自动拉起，早报和复盘这些定时任务才会按时跑。Daily OS 启动时会检查它，没在跑就顺手启动。"
+            ? "已装成后台任务：开机自启，崩溃后自动重启，定时任务按时跑。Daily OS 启动时发现它没在跑会自动启动。"
             // No markdown here: this is a `Text(String)`, not a `Text(verbatim:)`
             // of a `LocalizedStringKey`, so `**…**` renders as four asterisks.
-            : "还没装成后台任务。现在服务只在你手动开着的时候活着——定时任务不会跑，早报不会自己来。")
+            : "还没装成后台任务。服务只在你手动开着时运行，定时任务和早报都不会跑。")
             .mutedStyle()
             .fixedSize(horizontal: false, vertical: true)
 
@@ -91,7 +91,7 @@ struct ServiceSection: View {
           if snapshot.service.installed {
             // Rebuilding the service is the step people forget, and the symptom
             // — a restart that changes nothing — looks like the restart failing.
-            Text("改过服务端代码的话，先在服务目录跑 npm run build 再重启：launchd 跑的是 dist/，不是源码。")
+            Text("改过服务端代码要先在服务目录跑 npm run build 再重启。launchd 跑的是 dist/。")
               .mutedStyle()
               .fixedSize(horizontal: false, vertical: true)
           }
@@ -106,7 +106,7 @@ struct ServiceSection: View {
               // is a switch that appears not to work until you find the button.
               set: { value in Task { await store.savePreventSleep(value) } }
             ),
-            hint: "用 macOS 的 caffeinate 拦住闲置休眠。合上 MacBook 盖子——尤其是用电池时——仍然会强制睡着，这个开关拦不住。"
+            hint: "用 caffeinate 阻止闲置休眠。合盖仍会休眠，用电池时尤其如此。"
           )
         }
         .padding(.top, Metrics.xs)
@@ -126,12 +126,12 @@ struct LogsSection: View {
   let store: SettingsStore
 
   var body: some View {
-    Panel("服务日志", subtitle: "只保留最近 7 天；密钥和响应体不进日志") {
+    Panel("服务日志", subtitle: "保留 7 天，不记密钥和响应体") {
       if store.logs.isEmpty {
         EmptyState(
           icon: "doc.plaintext",
           title: "还没有日志",
-          message: "data/logs/ui-network.jsonl 现在是空的。点右上角刷新，或者先做点会留下记录的事。",
+          message: "data/logs/ui-network.jsonl 是空的。",
           actionTitle: "刷新",
           action: { Task { await store.loadLogs() } }
         )

@@ -35,7 +35,7 @@ struct ArtifactsScreen: View {
     EmptyState(
       icon: "shippingbox",
       title: "还没有产物",
-      message: "工作流生成的文件会出现在这里，并且指回生成它的那次运行。"
+      message: "工作流生成的文件显示在这里，附带来源运行。"
     )
   }
 }
@@ -140,7 +140,7 @@ private struct ArtifactDetail: View {
             }
           } else {
             PanelDivider()
-            KeyValueRow("文件") { Text("这个产物不在本机服务的索引里，没有对应的文件路径。").mutedStyle() }
+            KeyValueRow("文件") { Text("不在本机服务的索引里，没有文件路径。").mutedStyle() }
           }
           if let runId = artifact.runId {
             PanelDivider()
@@ -181,8 +181,8 @@ private struct ArtifactDetail: View {
 
   private var previewMessage: String {
     hasFile
-      ? "产物索引只返回文件信息，不返回内容。交给系统默认程序打开。"
-      : "服务的产物索引里没有这个文件，Mac 端也就无从打开它。"
+      ? "索引里只有文件信息，没有内容。用默认程序打开。"
+      : "服务的产物索引里没有这个文件，无法打开。"
   }
 }
 
@@ -222,11 +222,11 @@ final class ArtifactFileActions {
   /// does nothing into a sentence that says why.
   private func resolve(_ artifact: Artifact) -> URL? {
     guard let url = artifact.path else {
-      actionError = "这个产物没有文件路径——它不在本机服务的索引里。"
+      actionError = "这个产物不在本机服务的索引里，没有文件路径。"
       return nil
     }
     guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else {
-      actionError = "文件已经不在磁盘上了：\(url.path(percentEncoded: false))"
+      actionError = "文件已不在磁盘上：\(url.path(percentEncoded: false))"
       return nil
     }
     return url

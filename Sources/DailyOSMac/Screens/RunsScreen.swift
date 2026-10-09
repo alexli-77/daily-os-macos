@@ -17,7 +17,7 @@ struct RunsScreen: View {
         if let run = state.selectedRun {
           RunDetail(run: run)
         } else {
-          EmptyState(icon: "waveform.path.ecg", title: "还没有运行记录", message: "跑一次工作流之后这里会有记录。")
+          EmptyState(icon: "waveform.path.ecg", title: "还没有运行记录", message: "跑过工作流后显示在这里。")
         }
       }
       .frame(maxWidth: .infinity)
@@ -88,9 +88,9 @@ private struct RunDetail: View {
         }
       }
 
-      Panel("步骤", subtitle: "规划 → 工具调用 → 确认 → 写入") {
+      Panel("步骤") {
         if run.steps.isEmpty {
-          EmptyState(icon: "list.bullet", title: "没有步骤记录", message: "这次运行没有产生可追踪的步骤。")
+          EmptyState(icon: "list.bullet", title: "没有步骤记录", message: "这次运行没有记录步骤。")
         } else {
           VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(run.steps.enumerated()), id: \.element.id) { index, step in

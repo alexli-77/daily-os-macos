@@ -23,7 +23,7 @@ private struct ProviderPanel: View {
 
   var body: some View {
     @Bindable var store = store
-    Panel("模型", subtitle: "决定工作流和对话用什么跑") {
+    Panel("模型") {
       VStack(spacing: Metrics.sm) {
         KeyValueRow("服务商") {
           // Bound through the store's setters rather than through `$store` plus
@@ -55,7 +55,7 @@ private struct ProviderPanel: View {
                 .font(Typo.monoBody)
                 .frame(maxWidth: 320)
             }
-            HintText("下拉里的都是建议值，不是白名单。服务把 llm.model 原样发给 CLI，所以列表里没有的 id 也能用——当前设置永远留在列表里，打开这一屏不会把它悄悄改掉。")
+            HintText("列表只是建议值。llm.model 原样发给 CLI，列表外的 id 也能用。当前设置始终保留在列表里。")
           }
         }
         PanelDivider()
@@ -89,7 +89,7 @@ private struct APIKeyRow: View {
       case .none(let checkName):
         VStack(alignment: .leading, spacing: Metrics.xxs) {
           Pill("不需要", tone: .neutral)
-          Text("\(store.draft.provider) 用它自己 CLI 的订阅登录，不存 API key。")
+          Text("\(store.draft.provider) 用 CLI 的订阅登录，不存 API key。")
             .mutedStyle()
           if let check = snapshot.doctor.first(where: { $0.name == checkName }) {
             HStack(spacing: Metrics.xs) {
@@ -97,7 +97,7 @@ private struct APIKeyRow: View {
               Text(check.detail.isEmpty ? check.name : check.detail).mutedStyle()
             }
           } else {
-            Text("服务的自检里没有 \(checkName) 这一项，登录状态未知。").mutedStyle()
+            Text("自检里没有 \(checkName)，登录状态未知。").mutedStyle()
           }
         }
 
@@ -128,7 +128,7 @@ private struct APIKeyRow: View {
                 .buttonStyle(MossButtonStyle(prominent: false))
                 .disabled(store.secretDraft.isEmpty || store.isBusy)
             }
-            Text("写进 \(snapshot.envPath)。这个 App 不会把密钥记进日志，也不会存到别的地方。")
+            Text("写进 \(snapshot.envPath)，不记日志，不存别处。")
               .mutedStyle()
               .fixedSize(horizontal: false, vertical: true)
           }
@@ -147,7 +147,7 @@ private struct APIKeyRow: View {
 
   private func unmanagedExplanation(key: String) -> String {
     guard !key.isEmpty else {
-      return "这个服务商不在服务已知的四个里（codex / openai / claude / anthropic），需不需要密钥无从判断。"
+      return "不是已知服务商（codex / openai / claude / anthropic），无法判断是否需要密钥。"
     }
     return """
       \(store.draft.provider) 需要 \(key)，但服务的 /api/env-secret 只放行 \
@@ -173,13 +173,13 @@ private struct CLIPanel: View {
 
   var body: some View {
     @Bindable var store = store
-    Panel("CLI 路径", subtitle: "launchd 的 PATH 和你终端里的不是同一个") {
+    Panel("CLI 路径", subtitle: "launchd 的 PATH 和终端不同") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         SettingPath(
           label: "Codex",
           text: $store.draft.codexBin,
           placeholder: "codex 或 /opt/homebrew/bin/codex",
-          hint: "留空就按 PATH 找。provider 是 codex 时才用得上。"
+          hint: "留空按 PATH 查找。仅 provider 为 codex 时使用。"
         ) {
           store.pickFile(into: \.codexBin, message: "选择 Codex CLI 可执行文件")
         }
@@ -187,7 +187,7 @@ private struct CLIPanel: View {
           label: "Codex home",
           text: $store.draft.codexHome,
           placeholder: "可选，通常是 ~/.codex",
-          hint: "登录状态存在这个目录里。换过它，就要用同一个目录重新跑一次 codex login。"
+          hint: "登录状态存在这里。换目录后要用它重新跑 codex login。"
         ) {
           store.pickFolder(into: \.codexHome, message: "选择 Codex home 目录")
         }
@@ -195,7 +195,7 @@ private struct CLIPanel: View {
           label: "Claude",
           text: $store.draft.claudeBin,
           placeholder: "claude 或 /opt/homebrew/bin/claude",
-          hint: "provider 是 claude 时才用得上。"
+          hint: "仅 provider 为 claude 时使用。"
         ) {
           store.pickFile(into: \.claudeBin, message: "选择 Claude CLI 可执行文件")
         }
@@ -208,7 +208,7 @@ private struct CLIPanel: View {
               ActionButton(title: "找 Claude", action: "discover_claude_binary", store: store)
               ActionButton(title: "测 Claude 登录", action: "claude_test", store: store)
             }
-            HintText("查找会直接写进 .env 并刷新这一屏；测试只跑一次登录检查。两者的完整输出都落在「概览」的输出块里——这里不重复一份，否则关掉哪一份就成了新问题。提示未登录时，用上面同一个路径在终端跑 codex login 或 claude auth login。")
+            HintText("查找会写进 .env 并刷新本页；测试只检查登录。完整输出在「概览」的输出块。提示未登录时，用上面的路径在终端跑 codex login 或 claude auth login。")
           }
         }
       }

@@ -39,7 +39,7 @@ private struct SourceStatusPanel: View {
   @State private var repositoryDraft = ""
 
   var body: some View {
-    Panel("状态", subtitle: "证据从这些地方来，结论回到你的文件里") {
+    Panel("状态") {
       VStack(spacing: 0) {
         ForEach(Array(snapshot.sources.enumerated()), id: \.element.id) { index, source in
           if index > 0 { PanelDivider() }
@@ -125,7 +125,7 @@ private struct VaultPanel: View {
 
   var body: some View {
     @Bindable var store = store
-    Panel("知识库 Vault", subtitle: "你自己那份笔记库，只读取，不写入") {
+    Panel("知识库 Vault", subtitle: "只读，不写入") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         SettingToggle(label: "启用", isOn: $store.draft.vaultEnabled)
         SettingPicker(
@@ -143,7 +143,7 @@ private struct VaultPanel: View {
             label: "网关令牌",
             key: "VAULT_GATE_TOKEN",
             store: store,
-            hint: "远程 vault 才需要。本地文件夹模式下这一项不会被读。"
+            hint: "仅远程网关需要。"
           )
         }
       }
@@ -161,13 +161,13 @@ private struct MemoryPanel: View {
 
   var body: some View {
     @Bindable var store = store
-    Panel("记忆仓库", subtitle: "Daily OS 自己的工作记忆，周期和 OKR 都住在这里") {
+    Panel("记忆仓库", subtitle: "周期和 OKR 存在这里") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         SettingPath(
           label: "仓库路径",
           text: $store.draft.memoryRepositoryPath,
           placeholder: "留空则用内置模板 memory-vault/default",
-          hint: "OKR 编辑器写的是这个目录下的 10_OKR/；留空时写的是内置模板，重装服务就没了。"
+          hint: "OKR 写到这个目录的 10_OKR/。留空则写进内置模板，重装服务会丢失。"
         ) {
           store.pickFolder(into: \.memoryRepositoryPath, message: "选择 Daily OS 记忆仓库文件夹")
         }
@@ -208,7 +208,7 @@ private struct GitHubPanel: View {
           label: "仓库",
           text: $store.draft.githubRepositories,
           placeholder: "每行一个 owner/repo",
-          hint: "一个都不填时这个数据源什么也采不到，而自检仍然是绿的——它检查的是令牌，不是仓库。",
+          hint: "不填就采不到数据。自检只查令牌不查仓库，所以仍会通过。",
           height: 96
         )
         SettingNumber(label: "每仓库条数", value: $store.draft.githubPerRepoLimit)
@@ -233,7 +233,7 @@ private struct LinearPanel: View {
           label: "API key",
           key: "LINEAR_API_KEY",
           store: store,
-          hint: "留空时服务会退回到本机 Codex 的 Linear 连接，所以自检里缺它只是警告，不是失败。"
+          hint: "留空时用本机 Codex 的 Linear 连接，自检只报警告。"
         )
         KeyValueRow("自动查找") {
           ActionButton(title: "从本机读取密钥", action: "discover_linear_token", store: store)
@@ -250,7 +250,7 @@ private struct LinearPanel: View {
           label: "查询",
           text: $store.draft.linearQuery,
           placeholder: "assignee = me and state.type != 'completed'",
-          hint: "留空即可；只有需要自定义 GraphQL 过滤时才填。",
+          hint: "仅自定义 GraphQL 过滤时填。",
           mono: true,
           width: 420
         )
@@ -284,13 +284,13 @@ private struct OtherSourcesPanel: View {
         SettingToggle(
           label: "飞书采集",
           isOn: $store.draft.feishuSourceEnabled,
-          hint: "日历、任务、文档、群聊由「飞书」那一页的采集档案决定收哪些。"
+          hint: "收哪些日历、任务、文档、群聊，由「飞书」页的采集档案决定。"
         )
         SettingToggle(label: "Chrome 快照", isOn: $store.draft.chromeSnapshotEnabled)
         SettingToggle(
           label: "Apple 日历快照",
           isOn: $store.draft.appleCalendarEnabled,
-          hint: "走 osascript 读本机日历，第一次会弹系统授权。"
+          hint: "用 osascript 读本机日历，首次会请求系统授权。"
         )
         PanelDivider()
         SettingToggle(label: "本地文件", isOn: $store.draft.localFilesEnabled)
@@ -298,7 +298,7 @@ private struct OtherSourcesPanel: View {
           label: "文件清单",
           text: $store.draft.localFiles,
           placeholder: "每行一条：名称 | 绝对路径",
-          hint: "缺了名称或路径的行会被丢掉，不会存成半条——采集器打不开的路径每天失败一次，而屏幕上什么都不会说。",
+          hint: "缺名称或路径的行不会保存。路径打不开时采集会静默失败。",
           height: 112
         )
       }

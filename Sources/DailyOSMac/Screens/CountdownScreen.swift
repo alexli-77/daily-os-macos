@@ -25,7 +25,7 @@ struct CountdownScreen: View {
           EmptyState(
             icon: "hourglass",
             title: "还没有记过日子",
-            message: "记一个截稿日、一张机票、一个生日。置顶的，和三十天以内的，会出现在早上那张卡片的第一行。"
+            message: "截稿日、机票、生日都可以记。置顶的和三十天内的显示在早上卡片的第一行。"
           )
         }
       } else {
@@ -134,7 +134,7 @@ private struct CountdownRow: View {
           Image(systemName: item.pinned ? "pin.fill" : "pin")
         }
         .buttonStyle(QuietButtonStyle())
-        .help(item.pinned ? "取消置顶" : "置顶，让它出现在早上的卡片里")
+        .help(item.pinned ? "取消置顶" : "置顶到早上的卡片")
         .opacity(item.pinned || hovering ? 1 : 0)
 
         Button(action: onEdit) { Image(systemName: "pencil") }
@@ -242,7 +242,7 @@ private struct CountdownEditor: View {
 
         Toggle("置顶（出现在早上的卡片里）", isOn: $draft.pinned)
 
-        TextField("备注，可以不写", text: $draft.note, axis: .vertical)
+        TextField("备注（可选）", text: $draft.note, axis: .vertical)
           .textFieldStyle(.roundedBorder)
           .lineLimit(2...4)
       }
@@ -269,7 +269,7 @@ private struct CountdownEditor: View {
       Button("删除", role: .destructive) { onDelete?() }
       Button("算了", role: .cancel) {}
     } message: {
-      Text("这条倒数日会消失，没有回收站。")
+      Text("删除后无法恢复。")
     }
   }
 
@@ -278,11 +278,11 @@ private struct CountdownEditor: View {
   private var hint: String {
     switch (draft.direction, draft.recurrence) {
     case (_, .yearly):
-      "每年这天来一次。屏幕上显示离下一次还有多久，以及这是第几年。"
+      "每年重复。显示离下一次还有几天，以及第几年。"
     case (.until, .none):
-      "过了这天之后会显示「已过去 N 天」，并且不再出现在卡片上。想留着就置顶。"
+      "过了这天显示「已过去 N 天」，不再上卡片，除非置顶。"
     case (.since, .none):
-      "一直往上数，适合「读博第 N 天」这种。不置顶就不会上卡片。"
+      "一直往上数，比如「读博第 N 天」。不置顶就不上卡片。"
     }
   }
 }

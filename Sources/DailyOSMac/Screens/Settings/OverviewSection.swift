@@ -19,7 +19,7 @@ struct OverviewSection: View {
     DoctorPanel(store: store, snapshot: snapshot, failures: failures, warnings: warnings)
     ActionsPanel(store: store)
     if !store.actionOutput.isEmpty {
-      Panel("输出", subtitle: "上一次动作的完整返回，服务原样给的") {
+      Panel("输出") {
         OutputBlock(text: store.actionOutput, height: 280)
       } actions: {
         Button("复制") { store.copy(store.actionOutput, what: "输出") }
@@ -45,7 +45,7 @@ private struct DoctorPanel: View {
   var body: some View {
     Panel("自检", subtitle: summary) {
       if snapshot.doctor.isEmpty {
-        HintText("服务没有返回任何检查项。它可能是个更老的版本。")
+        HintText("服务没有返回检查项，可能是旧版本。")
       } else {
         VStack(spacing: 0) {
           ForEach(Array(ordered.enumerated()), id: \.element.id) { index, check in
@@ -95,7 +95,7 @@ private struct ActionsPanel: View {
 
   var body: some View {
     @Bindable var store = store
-    Panel("手动运行", subtitle: "平时由排程触发，这里是想现在就跑一次的时候") {
+    Panel("手动运行") {
       VStack(alignment: .leading, spacing: 0) {
         KeyValueRow("工作流") {
           HStack(spacing: Metrics.xxs) {
@@ -144,7 +144,7 @@ private struct ActionsPanel: View {
             Toggle("", isOn: $store.sendActionOutput)
               .labelsHidden()
               .toggleStyle(.switch)
-            HintText("关掉就只在这一屏看结果。生成类的动作默认会把结果也发到飞书，和排程跑出来的那份走同一条路。")
+            HintText("生成类动作默认也发到飞书。关闭后只在这里显示。")
           }
         }
       }

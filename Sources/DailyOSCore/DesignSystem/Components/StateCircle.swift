@@ -10,7 +10,7 @@ import SwiftUI
 /// worth a 22pt target and the one people do twenty times a day. Partial and
 /// deferred are deliberately not in the click cycle: cycling four states through
 /// one target means every mis-click lands somewhere you have to click three more
-/// times to leave. They live in `RowActionBar`, which appears on hover.
+/// times to leave. They live in `StateMenuBar`, which appears on hover.
 public struct StateCircle: View {
   public let state: TodoState
   public let toggle: () -> Void
@@ -53,6 +53,11 @@ public struct StateCircle: View {
       }
       Circle().strokeBorder(Palette.mint400, lineWidth: Metrics.circleStroke)
 
+    case .missed:
+      // Red ring: settled as not done. Empty inside, so it never reads as done.
+      Circle().fill(Palette.q1.opacity(0.08))
+      Circle().strokeBorder(Palette.q1, lineWidth: Metrics.circleStroke + 0.5)
+
     case .deferred:
       Circle().strokeBorder(
         Palette.ink3,
@@ -90,78 +95,111 @@ public struct StateCircle: View {
 
   private var label: String {
     switch state {
-    case .done: "已完成，点一下恢复未做"
+    case .done: "已完成，点一下撤回"
     case .partial: "做了一部分"
+    case .missed: "未做"
     case .deferred: "顺到明天"
     case .open, .deleted: "标记完成"
     }
   }
 }
 
-// MARK: - Hover action bar
+// MARK: - Hover menu
 
-/// The four state actions, floated at the end of a row on hover.
+/// What hovering the circle shows: every state a row can be put in, plus
+/// delete, in one horizontal strip with words on it.
 ///
-/// Not permanent. Four icons on every row of a six-row sheet is twenty-four
-/// controls competing with the six sentences you actually came to read — and
-/// three of the four are rare. The frequent one (complete) already has the
-/// circle; this is where the other three live.
-///
-/// Every button keeps its label as tooltip and VoiceOver name. That is the whole
-/// justification for an icon-only control, and it is also why the bar is
-/// reachable without a pointer: it stays in the view hierarchy and simply fades,
-/// so VoiceOver and keyboard focus still find it.
-public struct RowActionBar: View {
+/// The circle stays a one-click tick; this is for the other answers. Clicking
+/// the state a row is already in takes it back to not started.
+public struct StateMenuBar: View {
+  public enum Choice: Hashable, Sendable {
+    case state(TodoState)
+    case delete
+  }
+
   public let state: TodoState
-  public let isVisible: Bool
-  /// Which states this row can actually be put into.
-  ///
-  /// Not every row supports all four. An inbox capture is written through the
-  /// service's todo-inbox endpoint, which knows `done` / `deferred` / `open` and
-  /// has no `partial` — offering the button anyway would produce a control that
-  /// looks available and fails, which is worse than one that is not there.
-  public let allowed: Set<TodoState>
-  public let set: (TodoState) -> Void
+  public let choices: [Choice]
+  public let pick: (Choice) -> Void
 
-  public init(
-    state: TodoState,
-    isVisible: Bool,
-    allowed: Set<TodoState> = [.done, .partial, .deferred, .open],
-    set: @escaping (TodoState) -> Void
-  ) {
+  public init(state: TodoState, choices: [Choice], pick: @escaping (Choice) -> Void) {
     self.state = state
-    self.isVisible = isVisible
-    self.allowed = allowed
-    self.set = set
+    self.choices = choices
+    self.pick = pick
   }
 
   public var body: some View {
     HStack(spacing: 2) {
-      if allowed.contains(.done) { button("完成", "checkmark", .done) }
-      if allowed.contains(.partial) { button("做了一部分", "circle.lefthalf.filled", .partial) }
-      if allowed.contains(.deferred) { button("顺到明天", "arrow.right", .deferred) }
-      if allowed.contains(.open) { button("恢复未做", "circle", .open) }
+      ForEach(choices, id: \.self) { choice in
+        let isCurrent = choice == .state(state)
+        Button { pick(choice) } label: {
+          Label(Self.label(choice), systemImage: Self.symbol(choice))
+            .labelStyle(.titleAndIcon)
+            .font(Typo.caption)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .foregroundStyle(Self.ink(choice, isCurrent: isCurrent))
+            .background(isCurrent ? Self.ink(choice, isCurrent: true).opacity(0.14) : .clear, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .pointerStyleLink()
+        .help(isCurrent ? "再点一下撤回" : Self.label(choice))
+        .accessibilityAddTraits(isCurrent ? [.isSelected] : [])
+      }
     }
-    .opacity(isVisible ? 1 : 0)
-    // Not `if isVisible` — a row whose actions leave the hierarchy is a row
-    // VoiceOver and the tab key cannot reach without a mouse.
-    .allowsHitTesting(isVisible)
-    .animation(.easeOut(duration: 0.12), value: isVisible)
+    .padding(3)
+    .background(Palette.surface, in: Capsule())
+    .overlay(Capsule().strokeBorder(Palette.line, lineWidth: Metrics.hairline))
+    .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+    .fixedSize()
   }
 
-  private func button(_ label: String, _ symbol: String, _ target: TodoState) -> some View {
-    Button { set(target) } label: {
-      Image(systemName: symbol)
-        .font(.system(size: 10, weight: .semibold))
-        .frame(width: 20, height: 20)
-        .foregroundStyle(state == target ? Palette.mint800 : Palette.ink3)
-        .background(state == target ? Palette.mint200 : .clear, in: Circle())
-        .contentShape(Circle())
+  public static func label(_ choice: Choice) -> String {
+    switch choice {
+    case .state(.done): "完成"
+    case .state(.partial): "部分"
+    case .state(.missed): "未做"
+    case .state(.deferred): "顺延"
+    case .state: "没开始"
+    case .delete: "删除"
     }
-    .buttonStyle(.plain)
-    // A lit button undoes itself when clicked again; say so.
-    .help(state == target ? "\(label) · 再点一下撤回" : label)
-    .accessibilityLabel(label)
-    .accessibilityAddTraits(state == target ? [.isSelected] : [])
+  }
+
+  static func symbol(_ choice: Choice) -> String {
+    switch choice {
+    case .state(.done): "checkmark.circle"
+    case .state(.partial): "circle.lefthalf.filled"
+    case .state(.missed): "xmark.circle"
+    case .state(.deferred): "arrow.right.circle"
+    case .state: "circle"
+    case .delete: "trash"
+    }
+  }
+
+  static func ink(_ choice: Choice, isCurrent: Bool) -> Color {
+    switch choice {
+    case .state(.missed), .delete: Palette.q1
+    case .state(.done), .state(.partial): isCurrent ? Palette.mint800 : Palette.ink2
+    default: Palette.ink2
+    }
+  }
+}
+
+extension View {
+  /// The pointing hand over something clickable.
+  /// `pointerStyle` where it exists: it cannot get stuck when the view goes
+  /// away under the pointer, which a push/pop pair can.
+  @ViewBuilder public func pointerStyleLink() -> some View {
+    #if os(macOS)
+    if #available(macOS 15, *) {
+      pointerStyle(.link)
+    } else {
+      onHover { inside in
+        if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+      }
+    }
+    #else
+    self
+    #endif
   }
 }

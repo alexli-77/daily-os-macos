@@ -185,13 +185,13 @@ private struct EmptyChatState: View {
       EmptyState(
         icon: "bubble.left.and.text.bubble.right",
         title: "问点什么",
-        message: "它读得到你的周期、OKR 和本地 Vault。问「这一期为什么只完成了一半」比问「帮我总结」有用得多。"
+        message: "能读你的周期、OKR 和本地 Vault。比如问「这一期为什么只完成了一半」。"
       )
     } else {
       EmptyState(
         icon: "terminal",
         title: "现在只响应指令",
-        message: "自由对话（agent mode）还没开启。下面这些词直接发就能用，或者去设置里打开自由对话。"
+        message: "自由对话（agent mode）未开启。可以发下面的指令，或去设置里打开。"
       )
     }
   }

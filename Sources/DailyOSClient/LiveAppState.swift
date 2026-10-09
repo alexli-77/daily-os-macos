@@ -435,6 +435,7 @@ public final class LiveAppState: AppState {
       switch event {
       case "complete": plan[index].state = .done
       case "partial": plan[index].state = .partial
+      case "missed": plan[index].state = .missed
       case "defer": plan[index].state = .deferred
       case "reopen": plan[index].state = .open
       case "remove": plan.remove(at: index)

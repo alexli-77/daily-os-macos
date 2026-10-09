@@ -16,7 +16,7 @@ struct SkillsSection: View {
 
   var body: some View {
     @Bindable var store = store
-    Panel("技能", subtitle: "工作流真正执行的那份 checkout") {
+    Panel("技能") {
       VStack(alignment: .leading, spacing: Metrics.sm) {
         SettingToggle(
           label: "加载技能",
@@ -27,7 +27,7 @@ struct SkillsSection: View {
             // single switch is a switch that does nothing until you find it.
             set: { value in Task { await store.saveSkillsEnabled(value) } }
           ),
-          hint: "关掉之后注册表里的技能一个都不会加载，双周复盘会退回到内置的简易版本。"
+          hint: "关闭后不加载任何技能，双周复盘改用内置简易版。"
         )
         PanelDivider()
         HStack(spacing: Metrics.xs) {

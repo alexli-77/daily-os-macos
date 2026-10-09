@@ -56,7 +56,7 @@ struct RoutineScreen: View {
             EmptyState(
               icon: "calendar.day.timeline.left",
               title: "还没有作息",
-              message: "作息是一段时期每天的样子：几点起、几点睡，哪段时间留给哪类事。建一个，今天的计划和双周排期就会按它来排。",
+              message: "作息定义一段时期每天几点起睡、哪段时间做哪类事。今天的计划和双周排期会按它排。",
               actionTitle: "新建作息",
               action: { addPeriod() }
             )
@@ -144,7 +144,7 @@ struct RoutineScreen: View {
           .frame(width: 280)
         }
       } else {
-        EmptyState(icon: "plus.square.dashed", title: "这个时期还没有日型", message: "日型是「哪几天长一个样」，比如工作日、周末。", actionTitle: "加一个日型") {
+        EmptyState(icon: "plus.square.dashed", title: "这个时期还没有日型", message: "日型是安排相同的几天，比如工作日、周末。", actionTitle: "加一个日型") {
           addDayType()
         }
       }
@@ -209,7 +209,7 @@ struct RoutineScreen: View {
           } label: { Image(systemName: "ellipsis.circle") }
             .menuStyle(.borderlessButton).fixedSize()
           if dayType.modes.count > 1 {
-            Text("今天用哪个模式，在「今天」页上切").font(Typo.caption).foregroundStyle(Palette.ink3)
+            Text("当天用哪个模式，在「今天」页切换").font(Typo.caption).foregroundStyle(Palette.ink3)
           }
         }
       }
@@ -236,7 +236,7 @@ struct RoutineScreen: View {
     let last = max(mode.blocks.map(\.endMinute).max() ?? 22 * 60, period.sleep.flatMap(DayStart.minute(fromClock:)) ?? 0)
     let hours = Array(stride(from: first / 60, through: min(24, (last + 59) / 60), by: 1))
     let y = { (minute: Int) in CGFloat(minute - first) * Self.pointsPerMinute }
-    return Panel(mode.label, subtitle: "点一块改它 · 改完马上保存") {
+    return Panel(mode.label) {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         ZStack(alignment: .topLeading) {
           ForEach(hours, id: \.self) { hour in
@@ -273,12 +273,12 @@ struct RoutineScreen: View {
   }
 
   private func totals(_ period: RoutinePeriod, dayType: RoutineDayType, mode: RoutineMode) -> some View {
-    Panel("\(dayType.label) · \(mode.label)", subtitle: "每类一天多少时间") {
+    Panel("\(dayType.label) · \(mode.label)") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         let totals = mode.minutesByCategory()
         let longest = max(totals.first?.minutes ?? 1, 1)
         if totals.isEmpty {
-          Text("给时间块选上类别，这里就会算出每类多少时间。").font(Typo.caption).foregroundStyle(Palette.ink3)
+          Text("给时间块选类别后，这里显示每类的时长。").font(Typo.caption).foregroundStyle(Palette.ink3)
         }
         ForEach(totals, id: \.key) { entry in
           let category = period.category(entry.key)
@@ -431,7 +431,7 @@ struct RoutineScreen: View {
       switch await state.saveRoutines(periods) {
       case .success(let saved):
         routine = saved
-        state.toast = saved.problems.isEmpty ? "作息已保存，今天的计划会按它排" : "保存了，但有 \(saved.problems.count) 处没存进去"
+        state.toast = saved.problems.isEmpty ? "作息已保存" : "已保存，有 \(saved.problems.count) 处未存入"
       case .failure(let error):
         state.toast = error.message
         await load()
@@ -623,7 +623,7 @@ private struct PeriodEditor: View {
       Button("删掉", role: .destructive, action: onDelete)
       Button("取消", role: .cancel) {}
     } message: {
-      Text("这段时期的日型、模式和规则都会删掉。今天的计划会回到设置里的默认作息。")
+      Text("日型、模式和规则会一起删除。今天的计划改用设置里的默认作息。")
     }
   }
 
@@ -651,7 +651,7 @@ private struct WeekdayPicker: View {
             if !selected.isEmpty { onChange(selected) }
           }
           .buttonStyle(QuietButtonStyle(tone: on ? .accent : .neutral))
-          .help(taken.contains(code) && !on ? "另一个日型也用了这天；同一天只按其中一个过" : "")
+          .help(taken.contains(code) && !on ? "另一个日型也用了这天，只有一个会生效" : "")
         }
       }
     }
@@ -678,7 +678,7 @@ private struct CategoriesPanel: View {
   @State private var newLabel = ""
 
   var body: some View {
-    Panel("类别", subtitle: "时间块按类别上色") {
+    Panel("类别") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         ForEach(period.categories) { category in
           HStack(spacing: Metrics.xs) {
@@ -695,7 +695,7 @@ private struct CategoriesPanel: View {
             Toggle("习惯", isOn: Binding(get: { category.habit ?? false }, set: { on in update(category.key) { $0.habit = on ? true : nil } }))
               .toggleStyle(.checkbox)
               .font(Typo.caption)
-              .help("习惯类：这一类的每个格子在「今天」都是一条能打勾、能拖、能删的 to-do")
+              .help("习惯类的每个格子在「今天」显示为一条 to-do")
             Button { onChange(period.categories.filter { $0.key != category.key }) } label: { Image(systemName: "minus.circle") }
               .buttonStyle(.plain).foregroundStyle(Palette.ink3)
               .help("删掉这个类别；用了它的时间块会变成不分类")
@@ -732,7 +732,7 @@ private struct RulesPanel: View {
   @State private var newRule = ""
 
   var body: some View {
-    Panel("置换规则", subtitle: "排计划时会照这些来") {
+    Panel("置换规则") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         ForEach(Array(rules.enumerated()), id: \.offset) { index, rule in
           HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
