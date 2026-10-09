@@ -12,7 +12,7 @@ struct SchedulesScreen: View {
   @Environment(AppState.self) private var state
 
   var body: some View {
-    ScreenScaffold("排程", subtitle: "由本机的 launchd 触发，服务不在运行时不会补跑") {
+    ScreenScaffold("排程", subtitle: "launchd 触发，服务停了不补跑") {
       if state.schedules.isEmpty {
         Panel {
           EmptyState(icon: "clock.arrow.circlepath", title: "没有排程", message: "所有工作流都要手动触发。")

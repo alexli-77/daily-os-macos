@@ -101,6 +101,8 @@ public struct DaySchedule: Sendable, Equatable {
   public let doneCount: Int
   public let partialCount: Int
   public let deferredCount: Int
+  /// Marked 未做 on purpose: settled for today, like a deferred row.
+  public let missedCount: Int
   public let openCount: Int
   /// Rows that are late, in sheet order. The overdue banner's contents.
   public let lateRows: [Row]
@@ -114,7 +116,7 @@ public struct DaySchedule: Sendable, Equatable {
   /// Deferred counts. A day you finished by honestly pushing two things to
   /// tomorrow is still a day you are done with, and withholding the marker until
   /// everything is ticked would only teach people to tick things they did not do.
-  public var isClear: Bool { !rows.isEmpty && doneCount + deferredCount == rows.count }
+  public var isClear: Bool { !rows.isEmpty && doneCount + deferredCount + missedCount == rows.count }
 
   /// Build the sheet.
   ///
@@ -163,7 +165,7 @@ public struct DaySchedule: Sendable, Equatable {
     func append(_ row: Row) {
       rows.append(row)
       if row.isLate { late.append(row) }
-      if let minutes = row.minutes, row.item.state != .done { remaining += minutes }
+      if let minutes = row.minutes, row.item.state != .done, row.item.state != .missed { remaining += minutes }
     }
 
     for (index, item) in items.enumerated() {
@@ -247,6 +249,7 @@ public struct DaySchedule: Sendable, Equatable {
       doneCount: items.filter { $0.state == .done }.count,
       partialCount: items.filter { $0.state == .partial }.count,
       deferredCount: items.filter { $0.state == .deferred }.count,
+      missedCount: items.filter { $0.state == .missed }.count,
       openCount: items.filter { $0.state == .open }.count,
       lateRows: late,
       missingEstimates: missing

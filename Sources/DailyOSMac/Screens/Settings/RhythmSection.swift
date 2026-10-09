@@ -37,7 +37,7 @@ private struct ResolvedDayPanel: View {
   let snapshot: SettingsSnapshot
 
   var body: some View {
-    Panel("今天会被当成什么日子", subtitle: "计划真正读到的结论，不是上面设置的回显") {
+    Panel("今天会被当成什么日子") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         KeyValueRow("今天") {
           HStack(spacing: Metrics.xs) {
@@ -49,9 +49,9 @@ private struct ResolvedDayPanel: View {
         }
         KeyValueRow("明天", snapshot.rhythm.tomorrow.line)
         if !snapshot.rhythm.today.enabled {
-          HintText("作息规则关着，所以每天都按工作日排——跟这个功能上线前一样。")
+          HintText("作息规则已关闭，每天都按工作日排。")
         } else if snapshot.rhythm.today.isRestDay {
-          HintText("休息日只压来自 Linear / 每周要务的条目，自己手记的 todo 不受影响；已经逾期或今天到期的工作项也不受上限压制，仍然会出现。")
+          HintText("休息日只限制 Linear / 每周要务的条目，手记的 todo 不受影响。逾期或今天到期的工作项照常出现。")
         }
       }
     }
@@ -64,26 +64,26 @@ private struct RestDaysPanel: View {
 
   var body: some View {
     @Bindable var store = store
-    Panel("休息日设置", subtitle: "写进 config.yaml，打分和写计划两边都读这一份") {
+    Panel("休息日设置", subtitle: "写进 config.yaml") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         SettingToggle(
           label: "启用作息规则",
           isOn: $store.draft.rhythmEnabled,
-          hint: "关掉之后每天都按工作日排。周末照常上班的人关掉它，或者把下面七天全部取消。"
+          hint: "关闭后每天都按工作日排。"
         )
         KeyValueRow("休息日") {
           VStack(alignment: .leading, spacing: Metrics.xxs) {
             WeekdayPicker(selection: $store.draft.rhythmRestDays)
               .disabled(!store.draft.rhythmEnabled)
-            HintText("默认是周六周日。博士在读、周末反而是整块工作时间的话，这里就该跟着改。")
+            HintText("默认周六、周日。")
           }
         }
         SettingNumber(
           label: "休息日工作上限",
           value: $store.draft.rhythmWorkCap,
-          hint: "休息日最多留几条工作任务。0 = 一条都不排。上限只管 Linear / 每周要务这类别人在等的事。"
+          hint: "休息日最多排几条工作任务，0 为不排。只限制 Linear / 每周要务的条目。"
         )
-        HintText("改完下一次跑计划立刻生效，不用重启服务。")
+        HintText("下次跑计划生效，无需重启。")
       }
     } actions: {
       SaveAction(isDirty: store.isRhythmDirty, isBusy: store.isBusy) {
@@ -106,7 +106,7 @@ private struct TimesPanel: View {
   var body: some View {
     @Bindable var store = store
     let problems = store.rhythmTimeProblems(store.draft)
-    Panel("作息时间", subtitle: "写进 config.yaml。保存后今天的时间轴马上按新的时间重画") {
+    Panel("作息时间", subtitle: "写进 config.yaml，保存后重画今天的时间轴") {
       VStack(alignment: .leading, spacing: Metrics.sm) {
         KeyValueRow("工作时间") {
           VStack(alignment: .leading, spacing: Metrics.xxs) {
@@ -135,7 +135,7 @@ private struct TimesPanel: View {
               store.draft.rhythmMeals.append(RhythmBlockDraft(label: "", start: "12:00", end: "13:00"))
             }
             .buttonStyle(QuietButtonStyle())
-            HintText("吃饭会作为一行出现在今天的通告单上，当天可以拖走、改时长或删掉。")
+            HintText("吃饭显示为今天通告单上的一行，当天可拖动、改时长或删除。")
           }
         }
         KeyValueRow("固定日程") {
@@ -149,7 +149,7 @@ private struct TimesPanel: View {
               store.draft.rhythmFixed.append(RhythmBlockDraft(label: "", start: "07:00", end: "08:00"))
             }
             .buttonStyle(QuietButtonStyle())
-            HintText("起床、晚饭后散步这类作息，或者不在日历里的固定会议。画成不能拖的块，任务会绕开它们。哪几天都不选就是每天。英语口语这类要做的事别放这里，记成 todo。")
+            HintText("作息（起床、饭后散步）或日历外的固定会议。显示为不可拖动的块，任务会避开。不选日期就是每天。要做的事记成 todo，别放这里。")
           }
         }
         if !problems.isEmpty {
@@ -200,7 +200,7 @@ private struct FixedBlockEditor: View {
           .textFieldStyle(.roundedBorder)
           .frame(width: 220)
       }
-      TextField("备注（块里的第二行小字，可留空）", text: $block.note)
+      TextField("备注（显示在块的第二行，可选）", text: $block.note)
         .textFieldStyle(.roundedBorder)
         .frame(maxWidth: 420)
     }
@@ -317,15 +317,15 @@ private struct NotesPanel: View {
 
   var body: some View {
     @Bindable var store = store
-    Panel("rhythm.md", subtitle: "排不成设置项的规则写这里，大白话就行，模型做计划时原样读") {
+    Panel("rhythm.md") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         KeyValueRow("文件", snapshot.rhythm.notesPath, mono: true)
         KeyValueRow("记忆仓库", snapshot.rhythm.repositoryPath, mono: true)
         if snapshot.rhythm.isTemplate {
-          Pill("还是空模板——写之前它不影响任何计划", tone: .warn)
+          Pill("空模板，不影响计划", tone: .warn)
         }
         PlainTextEditor(text: $store.draft.rhythmMd, height: 340)
-        HintText("这里写的优先级高于上面的默认规则，冲突时听你的。这是个普通 markdown 文件，在 Obsidian 里直接改效果完全一样。")
+        HintText("设置项表达不了的规则写这里，模型做计划时原样读取，优先级高于上面的设置。也可以在 Obsidian 里改。")
       }
     } actions: {
       Button("在访达中显示") { store.revealInFinder(snapshot.rhythm.notesPath) }
@@ -345,7 +345,7 @@ private struct NotesPanel: View {
 /// a rhythm rule looks like. Same remedy as the decision-policy page.
 private struct RhythmExamplePanel: View {
   var body: some View {
-    Panel("示例", subtitle: "照着改，或者整段拷过去当起点") {
+    Panel("示例") {
       OutputBlock(text: RhythmExamplePanel.sample, height: 300)
     }
   }

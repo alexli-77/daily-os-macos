@@ -82,6 +82,7 @@ extension DailyOSClient {
   private static func state(for event: String?) -> TodoState {
     switch event {
     case "complete": .done
+    case "missed": .missed
     case "defer": .deferred
     default: .open
     }

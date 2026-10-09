@@ -248,8 +248,8 @@ extension DailyOSClient {
     case .done: "done"
     case .deferred: "deferred"
     case .deleted: "deleted"
-    case .partial:
-      throw ClientError.service(message: "随手记的条目没有「做了一部分」这个状态，只有计划行有。")
+    case .partial, .missed:
+      throw ClientError.service(message: "随手记的条目只有完成和顺延，「做了一部分」「未做」只有计划行有。")
     }
     try await post("/api/todo-inbox", body: TodoInboxUpdateRequest(id: id, status: status))
   }

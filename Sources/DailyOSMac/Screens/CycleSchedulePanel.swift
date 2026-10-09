@@ -33,16 +33,10 @@ struct CycleSchedulePanel: View {
   private struct AddRequest: Equatable { let date: String; let start: Int }
 
   var body: some View {
-    Panel("排期", subtitle: subtitle) {
-      content
-    } actions: {
-      if editable, let data, !data.items.isEmpty {
-        Button(generateTitle(data)) {
-          if data.schedule == nil { generate() } else { confirmsRegenerate = true }
-        }
-        .buttonStyle(QuietButtonStyle())
-        .disabled(isStarting || data.running)
-        .help("让模型从今天起把这一期的要务排到每一天：大石头占具体时段，其余只定哪天。今天以前的格子不动。会花模型额度。")
+    Panel {
+      VStack(alignment: .leading, spacing: Metrics.sm) {
+        header
+        content
       }
     }
     .task(id: cycle.id) { await load() }
@@ -53,6 +47,33 @@ struct CycleSchedulePanel: View {
       Text(data?.schedule?.editedAt != nil
         ? "今天及以后的格子会被新的排期替换，包括你手动改过的。今天以前的不动。"
         : "今天及以后的格子会被新的排期替换。今天以前的不动。")
+    }
+  }
+
+  /// 排期, the two weeks beside it, and the one action.
+  private var header: some View {
+    HStack(alignment: .center, spacing: Metrics.sm) {
+      Text("排期").inkStyle(Typo.heading)
+      if let data, data.schedule != nil, data.weeks.count > 1 {
+        let index = weekIndex(data)
+        Picker("", selection: Binding(get: { index }, set: { selectedWeek = $0 })) {
+          ForEach(data.weeks.indices, id: \.self) { i in
+            Text("第 \(i + 1) 周 · \(Self.short(data.weeks[i].first?.date ?? ""))–\(Self.short(data.weeks[i].last?.date ?? ""))").tag(i)
+          }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+      }
+      Spacer(minLength: Metrics.xs)
+      if editable, let data, !data.items.isEmpty {
+        Button(generateTitle(data)) {
+          if data.schedule == nil { generate() } else { confirmsRegenerate = true }
+        }
+        .buttonStyle(QuietButtonStyle())
+        .disabled(isStarting || data.running)
+        .help("从今天起重新排，今天以前的不动。用模型额度。")
+      }
     }
   }
 
@@ -67,11 +88,11 @@ struct CycleSchedulePanel: View {
     case .loaded:
       if let data {
         if data.items.isEmpty {
-          Text("这一期还没有要务。要务写好以后，再在这里排到每一天。")
+          Text("先写要务，再排到每一天。")
             .font(Typo.body).foregroundStyle(Palette.ink3)
         } else if data.schedule == nil && !data.running {
           VStack(alignment: .leading, spacing: Metrics.xs) {
-            Text("还没有排期。排期会把每个角色最重要的事先放进具体时段，其余的分到每一天；之后每天的计划就从这里取当天那一列。")
+            Text("还没有排期。每个角色最重要的事先占时段，其余分到每一天，每天的计划从这里取。")
               .font(Typo.body).foregroundStyle(Palette.ink2)
               .fixedSize(horizontal: false, vertical: true)
             if let error = data.error { Text("上次没排成：\(error)").font(Typo.caption).foregroundStyle(Palette.warn) }
@@ -81,11 +102,13 @@ struct CycleSchedulePanel: View {
             if data.running {
               HStack(spacing: Metrics.xs) {
                 ProgressView().controlSize(.small)
-                Text("正在排期，一两分钟。排好会自己出现。").font(Typo.caption).foregroundStyle(Palette.ink3)
+                Text("正在排，一两分钟").font(Typo.caption).foregroundStyle(Palette.ink3)
               }
             }
             if let error = data.error { Text("上次没排成：\(error)").font(Typo.caption).foregroundStyle(Palette.warn) }
-            if let note = data.schedule?.note { Text(note).font(Typo.body).foregroundStyle(Palette.ink2) }
+            if let note = data.schedule?.note {
+              Text(note).font(Typo.body).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
+            }
             week(data)
             legend
           }
@@ -114,16 +137,6 @@ struct CycleSchedulePanel: View {
     let index = weekIndex(data)
     let days = weeks.isEmpty ? [] : weeks[index]
     return VStack(alignment: .leading, spacing: Metrics.xs) {
-      if weeks.count > 1 {
-        Picker("", selection: Binding(get: { index }, set: { selectedWeek = $0 })) {
-          ForEach(weeks.indices, id: \.self) { i in
-            Text("第 \(i + 1) 周 · \(Self.short(weeks[i].first?.date ?? ""))–\(Self.short(weeks[i].last?.date ?? ""))").tag(i)
-          }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .frame(maxWidth: 360)
-      }
       GeometryReader { geo in
         let column = max(Self.minColumn, (geo.size.width - Self.gutter) / CGFloat(max(days.count, 1)))
         ScrollView(.horizontal) {
@@ -338,22 +351,21 @@ struct CycleSchedulePanel: View {
     switch kind {
     case .event: "\n飞书日程"
     case .routine: "\n作息"
-    case .bigRock: "\n大石头 · 占了这个时段"
-    case .suggested: "\n建议时段 · 拖到一个钟点就固定下来"
+    case .bigRock: "\n大石头"
+    case .suggested: "\n时间不定，拖到钟点上固定"
     }
   }
 
   private var legend: some View {
     HStack(spacing: Metrics.md) {
-      legendItem(Palette.mint600, "大石头 · 占了时段")
+      legendItem(Palette.mint600, "大石头")
       HStack(spacing: 4) {
         RoundedRectangle(cornerRadius: 3).fill(Palette.mint100)
           .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(Palette.mint400, style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
           .frame(width: 14, height: 10)
-        Text("建议时段 · 只定了哪天")
+        Text("当天做，时间不定")
       }
       legendItem(Palette.series[4].opacity(0.85), "飞书日程")
-      if editable { Text("点空白处加一项 · 拖动改时间和日子") }
     }
     .font(Typo.caption).foregroundStyle(Palette.ink3)
   }
@@ -493,15 +505,6 @@ struct CycleSchedulePanel: View {
   }
 
   // MARK: Text
-
-  private var subtitle: String {
-    guard let schedule = data?.schedule else { return "先排双周，再拆每天" }
-    var parts: [String] = []
-    if let generated = schedule.generatedAt { parts.append("生成于 \(Fmt.time(generated))") }
-    if schedule.editedAt != nil { parts.append("你改过") }
-    parts.append("每天的计划从这里取当天那一列")
-    return parts.joined(separator: " · ")
-  }
 
   private func generateTitle(_ data: CycleScheduleState) -> String {
     if data.running || isStarting { return "正在排…" }

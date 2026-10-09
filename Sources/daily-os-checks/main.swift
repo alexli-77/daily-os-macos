@@ -766,6 +766,9 @@ check(DaySchedule.build(items: [sheetItem("a", 30, .done), sheetItem("b", 30, .d
 check(!DaySchedule.build(items: [sheetItem("a", 30, .done), sheetItem("b", 30)],
                          startMinute: t0, nowMinute: noon).isClear, "还有未做就没清完")
 check(!DaySchedule.build(items: [], startMinute: t0, nowMinute: noon).isClear, "空单子不算清完")
+// 未做：自己说了今天没做，这一行就结了——不算过时，不占剩余时长
+let missedDay = DaySchedule.build(items: [sheetItem("a", 30, .missed), sheetItem("b", 30, .done)], startMinute: t0, nowMinute: 23 * 60)
+check(missedDay.isClear && missedDay.lateRows.isEmpty && missedDay.remaining == 0 && missedDay.missedCount == 1, "未做算清完、不算过时、不算剩余")
 
 // 起点：没有「几点开工」字段，退回计划生成时间
 check(DayStart.resolve(generatedAt: nil) == DayStart.fallbackMinute, "没有计划时间就用兜底")
@@ -1152,6 +1155,25 @@ check(weekState.weeks.count == 1 && weekState.weeks[0].count == 2, "按七天一
 check(KeyResultLabel.text(id: "01-KR1", title: "KR1 完成作品集") == nil, "标题已经写了 KR1，就不再重复")
 check(KeyResultLabel.text(id: "02-KR3", title: "坚持每日一画") == "KR3", "去掉目标编号，只留 KR3")
 check(KeyResultLabel.text(id: "KR2", title: "做分享") == "KR2", "本来就没编号的照旧")
+check(KeyResultLabel.text(id: "O1-KR1", title: "KR1 完成作品集") == nil, "O1-KR1 的 O1 也是目标编号")
+check(KeyResultLabel.text(id: "O2-KR3", title: "坚持每日一画") == "KR3", "O2-KR3 只留 KR3")
+
+// 要务的纯文本编辑：没有 ### / - / **，保存时原样变回 markdown。
+let prioritiesMarkdown = """
+### 工作-设计师 MIT
+- 上线落地页 **MIT**
+- 整理 LEO-12 ✅
+
+### 享乐-生活
+本周期无安排
+"""
+let prioritiesPlain = PlainPriorities.plain(from: prioritiesMarkdown)
+check(prioritiesPlain == "工作-设计师 MIT\n上线落地页 MIT\n整理 LEO-12 ✅\n\n享乐-生活\n本周期无安排", "纯文本里没有井号、横杠和星号")
+check(prioritiesPlain.map(PlainPriorities.markdown(from:)) == prioritiesMarkdown, "改都不改就保存，文件一字不变")
+check(PlainPriorities.markdown(from: "健康\n- 跑步 MIT\n\n\n学习\n读书") == "### 健康\n- 跑步 **MIT**\n\n### 学习\n- 读书", "多余空行和手打的横杠都收拾好")
+check(PlainPriorities.markdown(from: "工作\nMITIGATION 方案") == "### 工作\n- MITIGATION 方案", "MIT 只认单独的词")
+check(PlainPriorities.plain(from: "- 标题前的一条\n### 工作\n- 事") == nil, "标题前有零散条目时退回 markdown 编辑")
+check(PlainPriorities.plain(from: "### 工作\n- 事\n  - 子项") == nil, "嵌套列表也退回 markdown 编辑")
 
 // MARK: - 作息
 // 每类一天多少时间：时间块按类别加起来；24:00 结束的块也算对；侧栏里作息排在周期后面。
@@ -1188,7 +1210,7 @@ undoState.toast = "已完成"
 check(undoState.toastUndo == nil, "新的普通提示不带前一条的撤销")
 
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

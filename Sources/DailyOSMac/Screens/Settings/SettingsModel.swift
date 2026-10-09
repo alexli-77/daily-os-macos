@@ -75,25 +75,12 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     }
   }
 
-  /// One line under the screen title, so the content area always says what it is
-  /// for without the panels having to repeat it.
-  var summary: String {
+  /// A line under the screen title, only where it says something the page
+  /// itself does not.
+  var summary: String? {
     switch self {
-    case .overview: "自检结果，以及可以手动跑一次的动作"
-    case .basics: "身份、称呼、时区、语言"
-    case .rhythm: "哪几天算休息日，以及你自己的一周节奏"
-    case .model: "工作流和对话用什么跑，以及它怎么认证"
-    case .feishu: "消息发出去和指令收进来的那条通道"
-    case .sources: "证据从这些地方来，结论回到你的文件里"
-    case .workflows: "日历桥接和后台建议；定时时间在「排程」里改"
-    case .team: "各自的文件仍然在各自机器上，同步只是传输"
-    case .skills: "工作流真正执行的那份 checkout"
-    case .decision: "模型做决定时读的那份 markdown"
-    case .strategy: "决定要务怎么生成的几个文件"
-    case .okr: "五年 / 年度 / 本季三层目标的原文"
-    case .guide: "怎么用；先看这里，再回去填配置"
-    case .service: "本机后台服务的状态与开机自启"
-    case .logs: "最近 7 天的网络与动作记录"
+    case .workflows: "定时时间在「排程」里改"
+    default: nil
     }
   }
 
@@ -289,7 +276,7 @@ struct SkillRepoRow {
   /// "as of the last fetch", because `readSkillRepoState` never touches the
   /// network.
   var behindText: String {
-    if behind < 0 { return "未知（git 没能报告落后多少）" }
+    if behind < 0 { return "未知" }
     if behind == 0 { return "与上次 fetch 时的远端一致" }
     return "落后 \(behind) 个提交"
   }
@@ -761,7 +748,7 @@ enum ModelCatalog {
 
   private static let suggestions: [String: [(String, String)]] = [
     "codex": [
-      ("default", "跟随 Codex CLI 自己的默认值"),
+      ("default", "Codex CLI 的默认值"),
       ("gpt-6-astra", "最强，复杂任务"),
       ("gpt-5.6-terra", "均衡，日常任务"),
       ("gpt-5.6-sol", "稳定的日常主力"),
@@ -938,7 +925,7 @@ extension SettingsSnapshot {
         fix: row.status == .connected ? nil : .action(name: "discover_linear_token", label: "自动查找密钥", what: "查找 Linear 密钥")
       ))
     } else {
-      rows.append(SourceRow(id: "linear", name: "Linear", icon: "square.stack.3d.up", status: .unknown, detail: "已启用，但服务的自检里没有 LINEAR_API_KEY 这一项。"))
+      rows.append(SourceRow(id: "linear", name: "Linear", icon: "square.stack.3d.up", status: .unknown, detail: "已启用，但自检里没有 LINEAR_API_KEY。"))
     }
 
     // Calendar. The one source the service genuinely cannot describe: runDoctor
@@ -946,7 +933,7 @@ extension SettingsSnapshot {
     if config["calendar"]["enabled"].bool {
       rows.append(SourceRow(
         id: "calendar", name: "日历", icon: "calendar", status: .unknown,
-        detail: "calendar.enabled=true，引擎 mode=\(config["calendar"]["engine"]["mode"].string)；服务的自检里没有日历检查项，接没接通要跑一次 calendar_test 才知道。",
+        detail: "calendar.enabled=true，引擎 mode=\(config["calendar"]["engine"]["mode"].string)；自检不含日历，跑一次 calendar_test 才知道是否接通。",
         // The sentence named the thing to run and then made you go and run it
         // somewhere else. This is that sentence with a button on it.
         fix: .action(name: "calendar_test", label: "测试连接", what: "测试日历")
@@ -965,7 +952,7 @@ extension SettingsSnapshot {
         // fix is the same control as the one that set it.
         rows.append(SourceRow(id: "vault", name: "本地 Vault", icon: "folder", status: row.status, detail: row.text, fix: row.status == .connected ? nil : .chooseVaultFolder))
       } else {
-        rows.append(SourceRow(id: "vault", name: "本地 Vault", icon: "folder", status: .unknown, detail: "已启用，但服务的自检里没有 vault.local_path。"))
+        rows.append(SourceRow(id: "vault", name: "本地 Vault", icon: "folder", status: .unknown, detail: "已启用，但自检里没有 vault.local_path。"))
       }
     } else {
       let urlEnv = vault["remote"]["base_url_env"].string
@@ -998,7 +985,7 @@ extension SettingsSnapshot {
           : (repos == 0 ? .addGitHubRepository : nil)
       ))
     } else {
-      rows.append(SourceRow(id: "github", name: "GitHub", icon: "chevron.left.forwardslash.chevron.right", status: .unknown, detail: "已启用，但服务的自检里没有 GITHUB_TOKEN 这一项。"))
+      rows.append(SourceRow(id: "github", name: "GitHub", icon: "chevron.left.forwardslash.chevron.right", status: .unknown, detail: "已启用，但自检里没有 GITHUB_TOKEN。"))
     }
 
     // Team sync. Every field behind this row is a local disk read; none of it
@@ -1007,14 +994,14 @@ extension SettingsSnapshot {
     if !team.configured {
       rows.append(SourceRow(id: "team", name: "团队同步", icon: "person.2", status: .notConfigured, detail: "config.yaml 里没填 team.supabase_url / team.supabase_anon_key"))
     } else if !team.signedIn {
-      rows.append(SourceRow(id: "team", name: "团队同步", icon: "person.2", status: .notConfigured, detail: "Supabase 已配置，但这台机器还没登录。"))
+      rows.append(SourceRow(id: "team", name: "团队同步", icon: "person.2", status: .notConfigured, detail: "Supabase 已配置，本机未登录。"))
     } else if !team.lastError.isEmpty {
       rows.append(SourceRow(id: "team", name: "团队同步", icon: "person.2", status: .trouble, detail: team.lastError))
     } else {
       rows.append(SourceRow(
         id: "team", name: "团队同步", icon: "person.2",
         status: team.hasTeam ? .connected : .trouble,
-        detail: team.hasTeam ? "\(team.teamName)（\(team.members.count) 名成员）" : "已登录，但还没加入任何团队。"
+        detail: team.hasTeam ? "\(team.teamName)（\(team.members.count) 名成员）" : "已登录，未加入团队。"
       ))
     }
 
@@ -1029,7 +1016,7 @@ extension SettingsSnapshot {
     if !inbound && !outbound {
       rows.append(SourceRow(id: "im", name: "IM 机器人（飞书）", icon: "bubble.left.and.bubble.right", status: .notConfigured, detail: "interaction.feishu 和 output.feishu 都是关的"))
     } else if related.isEmpty {
-      rows.append(SourceRow(id: "im", name: "IM 机器人（飞书）", icon: "bubble.left.and.bubble.right", status: .unknown, detail: "已启用，但服务的自检里没有任何飞书相关的检查项。", fix: .action(name: "discover_feishu_setup", label: "自动查找配置", what: "查找飞书配置")))
+      rows.append(SourceRow(id: "im", name: "IM 机器人（飞书）", icon: "bubble.left.and.bubble.right", status: .unknown, detail: "已启用，但自检里没有飞书相关项。", fix: .action(name: "discover_feishu_setup", label: "自动查找配置", what: "查找飞书配置")))
     } else if let bad = related.first(where: { !$0.ok }) ?? related.first(where: { $0.level == "warning" }) {
       rows.append(SourceRow(id: "im", name: "IM 机器人（飞书）", icon: "bubble.left.and.bubble.right", status: .trouble, detail: "\(bad.name)：\(bad.text)", fix: .action(name: "feishu_test", label: "测试发送", what: "测试飞书")))
     } else {

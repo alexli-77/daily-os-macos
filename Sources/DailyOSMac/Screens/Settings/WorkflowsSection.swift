@@ -28,14 +28,14 @@ private struct CalendarPanel: View {
 
   var body: some View {
     @Bindable var store = store
-    Panel("日历草稿", subtitle: "把任务落到时间块，生成的是草稿，不写你的日历") {
+    Panel("日历草稿", subtitle: "只生成草稿，不写你的日历") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         SettingToggle(label: "启用", isOn: $store.draft.calendarEnabled)
         SettingPicker(
           label: "引擎",
           selection: $store.draft.calendarMode,
           options: [("auto", "自动"), ("external", "外部 CLI"), ("builtin", "内置")],
-          hint: "自动 = 外部 CLI 能跑就用它，否则退回内置的简易排布。"
+          hint: "自动：外部 CLI 能用就用，否则用内置简易排布。"
         )
         SettingText(label: "启动命令", text: $store.draft.calendarCommand, placeholder: "node", mono: true)
         SettingPath(
@@ -63,10 +63,10 @@ private struct CalendarPanel: View {
               ActionButton(title: "排本周", action: "calendar_week", store: store)
               ActionButton(title: "排今天", action: "calendar_today", store: store)
             }
-            HintText("测试只跑样例输入，检查路径和 CLI 能不能用，不读你的真实数据。排本周 / 排今天读真实上下文，结果在「概览」的输出块里。")
+            HintText("测试用样例输入检查路径和 CLI，不读真实数据。排本周 / 排今天读真实数据，结果在「概览」的输出块。")
           }
         }
-        HintText("保存这些字段不用重启服务，下一条飞书指令读的就是新配置。")
+        HintText("保存后无需重启，下一条飞书指令即生效。")
       }
     } actions: {
       SaveAction(isDirty: store.isWorkflowsDirty, isBusy: store.isBusy) {
@@ -83,7 +83,7 @@ private struct BackgroundSuggestionsPanel: View {
 
   var body: some View {
     @Bindable var store = store
-    Panel("后台建议", subtitle: "定期扫一遍聊天，找该记下来的事") {
+    Panel("后台建议") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         KeyValueRow("上次运行") {
           HStack(spacing: Metrics.xs) {
@@ -103,19 +103,19 @@ private struct BackgroundSuggestionsPanel: View {
         SettingNumber(
           label: "间隔（分钟）",
           value: $store.draft.backgroundInterval,
-          hint: "每隔这么久扫一次。跑一次要调一次模型，所以这个数字直接决定它每天花多少钱。"
+          hint: "每次扫描调用一次模型，间隔越短花费越多。"
         )
         SettingPicker(
           label: "最低置信度",
           selection: $store.draft.backgroundConfidence,
           options: [("low", "低"), ("medium", "中"), ("high", "高")],
-          hint: "低于这个档的建议直接丢掉，不打扰你。"
+          hint: "低于这一档的建议会被丢弃。"
         )
         SettingToggle(label: "发到飞书", isOn: $store.draft.backgroundSendFeishu)
         SettingToggle(
           label: "只在有变化时发",
           isOn: $store.draft.backgroundChangeOnly,
-          hint: "关掉的话，就算这一轮跟上一轮一模一样也会再发一遍。"
+          hint: "关闭后，结果和上一轮相同也会再发。"
         )
       }
     } actions: {

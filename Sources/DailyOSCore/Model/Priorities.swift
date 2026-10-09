@@ -306,3 +306,93 @@ public struct PrioritiesDocument: Sendable, Equatable {
     return lines.joined(separator: "\n")
   }
 }
+
+// MARK: - Plain text
+
+/// 要务 as plain text, for editing: no `###`, no `- `, no `**`.
+///
+/// One block per objective, blocks separated by a blank line; a block's first
+/// line is the objective, the lines under it are its 要务. `MIT` is written as
+/// the bare word. Saving turns it back into the file's markdown, so the service
+/// and the read view see exactly what they saw before.
+public enum PlainPriorities {
+  /// The plain form, or nil when the markdown holds something this form cannot
+  /// carry back (a line before any heading, a paragraph, a nested list). Then
+  /// the editor shows the markdown itself rather than lose it.
+  public static func plain(from markdown: String) -> String? {
+    var out: [String] = []
+    for raw in markdown.components(separatedBy: "\n") {
+      let line = raw.trimmingCharacters(in: .whitespaces)
+      if line.isEmpty { continue }
+      if let heading = heading(in: line) {
+        if !out.isEmpty { out.append("") }
+        out.append(heading)
+        continue
+      }
+      guard !out.isEmpty, raw.first != " ", raw.first != "\t" else { return nil }
+      if line == PrioritiesDocument.emptyPlaceholder {
+        out.append(line)
+        continue
+      }
+      guard line.hasPrefix("- ") || line.hasPrefix("* ") else { return nil }
+      let body = line.dropFirst(2).trimmingCharacters(in: .whitespaces)
+      out.append(body.replacingOccurrences(of: "**MIT**", with: "MIT"))
+    }
+    return out.joined(separator: "\n")
+  }
+
+  /// Back to the file's markdown.
+  public static func markdown(from plain: String) -> String {
+    var blocks: [[String]] = [[]]
+    for raw in plain.components(separatedBy: "\n") {
+      let line = raw.trimmingCharacters(in: .whitespaces)
+      if line.isEmpty {
+        if !(blocks.last ?? []).isEmpty { blocks.append([]) }
+      } else {
+        blocks[blocks.count - 1].append(line)
+      }
+    }
+    return blocks.filter { !$0.isEmpty }.map { block in
+      var lines = ["### \(stripHashes(block[0]))"]
+      for line in block.dropFirst() {
+        var body = line
+        if body.hasPrefix("- ") || body.hasPrefix("* ") { body = String(body.dropFirst(2)) }
+        lines.append(body == PrioritiesDocument.emptyPlaceholder ? body : "- \(boldMIT(body))")
+      }
+      return lines.joined(separator: "\n")
+    }.joined(separator: "\n\n")
+  }
+
+  private static func heading(in line: String) -> String? {
+    let hashes = line.prefix { $0 == "#" }
+    guard !hashes.isEmpty, hashes.count <= 6 else { return nil }
+    let rest = line.dropFirst(hashes.count)
+    guard rest.first == " " || rest.first == "\t" else { return nil }
+    let title = rest.trimmingCharacters(in: .whitespaces)
+    return title.isEmpty ? nil : title
+  }
+
+  private static func stripHashes(_ line: String) -> String {
+    heading(in: line) ?? line
+  }
+
+  /// Every standalone `MIT` becomes `**MIT**`; one already bold is left alone.
+  static func boldMIT(_ text: String) -> String {
+    guard !text.contains("**MIT**") else { return text }
+    var result = text
+    var search = result.startIndex..<result.endIndex
+    while let range = result.range(of: "MIT", range: search) {
+      let before = range.lowerBound == result.startIndex ? nil : result[result.index(before: range.lowerBound)]
+      let after = range.upperBound == result.endIndex ? nil : result[range.upperBound]
+      let isWord = [before, after].allSatisfy { char in char.map { !$0.isLetter && !$0.isNumber } ?? true }
+      if isWord {
+        result.replaceSubrange(range, with: "**MIT**")
+        let resume = result.index(range.lowerBound, offsetBy: 7)
+        search = resume..<result.endIndex
+      } else {
+        search = range.upperBound..<result.endIndex
+      }
+    }
+    return result
+  }
+}

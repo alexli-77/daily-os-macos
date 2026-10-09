@@ -34,7 +34,7 @@ struct CyclesScreen: View {
             icon: "calendar.badge.plus",
             title: "还没有周期",
             message: state.isViewingSelf
-              ? "建一个周期，规划会填上这一期的要务。也可以直接在 20_CYCLES/ 里写一个 Markdown 文件。"
+              ? "新建周期后，规划会填好这一期的要务。也可以在 20_CYCLES/ 里写 Markdown 文件。"
               : "队友还没有同步过任何周期。",
             // Was a button with an empty closure — it looked like the way out of
             // an empty vault and did nothing at all.
@@ -96,7 +96,7 @@ private struct MemberSwitcher: View {
             }
             .buttonStyle(QuietButtonStyle())
             .disabled(isSyncing)
-            .help("现在拉一次队友的周期和计划，然后刷新。")
+            .help("拉取队友的周期和计划并刷新。")
           }
         }
       }
@@ -132,11 +132,11 @@ private struct MemberSwitcher: View {
   }
 
   private var emptyMessage: String {
-    guard let sync = state.teamSync else { return "还没有队友的周期可以看。" }
+    guard let sync = state.teamSync else { return "还没有队友的周期。" }
     if !sync.isReady {
       return sync.reason.isEmpty ? "同步未开启，只能看自己的周期。" : sync.reason
     }
-    return "还没有队友的周期可以看。等对方加入并同步之后会出现在这里。"
+    return "还没有队友的周期。对方加入并同步后显示在这里。"
   }
 }
 
@@ -267,7 +267,7 @@ private struct CycleTrend: View {
         // A line through one point is a dot, and a dot is not a trend. Say
         // which of the two reasons applies rather than drawing a flat line.
         Text(plotted.isEmpty
-          ? "还没有标记过状态的周期。在要务里点三色圈之后，这里会画出完成率曲线。"
+          ? "还没有标记过状态的周期。在要务里点三色圈后显示完成率曲线。"
           : "只有一期标记过状态，还画不出趋势。")
           .mutedStyle()
           .fixedSize(horizontal: false, vertical: true)
@@ -288,7 +288,7 @@ private struct CycleTrend: View {
       // "in addition to the ones above" when there are none above — and the
       // sentence beside it already said so.
       if skipped > 0, plotted.count >= 2 {
-        Text("另有 \(skipped) 期没有状态标记，没画进来。").mutedStyle()
+        Text("另有 \(skipped) 期没有状态标记，未计入。").mutedStyle()
           .fixedSize(horizontal: false, vertical: true)
       }
     }
@@ -444,18 +444,9 @@ private struct CycleDetail: View {
     }
   }
 
-  private var subtitle: String {
-    // Leads with 本期 / 往期. Opening a cycle from the list and then editing it
-    // is the whole loop of this screen, and "which one is this" has to survive
-    // the moment the list scrolls out of your attention.
-    var parts = [era, cycle.mode.label, cycle.relativePath]
-    if !state.isViewingSelf { parts.append("只读") }
-    return parts.joined(separator: " · ")
-  }
-
-  private var era: String {
-    if cycle.contains(.now) { return "本期" }
-    return cycle.isUpcoming() ? "计划中" : "往期"
+  /// Only what is not on screen already: a teammate's cycle is read-only.
+  private var subtitle: String? {
+    state.isViewingSelf ? nil : "只读"
   }
 
   private var editable: Bool { state.isViewingSelf && cycle.isWritable }
@@ -485,7 +476,7 @@ private struct MissingSectionPanel: View {
   @State private var isWorking = false
 
   var body: some View {
-    Panel(kind.label, subtitle: kind.hint) {
+    Panel(kind.label) {
       VStack(alignment: .leading, spacing: Metrics.sm) {
         Text(explanation)
           .mutedStyle(Typo.body)
@@ -512,12 +503,12 @@ private struct MissingSectionPanel: View {
     switch kind {
     case .priorities:
       isCurrent
-        ? "这个周期的要务还没生成好——上次规划可能失败或还在跑。可以在这里重新生成，会跑一次周期规划（约十分钟），跑完自动出现。"
-        : "这个周期没有要务，且只能重新生成「当前周期」。历史周期暂不支持在这里重跑。"
+        ? "要务还没生成，上次规划可能失败或还在跑。重新生成会跑一次周期规划，约十分钟。"
+        : "这个周期没有要务。只有当前周期能重新生成。"
     case .retro:
-      "这个周期还没有复盘。复盘只能你自己写，这里只放一个空模板：三个小标题是规划下一期时会读回去的那三个，写在它们下面才不会被当成一整段。"
+      "还没有复盘。复盘要你自己写，这里可以放一个空模板。规划下一期时会读三个小标题下的内容。"
     case .review:
-      "这个周期还没有总结。可以让 life-review-os 按这一期的要务和复盘写一版，生成之后照样可以改。"
+      "还没有总结。可以让 life-review-os 按这一期的要务和复盘生成，生成后可以改。"
     }
   }
 
@@ -548,14 +539,6 @@ private struct MissingSectionPanel: View {
 
 // MARK: - Section
 
-private enum SectionMode: String, CaseIterable, Identifiable {
-  case read
-  case edit
-
-  var id: String { rawValue }
-  var label: String { self == .read ? "阅读" : "编辑" }
-}
-
 /// One of the three sections, in either mode.
 ///
 /// Read mode renders the markdown as the thing it describes — for 要务 that
@@ -564,26 +547,42 @@ private enum SectionMode: String, CaseIterable, Identifiable {
 /// daily, and the raw view is the escape hatch for everything the renderer does
 /// not know about, which in a hand-edited markdown file is always something.
 ///
-/// Switching to 阅读 with unsaved text keeps the draft rather than discarding
-/// it, so the toggle can never eat typing and needs no confirmation dialog.
+/// 编辑 is one button: on, the section becomes a text box and 保存 appears
+/// beside it; off again keeps the draft, so nothing typed is lost. 要务 are
+/// edited as plain lines (`PlainPriorities`) — no `###`, `- ` or `**`.
 private struct CycleSectionPanel: View {
   @Environment(AppState.self) private var state
   let cycle: Cycle
   let section: CycleSection
   let editable: Bool
 
-  @State private var mode: SectionMode = .read
+  @State private var isEditing = false
+  /// What is in the text box, in the box's own form (plain lines for 要务).
   @State private var draft: String?
   @State private var showsDraftComparison = false
   @State private var confirmingReplan = false
 
+  /// 要务 in plain lines, when the file can be carried back from them.
+  private var plainBody: String? {
+    section.kind == .priorities ? PlainPriorities.plain(from: section.body) : nil
+  }
+
+  /// The section as the text box shows it.
+  private var editableBody: String { plainBody ?? section.body }
+
   private var isDirty: Bool {
     guard let draft else { return false }
-    return draft != section.body
+    return draft != editableBody
+  }
+
+  /// The draft back in the file's form.
+  private var savedBody: String {
+    let text = draft ?? editableBody
+    return plainBody != nil ? PlainPriorities.markdown(from: text) : text
   }
 
   var body: some View {
-    Panel(section.kind.label, subtitle: section.kind.hint) {
+    Panel(section.kind.label) {
       VStack(alignment: .leading, spacing: Metrics.sm) {
         if section.pendingDraft != nil {
           DraftBanner(
@@ -599,12 +598,13 @@ private struct CycleSectionPanel: View {
           } trailing: {
             LabeledBody(label: "自动规划的新草稿", text: pending, tone: .warn)
           }
-        } else if mode == .edit {
+        } else if isEditing {
           TextEditor(text: Binding(
-            get: { draft ?? section.body },
+            get: { draft ?? editableBody },
             set: { draft = $0 }
           ))
-          .font(Typo.monoBody)
+          .font(Typo.body)
+          .lineSpacing(4)
           .scrollContentBackground(.hidden)
           .padding(Metrics.xs)
           .frame(minHeight: 220)
@@ -621,7 +621,6 @@ private struct CycleSectionPanel: View {
         }
 
         HStack(spacing: Metrics.xs) {
-          Pill(section.source.label, tone: section.source.tone)
           Text("更新于 \(Fmt.stamp(section.updatedAt))").mutedStyle()
           if isDirty {
             Pill("未保存", tone: .warn)
@@ -645,23 +644,19 @@ private struct CycleSectionPanel: View {
               Button("重新生成（约十分钟）") { replan() }
               Button("取消", role: .cancel) {}
             } message: {
-              Text("会跑一次周期规划，覆盖自动生成的要务；你手工改过的会作为新草稿供你对比合入，不会被直接覆盖。要花订阅额度、约十分钟，跑完自动出现。")
+              Text("约十分钟，用订阅额度。你改过的要务不会被覆盖，新版本会作为草稿给你对比。")
             }
         }
-        Picker("", selection: $mode) {
-          ForEach(SectionMode.allCases) { Text($0.label).tag($0) }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .frame(width: 130)
+        Toggle("编辑", isOn: $isEditing)
+          .toggleStyle(.button)
 
-        if mode == .edit {
+        if isEditing {
           Button("保存") {
-            state.updateSection(cycleID: cycle.id, kind: section.kind, body: draft ?? section.body)
+            state.updateSection(cycleID: cycle.id, kind: section.kind, body: savedBody)
             draft = nil
-            mode = .read
+            isEditing = false
           }
-          .buttonStyle(QuietButtonStyle())
+          .buttonStyle(MossButtonStyle(prominent: true))
           .disabled(!isDirty)
         }
       }
@@ -745,7 +740,7 @@ private struct AlignedPriorities: View {
         // Said once rather than on all seven rows. A cycle planned before an OKR
         // rename matches nothing, and a warning per row is noise with no signal
         // left in it.
-        Label("这一期的要务是按当时的 OKR 规划的，和现在的 OKR 文件对不上", systemImage: "exclamationmark.triangle")
+        Label("这一期的要务按当时的 OKR 规划，和现在的 OKR 文件不一致", systemImage: "exclamationmark.triangle")
           .font(Typo.caption)
           .foregroundStyle(Palette.inkMuted)
           .padding(.bottom, Metrics.sm)
@@ -934,15 +929,6 @@ private struct PrioritiesView: View {
             ProgressTrack(fraction: Double(doc.doneCount) / Double(doc.trackedCount), tone: .ok)
               .frame(maxWidth: 160)
           }
-        } else if doc.trackedCount > 0 {
-          // Gated on markers rather than on items. An untouched cycle drew a
-          // full-width empty bar reading "0 / 13 完成", which says the work was
-          // attempted and none of it landed — while the trend beside it
-          // correctly refused to plot the same cycle as zero. One file, two
-          // stories, and the discouraging one was the lie.
-          Text("\(doc.trackedCount) 条要务，还没标记过状态")
-            .font(Typo.tabularCaption)
-            .foregroundStyle(Palette.inkMuted)
         }
 
         if !doc.loose.isEmpty {
@@ -1062,13 +1048,13 @@ private struct BrokenFrontmatterBanner: View {
       VStack(alignment: .leading, spacing: Metrics.xs) {
         HStack(spacing: Metrics.xs) {
           Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.danger)
-          Text("这个周期文件的 front matter 解析不了，暂时不能编辑").inkStyle(Typo.bodyStrong)
+          Text("front matter 解析失败，暂时不能编辑").inkStyle(Typo.bodyStrong)
         }
         Text(problem)
           .font(Typo.mono)
           .foregroundStyle(Palette.inkMuted)
           .textSelection(.enabled)
-        Text("在编辑器里打开 \(cycle.relativePath) 修好文件顶部的 YAML，之后这里会自动恢复可编辑。")
+        Text("在编辑器里修好 \(cycle.relativePath) 顶部的 YAML，之后自动恢复编辑。")
           .mutedStyle(Typo.body)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -1089,7 +1075,7 @@ private struct DraftBanner: View {
   var body: some View {
     HStack(spacing: Metrics.xs) {
       Image(systemName: "arrow.triangle.branch").foregroundStyle(Palette.warn)
-      Text("自动规划生成了新草稿。你手工改过这一段，所以没有自动覆盖。")
+      Text("自动规划生成了新草稿。你改过这一段，所以没有覆盖。")
         .font(Typo.caption)
         .foregroundStyle(Palette.ink)
       Spacer(minLength: Metrics.xs)
@@ -1174,7 +1160,7 @@ private struct NewCycleSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
           // Said out loud because it is the one field whose text does not end up
           // in the file: it is an input to this planning run and nothing else.
-          Text("出差、考试、休假之类。只作为这次规划的输入，不会写进周期文件。").mutedStyle()
+          Text("出差、考试、休假等。只用于这次规划，不写进周期文件。").mutedStyle()
         }
 
         if let result {
@@ -1222,9 +1208,9 @@ private struct NewCycleSheet: View {
 
   private var defaultPolicy: String {
     guard let previous else {
-      return "还没有上一期可以参考。全部留空的话，就从今天开始排一个双周。"
+      return "没有上一期。全部留空则从今天开始排两周。"
     }
-    return "全部留空的话：接着上一期 \(previous.label)，从它结束的第二天开始，长度也跟它一样。"
+    return "全部留空则接着上一期 \(previous.label)，从它结束的次日开始，长度相同。"
   }
 
   private func field(_ label: String, unit: String, text: Binding<String>, hint: String) -> some View {
@@ -1269,7 +1255,7 @@ private struct NewCycleSheet: View {
     let trimmed = raw.trimmingCharacters(in: .whitespaces)
     if trimmed.isEmpty { return .some(nil) }
     guard let value = Int(trimmed) else {
-      problem = "\(label)要填数字，或者留空按默认来。"
+      problem = "\(label)要填数字，或留空用默认值。"
       return nil
     }
     return .some(value)
@@ -1315,7 +1301,7 @@ private struct CycleOKRInspector: View {
               }
             }
           }
-          HintText("只读。改目标去「OKR」页，那里有编辑。")
+          HintText("只读。去「OKR」页修改。")
         }
         .padding(Metrics.sm)
       }

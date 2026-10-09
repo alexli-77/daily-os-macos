@@ -59,7 +59,7 @@ struct OKRScreen: View {
           EmptyState(
             icon: "target",
             title: "还没有 OKR 文件",
-            message: "在 10_OKR/ 下建一个 markdown 文件，这里会读它。"
+            message: "在 10_OKR/ 下建一个 markdown 文件。"
           )
         }
       }

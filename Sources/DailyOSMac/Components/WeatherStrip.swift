@@ -104,9 +104,9 @@ struct WeatherStrip: View {
 
   private var helpText: String {
     guard let weather = state.weather else {
-      return "没有天气数据。可能是没给定位权限，也可能是取不到 Open-Meteo。"
+      return "没有天气数据。可能没有定位权限，或连不上 Open-Meteo。"
     }
-    return "\(weather.place) · 取于 \(Fmt.stamp(weather.fetchedAt))。每天早中晚各取一次，点一下立刻重取。"
+    return "\(weather.place) · 取于 \(Fmt.stamp(weather.fetchedAt))。每天早中晚各取一次，点击重取。"
   }
 
   private var accessibilityText: String {

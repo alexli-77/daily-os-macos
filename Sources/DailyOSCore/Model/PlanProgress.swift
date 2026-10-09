@@ -78,7 +78,7 @@ public struct PlanSegment: Identifiable, Sendable, Equatable {
     // grouping it with `done` would claim work that is not finished.
     case .partial: 1
     case .open: 2
-    case .deferred: 3
+    case .missed, .deferred: 3
     case .deleted: 4
     }
   }

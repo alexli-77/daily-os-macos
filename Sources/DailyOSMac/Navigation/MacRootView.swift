@@ -237,7 +237,7 @@ private struct DisconnectedBanner: View {
         // needed to help: a teammate's Mac where the service had never been
         // installed, so there was no folder to point at.
         Text(state.serviceDiagnosis.headline).inkStyle(Typo.bodyStrong)
-        Text("所有页面都是空的——这里没有示例数据冒充你的内容。")
+        Text("页面都是空的，不显示示例数据。")
           .mutedStyle()
           .fixedSize(horizontal: false, vertical: true)
       }

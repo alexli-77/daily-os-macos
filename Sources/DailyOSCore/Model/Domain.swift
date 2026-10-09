@@ -510,6 +510,10 @@ public enum TodoState: String, Sendable {
   /// In the call sheet it also carries arithmetic: a partial row's estimate
   /// counts half, because the half you did is behind you.
   case partial
+  /// Not done today, said on purpose (未做): sick, slept in, a flight. The day
+  /// is settled for this row — it is not late, nothing to nag about — but the
+  /// work itself is still open.
+  case missed
   case deferred
   /// A tombstone, matching the service's own `TodoInboxStatus`.
   ///

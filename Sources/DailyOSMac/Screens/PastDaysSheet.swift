@@ -46,7 +46,7 @@ struct PastDaysSheet: View {
     HStack(alignment: .firstTextBaseline) {
       VStack(alignment: .leading, spacing: 2) {
         Text("往日").font(Typo.heading).foregroundStyle(Palette.ink)
-        Text("每天最后一版计划、当天勾到哪一步、晚上的复盘。只能看，不能改。")
+        Text("每天的最终计划、完成情况和复盘。只读。")
           .font(Typo.caption).foregroundStyle(Palette.ink3)
       }
       Spacer()
@@ -208,7 +208,7 @@ private struct PastPlanRow: View {
     HStack(alignment: .firstTextBaseline, spacing: Metrics.sm) {
       Image(systemName: symbol)
         .font(.system(size: 14, weight: .regular))
-        .foregroundStyle(item.state == .open ? Palette.ink3 : Palette.mint600)
+        .foregroundStyle(item.state == .open ? Palette.ink3 : item.state == .missed ? Palette.q1 : Palette.mint600)
         .frame(width: 18)
         .accessibilityLabel(stateLabel)
       VStack(alignment: .leading, spacing: 2) {
@@ -231,6 +231,7 @@ private struct PastPlanRow: View {
     switch item.state {
     case .done: "checkmark.circle.fill"
     case .partial: "circle.lefthalf.filled"
+    case .missed: "xmark.circle"
     case .deferred: "arrow.right.circle"
     case .open, .deleted: "circle"
     }
@@ -240,6 +241,7 @@ private struct PastPlanRow: View {
     switch item.state {
     case .done: "完成"
     case .partial: "做了一部分"
+    case .missed: "未做"
     case .deferred: "顺到第二天"
     case .open, .deleted: "没勾"
     }

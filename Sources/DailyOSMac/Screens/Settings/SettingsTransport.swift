@@ -162,7 +162,7 @@ enum ServiceLink {
   private static func endpoint() throws -> (url: URL, token: String) {
     let root = repoRootPath()
     guard !root.isEmpty else {
-      throw Failure("还没有选择 daily-os 服务仓库。退出重开会回到「选择仓库目录」那一屏。")
+      throw Failure("还没选 daily-os 服务仓库。重开应用可以重新选择。")
     }
     let path = URL(filePath: root).appending(path: "data/runtime/ui.json")
     guard let data = try? Data(contentsOf: path) else {
@@ -242,10 +242,10 @@ enum ServiceLink {
 
     let status = (response as? HTTPURLResponse)?.statusCode ?? 0
     if status == 401 || status == 403 {
-      throw Failure("服务拒绝了本地令牌。它可能刚重启过——重试一次；仍然失败就确认连的是同一个仓库。")
+      throw Failure("服务拒绝了本地令牌，可能刚重启过。先重试；还不行就确认连的是同一个仓库。")
     }
     guard let node = try? JSONDecoder().decode(JSONNode.self, from: data) else {
-      throw Failure("\(path) 的响应解析失败。多半是服务端和客户端版本对不上。")
+      throw Failure("\(path) 的响应解析失败，可能是服务端和客户端版本不一致。")
     }
     // A refused call still answers 200 with `{ ok: false }`, and the sentence
     // beside it is written for a person. `error` is what most handlers set;
