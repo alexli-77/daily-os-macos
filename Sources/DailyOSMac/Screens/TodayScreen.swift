@@ -299,7 +299,7 @@ private struct CallSheetPanel: View {
           // through to the add button; the name and the bottom edge do not.
           ForEach(bandSlots) { slot in
             let shown = shownSlot(slot)
-            RoutineSlotBand(slot: slot)
+            RoutineSlotBand(slot: slot, title: poolTitle(slot))
               .frame(width: lane, height: max(Timeline.y(shown.end, from: shown.start) - 2, 12))
               .offset(x: Timeline.gutter, y: Timeline.y(shown.start, from: origin) + 1)
               .allowsHitTesting(false)
@@ -329,6 +329,7 @@ private struct CallSheetPanel: View {
             let shown = shownSlot(slot)
             SlotHandles(
               slot: slot,
+              title: poolTitle(slot),
               shownStart: shown.start,
               shownEnd: shown.end,
               onMove: { moveSlot(slot, by: $0) },
@@ -479,6 +480,25 @@ private struct CallSheetPanel: View {
       guard let block = slot.blockID else { return true }
       return !rows.contains("rhythm:block:\(block)") && !rows.contains("rhythm:habit:\(block)")
     }
+  }
+
+  /// A slot that repeats a 固定日程 already on today's sheet is that
+  /// 固定日程's spare time, free for anything. Named for what it is, so the
+  /// sheet does not show 「作品集 redesign」 twice.
+  private func poolTitle(_ slot: TodayRoutine.Slot) -> String? {
+    let key = Self.titleKey(slot.title)
+    let rows = Set(schedule.rows.map(\.id))
+    let repeated = (state.todayRoutine?.slots ?? []).contains { other in
+      other.id != slot.id && Self.titleKey(other.title) == key
+        && other.blockID.map { rows.contains("rhythm:block:\($0)") || rows.contains("rhythm:habit:\($0)") } == true
+    }
+    return repeated ? "弹性时间" : nil
+  }
+
+  /// A title as compared: a note for the day in brackets does not make a new one.
+  private static func titleKey(_ title: String) -> String {
+    title.replacingOccurrences(of: "\\s*[（(][^（）()]*[）)]\\s*$", with: "", options: .regularExpression)
+      .trimmingCharacters(in: .whitespaces).lowercased()
   }
 
   private func shownSlot(_ slot: TodayRoutine.Slot) -> (start: Int, end: Int) {
@@ -1547,13 +1567,15 @@ private struct RoutineDayEditor: View {
 /// it draws its own.
 private struct RoutineSlotBand: View {
   let slot: TodayRoutine.Slot
+  /// Shown instead of the slot's own name (弹性时间).
+  var title: String?
 
   var body: some View {
     let color = slot.color.flatMap(Palette.rowColor) ?? Palette.ink3
     ZStack(alignment: .topTrailing) {
       RoundedRectangle(cornerRadius: 6, style: .continuous).fill(color.opacity(slot.floor ? 0.12 : 0.07))
       if slot.blockID == nil {
-        Text(Self.label(slot))
+        Text(title ?? Self.label(slot))
           .font(Typo.caption)
           .foregroundStyle(color.opacity(0.9))
           .padding(.horizontal, Metrics.xs)
@@ -1582,6 +1604,7 @@ private struct RoutineSlotBand: View {
 /// empty time, and clicking it adds a to-do.
 private struct SlotHandles: View {
   let slot: TodayRoutine.Slot
+  var title: String?
   let shownStart: Int
   let shownEnd: Int
   let onMove: (CGFloat) -> Void
@@ -1595,7 +1618,7 @@ private struct SlotHandles: View {
       HStack(spacing: 0) {
         Spacer(minLength: 0)
         if slot.floor { FloorTag(color: color) }
-        Text(RoutineSlotBand.label(slot))
+        Text(title ?? RoutineSlotBand.label(slot))
           .font(Typo.caption)
           .foregroundStyle(color.opacity(0.9))
           .padding(.horizontal, Metrics.xs)
