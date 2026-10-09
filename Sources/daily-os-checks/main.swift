@@ -766,6 +766,12 @@ check(DaySchedule.build(items: [sheetItem("a", 30, .done), sheetItem("b", 30, .d
 check(!DaySchedule.build(items: [sheetItem("a", 30, .done), sheetItem("b", 30)],
                          startMinute: t0, nowMinute: noon).isClear, "还有未做就没清完")
 check(!DaySchedule.build(items: [], startMinute: t0, nowMinute: noon).isClear, "空单子不算清完")
+// 手打时间：精确到分钟，几种写法都认
+check(DaySchedule.minute(typed: "13:07") == 13 * 60 + 7 && DaySchedule.minute(typed: "1307") == 13 * 60 + 7, "13:07 和 1307 都认")
+check(DaySchedule.minute(typed: "9:30") == 570 && DaySchedule.minute(typed: "930") == 570 && DaySchedule.minute(typed: "9") == 540, "9:30、930、9 都认")
+check(DaySchedule.minute(typed: "13：45") == 825, "中文冒号也认")
+check(DaySchedule.minute(typed: "25:00") == nil && DaySchedule.minute(typed: "12:60") == nil && DaySchedule.minute(typed: "abc") == nil, "不是时间就不认")
+check(DaySchedule.minute(typed: "24:00") == nil && DaySchedule.minute(typed: "24:00", allowsMidnight: true) == 1440, "24:00 只给结束时间用")
 // 未做：自己说了今天没做，这一行就结了——不算过时，不占剩余时长
 let missedDay = DaySchedule.build(items: [sheetItem("a", 30, .missed), sheetItem("b", 30, .done)], startMinute: t0, nowMinute: 23 * 60)
 check(missedDay.isClear && missedDay.lateRows.isEmpty && missedDay.remaining == 0 && missedDay.missedCount == 1, "未做算清完、不算过时、不算剩余")
@@ -1210,7 +1216,7 @@ undoState.toast = "已完成"
 check(undoState.toastUndo == nil, "新的普通提示不带前一条的撤销")
 
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态, 手打时间")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

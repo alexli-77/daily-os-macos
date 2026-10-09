@@ -414,8 +414,15 @@ private struct CallSheetPanel: View {
 
   // MARK: 作息 slots, today only
 
+  /// Slots drawn as bands: the ones with no 固定日程 row of their own (the
+  /// flexible pool, or one deleted for today).
   private var bandSlots: [TodayRoutine.Slot] {
-    (state.todayRoutine?.slots ?? []).filter { !$0.habit }
+    let rows = Set(schedule.rows.map(\.id))
+    return (state.todayRoutine?.slots ?? []).filter { slot in
+      guard !slot.habit else { return false }
+      guard let block = slot.blockID else { return true }
+      return !rows.contains("rhythm:block:\(block)") && !rows.contains("rhythm:habit:\(block)")
+    }
   }
 
   private func shownSlot(_ slot: TodayRoutine.Slot) -> (start: Int, end: Int) {
@@ -658,6 +665,7 @@ private struct CallSheetRow: View {
   /// The row's time in the editor, minutes from midnight. Nil start: no time.
   @State private var editStart: Int?
   @State private var editEnd: Int?
+  @State private var editText = ""
 
   private var item: TodoItem { row.item }
   private var commands: RowCommands { RowCommands(state: state, row: row, isPlanRow: isPlanRow) }
@@ -671,7 +679,9 @@ private struct CallSheetRow: View {
 
   /// A meal or routine is never the day's MIT, and a capture off the plan has
   /// nowhere to record it.
-  private var canBeMIT: Bool { isPlanRow && !item.id.hasPrefix("rhythm:") }
+  private var canBeMIT: Bool {
+    isPlanRow && (!item.id.hasPrefix("rhythm:") || item.id.hasPrefix("rhythm:block:"))
+  }
 
   /// Fixed locale: the wire format is always `yyyy-MM-dd`.
   private static let dayFormatter: DateFormatter = {
@@ -725,6 +735,7 @@ private struct CallSheetRow: View {
     // as its slot, and an editor growing inside it would be clipped away.
     .popover(isPresented: rowEditorBinding, arrowEdge: .trailing) {
       RowEditor(
+        text: $editText,
         color: $editColor,
         note: $editNote,
         isMIT: $editMIT,
@@ -797,7 +808,20 @@ private struct CallSheetRow: View {
           .opacity(isSettled ? 0.4 : 1)
           .padding(.top, 1)
       }
-      if item.isHabit {
+      if item.isFloor {
+        FloorTag(color: tint.ink)
+          .opacity(isSettled ? 0.5 : 1)
+          .padding(.top, isMIT ? 0 : 1)
+      }
+      if item.isFixed, !item.isHabit, let category = item.categoryLabel {
+        Text(category)
+          .font(Typo.caption)
+          .foregroundStyle(tint.ink)
+          .padding(.horizontal, 6)
+          .padding(.vertical, 1)
+          .overlay(Capsule().strokeBorder(tint.ink.opacity(0.7), lineWidth: 1))
+          .opacity(isSettled ? 0.5 : 1)
+      } else if item.isHabit {
         Text("习惯")
           .font(Typo.caption)
           .foregroundStyle(Palette.rowColor("blue") ?? Palette.ink2)
@@ -840,6 +864,7 @@ private struct CallSheetRow: View {
     editMIT = isMIT
     editStart = row.start
     editEnd = row.end
+    editText = item.text
     isEditingRow = true
   }
 
@@ -860,14 +885,16 @@ private struct CallSheetRow: View {
       let current = row.start.flatMap { s in row.end.map { $0 - s } }
       if shown != current { newMinutes = item.state == .partial ? shown * 2 : shown }
     }
-    let edits = newColor != nil || newNote != nil || newMIT != nil
+    let trimmed = editText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let newText = !trimmed.isEmpty && trimmed != item.text ? trimmed : nil
+    let edits = newText != nil || newColor != nil || newNote != nil || newMIT != nil
     guard edits || newMinutes != nil || newStart != nil else { return }
     let candidateID = item.id
     let rank = row.rank
     Task {
       var failure: String?
       if edits, isPlanRow {
-        let outcome = await state.updatePlanRow(candidateID: candidateID, rank: rank, text: nil, color: newColor, note: newNote, mit: newMIT)
+        let outcome = await state.updatePlanRow(candidateID: candidateID, rank: rank, text: newText, color: newColor, note: newNote, mit: newMIT)
         if case .failed(let why) = outcome { failure = why } else if case .unsupported(let why) = outcome { failure = why }
       }
       if failure == nil, let newMinutes {
@@ -1007,6 +1034,7 @@ private struct RowCommands {
 /// What clicking a row opens: MIT, length, colour, an update. Staged, sent on
 /// 保存 (or on clicking away, like Calendar).
 private struct RowEditor: View {
+  @Binding var text: String
   /// Nil = coloured by source.
   @Binding var color: String?
   @Binding var note: String
@@ -1024,8 +1052,13 @@ private struct RowEditor: View {
   let onCancel: () -> Void
   let onSave: () -> Void
 
+  /// Matches the service's cap and the daily_plan prompt's rule.
+  static let maxLength = 150
+
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.sm) {
+      TopicField(text: $text, maxLength: Self.maxLength)
+
       if canBeMIT {
         field("MIT") {
           Toggle(isOn: $isMIT) {
@@ -1106,66 +1139,135 @@ private struct RowEditor: View {
 
 // MARK: - Time range
 
-/// Start and end, like a calendar's event: two dropdowns on the half hour. The
-/// end list says how long each choice makes it; moving the start keeps the
-/// length.
+/// Start and end, like a calendar event: type any time, or pick one from the
+/// list on the quarter hour. The end list says how long each choice makes it;
+/// moving the start keeps the length.
 private struct TimeRangeField: View {
   @Binding var start: Int?
   @Binding var end: Int?
 
-  private static let step = 30
+  private static let step = 15
   private static let firstStart = 5 * 60
   private static let dayEnd = 24 * 60
 
   var body: some View {
     HStack(spacing: Metrics.xs) {
-      Picker("开始", selection: startBinding) {
-        if start == nil { Text("不定").tag(Int?.none) }
-        ForEach(startOptions, id: \.self) { minute in
-          Text(DaySchedule.clock(minute)).tag(Int?.some(minute))
-        }
-      }
-      .labelsHidden()
-      .fixedSize()
+      ClockField(minute: startBinding, options: startOptions)
       Text("—").foregroundStyle(Palette.ink3)
-      Picker("结束", selection: $end) {
-        if end == nil { Text("不定").tag(Int?.none) }
-        ForEach(endOptions, id: \.self) { minute in
-          Text("\(Self.clock(minute))  ·  \(DaySchedule.duration(minute - (start ?? minute)))").tag(Int?.some(minute))
-        }
+      ClockField(minute: endBinding, options: endOptions, allowsMidnight: true) { minute in
+        "\(ClockField.clock(minute))  ·  \(DaySchedule.duration(minute - (start ?? minute)))"
       }
-      .labelsHidden()
-      .fixedSize()
       .disabled(start == nil)
     }
-    .monospacedDigit()
   }
 
   /// A new start carries the length along, inside the day.
   private var startBinding: Binding<Int?> {
     Binding(get: { start }, set: { newStart in
-      guard let newStart else { start = nil; return }
-      let length = start.flatMap { old in end.map { $0 - old } } ?? Self.step
+      guard let newStart else { return }
+      let length = start.flatMap { old in end.map { $0 - old } } ?? 30
       start = newStart
-      end = min(Self.dayEnd, newStart + max(length, 15))
+      end = min(Self.dayEnd, newStart + max(length, 5))
+    })
+  }
+
+  /// An end at or before the start is not a time range; it is ignored.
+  private var endBinding: Binding<Int?> {
+    Binding(get: { end }, set: { newEnd in
+      guard let newEnd, newEnd > (start ?? -1) else { return }
+      end = newEnd
     })
   }
 
   private var startOptions: [Int] {
-    var options = Array(stride(from: Self.firstStart, to: Self.dayEnd, by: Self.step))
-    if let start, !options.contains(start) { options.append(start) }
-    return options.sorted()
+    Array(stride(from: Self.firstStart, to: Self.dayEnd, by: Self.step))
   }
 
   private var endOptions: [Int] {
-    guard let start else { return end.map { [$0] } ?? [] }
-    var options = Array(stride(from: start + Self.step, through: Self.dayEnd, by: Self.step))
-    if let end, end > start, !options.contains(end) { options.append(end) }
-    return options.sorted()
+    guard let start else { return [] }
+    let first = (start / Self.step + 1) * Self.step
+    return Array(stride(from: first, through: Self.dayEnd, by: Self.step))
+  }
+}
+
+/// One time, typed or picked. Accepts "13:07", "1307", "9:30", "930" or "9";
+/// anything else goes back to what it was.
+private struct ClockField: View {
+  @Binding var minute: Int?
+  let options: [Int]
+  var allowsMidnight = false
+  var label: (Int) -> String = { ClockField.clock($0) }
+
+  @State private var text = ""
+  @FocusState private var focused: Bool
+
+  init(minute: Binding<Int?>, options: [Int], allowsMidnight: Bool = false, label: ((Int) -> String)? = nil) {
+    _minute = minute
+    self.options = options
+    self.allowsMidnight = allowsMidnight
+    if let label { self.label = label }
   }
 
-  private static func clock(_ minute: Int) -> String {
-    minute >= dayEnd ? "24:00" : DaySchedule.clock(minute)
+  var body: some View {
+    HStack(spacing: 2) {
+      TextField("--:--", text: $text)
+        .textFieldStyle(.plain)
+        .font(Typo.body.monospacedDigit())
+        .frame(width: 46)
+        .focused($focused)
+        .onSubmit(commit)
+      Menu {
+        ForEach(options, id: \.self) { option in
+          Button(label(option)) {
+            minute = option
+            text = Self.clock(option)
+          }
+        }
+      } label: {
+        Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+      }
+      .menuStyle(.borderlessButton)
+      .menuIndicator(.hidden)
+      .fixedSize()
+    }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 4)
+    .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(focused ? Palette.mint400 : Palette.line, lineWidth: 1))
+    .onAppear { text = minute.map(Self.clock) ?? "" }
+    .onChange(of: minute) { _, new in if !focused { text = new.map(Self.clock) ?? "" } }
+    .onChange(of: focused) { _, isFocused in if !isFocused { commit() } }
+  }
+
+  private func commit() {
+    if let parsed = Self.parse(text, allowsMidnight: allowsMidnight) {
+      minute = parsed
+    }
+    text = minute.map(Self.clock) ?? ""
+  }
+
+  static func clock(_ minute: Int) -> String {
+    minute >= 24 * 60 ? "24:00" : DaySchedule.clock(minute)
+  }
+
+  static func parse(_ text: String, allowsMidnight: Bool) -> Int? {
+    DaySchedule.minute(typed: text, allowsMidnight: allowsMidnight)
+  }
+}
+
+/// The title, as a calendar event's: large, grey 添加主题 until something is written.
+private struct TopicField: View {
+  @Binding var text: String
+  let maxLength: Int
+
+  var body: some View {
+    TextField("添加主题", text: $text, axis: .vertical)
+      .textFieldStyle(.plain)
+      .font(Typo.heading)
+      .lineLimit(1...4)
+      .onChange(of: text) { _, new in
+        if new.count > maxLength { text = String(new.prefix(maxLength)) }
+      }
   }
 }
 
@@ -1182,20 +1284,18 @@ private struct QuickAdd: View {
 
   @State private var title = ""
   @State private var itemKey: String?
-  @State private var minutes = 60
+  @State private var startMinute: Int?
+  @State private var endMinute: Int?
   @State private var items: [CycleScheduleState.Item] = []
   @State private var isSaving = false
   @FocusState private var focused: Bool
 
-  private static let lengths = [30, 60, 90, 120, 180]
-
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.sm) {
-      Text("\(DaySchedule.clock(start)) 加一项").font(Typo.caption).foregroundStyle(Palette.ink3)
-      TextField("做什么", text: $title)
-        .textFieldStyle(.roundedBorder)
+      TopicField(text: $title, maxLength: RowEditor.maxLength)
         .focused($focused)
         .onSubmit(save)
+      TimeRangeField(start: $startMinute, end: $endMinute)
       if !items.isEmpty {
         VStack(alignment: .leading, spacing: Metrics.xxs) {
           Text("或者从本期要务里选").font(Typo.caption).foregroundStyle(Palette.ink3)
@@ -1205,12 +1305,6 @@ private struct QuickAdd: View {
               title = CycleSchedulePanel.clean(item.text)
             }
           }
-        }
-      }
-      HStack(spacing: Metrics.xxs) {
-        ForEach(Self.lengths, id: \.self) { length in
-          Button(Fmt.minutes(length)) { minutes = length }
-            .buttonStyle(QuietButtonStyle(tone: minutes == length ? .accent : .neutral))
         }
       }
       HStack {
@@ -1224,7 +1318,11 @@ private struct QuickAdd: View {
     }
     .padding(Metrics.md)
     .frame(width: 380)
-    .onAppear { focused = true }
+    .onAppear {
+      startMinute = start
+      endMinute = min(24 * 60, start + 60)
+      focused = true
+    }
     .task {
       guard let cycle = state.currentCycle, case .success(let loaded) = await state.loadCycleSchedule(cycleID: cycle.id) else { return }
       items = loaded.items
@@ -1235,9 +1333,10 @@ private struct QuickAdd: View {
     let text = title.trimmingCharacters(in: .whitespaces)
     guard !text.isEmpty, !isSaving else { return }
     isSaving = true
-    let end = min(24 * 60, start + minutes)
+    let from = startMinute ?? start
+    let end = max(from + 5, min(24 * 60, endMinute ?? from + 60))
     let request = AdhocRequest(
-      title: text, itemKey: itemKey, start: DaySchedule.clock(start), end: end == 24 * 60 ? "24:00" : DaySchedule.clock(end),
+      title: text, itemKey: itemKey, start: DaySchedule.clock(from), end: end == 24 * 60 ? "24:00" : DaySchedule.clock(end),
       extra: false, displaced: []
     )
     Task {

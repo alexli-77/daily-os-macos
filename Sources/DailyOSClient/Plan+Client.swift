@@ -43,6 +43,10 @@ struct TodayPlanResponse: Decodable {
     let mitByUser: Bool?
     /// In a habit slot of today's 作息.
     let habit: Bool?
+    /// A 固定日程 row, its 保底 mark and its category.
+    let fixed: Bool?
+    let floor: Bool?
+    let category: String?
   }
 
   let plan: Plan?
@@ -113,7 +117,10 @@ extension DailyOSClient {
           colorTag: todo.color,
           isMIT: knowsMIT ? (todo.mit ?? false) : nil,
           mitByUser: todo.mitByUser ?? false,
-          isHabit: todo.habit ?? false
+          isHabit: todo.habit ?? false,
+          isFixed: todo.fixed ?? false,
+          isFloor: todo.floor ?? false,
+          categoryLabel: todo.category
         )
       }
 
