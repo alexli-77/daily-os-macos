@@ -655,7 +655,9 @@ private struct CallSheetRow: View {
   @State private var editColor: String?
   @State private var editNote = ""
   @State private var editMIT = false
-  @State private var editMinutes: Int?
+  /// The row's time in the editor, minutes from midnight. Nil start: no time.
+  @State private var editStart: Int?
+  @State private var editEnd: Int?
 
   private var item: TodoItem { row.item }
   private var commands: RowCommands { RowCommands(state: state, row: row, isPlanRow: isPlanRow) }
@@ -726,10 +728,11 @@ private struct CallSheetRow: View {
         color: $editColor,
         note: $editNote,
         isMIT: $editMIT,
-        minutes: $editMinutes,
+        start: $editStart,
+        end: $editEnd,
         canBeMIT: canBeMIT,
         mitByUser: item.mitByUser,
-        showsEstimate: isEditable,
+        showsTime: isEditable,
         autoColor: BlockTint.forTask(candidateID: item.id).ink,
         onUnpin: onUnpin.map { unpin in { isEditingRow = false; unpin() } },
         onCancel: { isEditingRow = false },
@@ -835,7 +838,8 @@ private struct CallSheetRow: View {
     editColor = item.colorTag
     editNote = ""
     editMIT = isMIT
-    editMinutes = item.estimatedMinutes
+    editStart = row.start
+    editEnd = row.end
     isEditingRow = true
   }
 
@@ -847,10 +851,17 @@ private struct CallSheetRow: View {
     let newColor = editColor != item.colorTag ? (editColor ?? "auto") : nil
     let newNote = note.isEmpty ? nil : note
     let newMIT = canBeMIT && editMIT != isMIT ? editMIT : nil
-    let newMinutes = isEditable && editMinutes != item.estimatedMinutes ? editMinutes : nil
-    let clearsMinutes = isEditable && editMinutes == nil && item.estimatedMinutes != nil
+    // The time: a new start pins the row there; a new length is its estimate
+    // (a partial row is drawn at half, so what is stored is twice the shown).
+    let newStart = isEditable && editStart != row.start ? editStart : nil
+    var newMinutes: Int?
+    if isEditable, let start = editStart, let end = editEnd, end > start {
+      let shown = end - start
+      let current = row.start.flatMap { s in row.end.map { $0 - s } }
+      if shown != current { newMinutes = item.state == .partial ? shown * 2 : shown }
+    }
     let edits = newColor != nil || newNote != nil || newMIT != nil
-    guard edits || newMinutes != nil || clearsMinutes else { return }
+    guard edits || newMinutes != nil || newStart != nil else { return }
     let candidateID = item.id
     let rank = row.rank
     Task {
@@ -859,8 +870,12 @@ private struct CallSheetRow: View {
         let outcome = await state.updatePlanRow(candidateID: candidateID, rank: rank, text: nil, color: newColor, note: newNote, mit: newMIT)
         if case .failed(let why) = outcome { failure = why } else if case .unsupported(let why) = outcome { failure = why }
       }
-      if failure == nil, newMinutes != nil || clearsMinutes {
+      if failure == nil, let newMinutes {
         let outcome = await state.setPlanEstimate(candidateID: candidateID, rank: rank, minutes: newMinutes)
+        if case .failed(let why) = outcome { failure = why } else if case .unsupported(let why) = outcome { failure = why }
+      }
+      if failure == nil, let newStart {
+        let outcome = await state.placePlanItem(candidateID, rank: rank, start: newStart)
         if case .failed(let why) = outcome { failure = why } else if case .unsupported(let why) = outcome { failure = why }
       }
       state.toast = failure ?? "已保存"
@@ -996,19 +1011,18 @@ private struct RowEditor: View {
   @Binding var color: String?
   @Binding var note: String
   @Binding var isMIT: Bool
-  @Binding var minutes: Int?
+  @Binding var start: Int?
+  @Binding var end: Int?
   let canBeMIT: Bool
   /// The MIT shown is the user's own choice, not the plan's suggestion.
   let mitByUser: Bool
-  let showsEstimate: Bool
+  let showsTime: Bool
   /// The colour the row has when none is chosen, for the 按来源 swatch.
   let autoColor: Color
   /// Set when the row is pinned to a time; releases it to automatic layout.
   let onUnpin: (() -> Void)?
   let onCancel: () -> Void
   let onSave: () -> Void
-
-  private static let presets = [15, 30, 45, 60, 90, 120]
 
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.sm) {
@@ -1022,19 +1036,8 @@ private struct RowEditor: View {
         }
       }
 
-      if showsEstimate {
-        field("时长") {
-          HStack(spacing: Metrics.xxs) {
-            ForEach(Self.presets, id: \.self) { preset in
-              Button(Fmt.minutes(preset)) { minutes = preset }
-                .buttonStyle(EstimateChipStyle(isCurrent: minutes == preset))
-            }
-            if minutes != nil {
-              Button("清除") { minutes = nil }
-                .buttonStyle(QuietButtonStyle(tone: .neutral))
-            }
-          }
-        }
+      if showsTime {
+        field("时间") { TimeRangeField(start: $start, end: $end) }
       }
 
       field("颜色 · 只对今天") {
@@ -1098,6 +1101,71 @@ private struct RowEditor: View {
     .help(label)
     .accessibilityLabel(label)
     .accessibilityAddTraits(selected ? [.isSelected] : [])
+  }
+}
+
+// MARK: - Time range
+
+/// Start and end, like a calendar's event: two dropdowns on the half hour. The
+/// end list says how long each choice makes it; moving the start keeps the
+/// length.
+private struct TimeRangeField: View {
+  @Binding var start: Int?
+  @Binding var end: Int?
+
+  private static let step = 30
+  private static let firstStart = 5 * 60
+  private static let dayEnd = 24 * 60
+
+  var body: some View {
+    HStack(spacing: Metrics.xs) {
+      Picker("开始", selection: startBinding) {
+        if start == nil { Text("不定").tag(Int?.none) }
+        ForEach(startOptions, id: \.self) { minute in
+          Text(DaySchedule.clock(minute)).tag(Int?.some(minute))
+        }
+      }
+      .labelsHidden()
+      .fixedSize()
+      Text("—").foregroundStyle(Palette.ink3)
+      Picker("结束", selection: $end) {
+        if end == nil { Text("不定").tag(Int?.none) }
+        ForEach(endOptions, id: \.self) { minute in
+          Text("\(Self.clock(minute))  ·  \(DaySchedule.duration(minute - (start ?? minute)))").tag(Int?.some(minute))
+        }
+      }
+      .labelsHidden()
+      .fixedSize()
+      .disabled(start == nil)
+    }
+    .monospacedDigit()
+  }
+
+  /// A new start carries the length along, inside the day.
+  private var startBinding: Binding<Int?> {
+    Binding(get: { start }, set: { newStart in
+      guard let newStart else { start = nil; return }
+      let length = start.flatMap { old in end.map { $0 - old } } ?? Self.step
+      start = newStart
+      end = min(Self.dayEnd, newStart + max(length, 15))
+    })
+  }
+
+  private var startOptions: [Int] {
+    var options = Array(stride(from: Self.firstStart, to: Self.dayEnd, by: Self.step))
+    if let start, !options.contains(start) { options.append(start) }
+    return options.sorted()
+  }
+
+  private var endOptions: [Int] {
+    guard let start else { return end.map { [$0] } ?? [] }
+    var options = Array(stride(from: start + Self.step, through: Self.dayEnd, by: Self.step))
+    if let end, end > start, !options.contains(end) { options.append(end) }
+    return options.sorted()
+  }
+
+  private static func clock(_ minute: Int) -> String {
+    minute >= dayEnd ? "24:00" : DaySchedule.clock(minute)
   }
 }
 
