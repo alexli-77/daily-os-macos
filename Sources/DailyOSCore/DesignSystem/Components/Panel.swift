@@ -35,16 +35,14 @@ public struct Panel<Content: View, Actions: View>: View {
     VStack(alignment: .leading, spacing: 0) {
       if title != nil || subtitle != nil {
         HStack(alignment: .firstTextBaseline, spacing: Metrics.sm) {
-          VStack(alignment: .leading, spacing: Metrics.xxs) {
-            // Beside the title, not out with the actions. It is a fact *about*
-            // the panel's subject — this plan is today's, this day is still in
-            // progress — and a status that drifts to the far right reads as one
-            // more control rather than as part of the heading.
-            HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
-              if let title { Text(title).inkStyle(Typo.heading) }
-              if let badge { Pill(badge, tone: badgeTone) }
-            }
-            if let subtitle { Text(subtitle).mutedStyle() }
+          // Beside the title, not out with the actions. It is a fact *about*
+          // the panel's subject, and a status that drifts to the far right
+          // reads as one more control. The small text follows the title on
+          // the same line.
+          HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
+            if let title { Text(title).inkStyle(Typo.heading) }
+            if let badge { Pill(badge, tone: badgeTone) }
+            if let subtitle { Text(subtitle).mutedStyle().fixedSize(horizontal: false, vertical: true) }
           }
           Spacer(minLength: Metrics.xs)
           actions
@@ -125,10 +123,10 @@ public struct ScreenScaffold<Content: View, Toolbar: View>: View {
     ScrollView {
       VStack(alignment: .leading, spacing: Metrics.md) {
         HStack(alignment: .firstTextBaseline) {
-          VStack(alignment: .leading, spacing: Metrics.xxs) {
-            Text(title).inkStyle(Typo.display)
-            if let subtitle { Text(subtitle).mutedStyle() }
-          }
+          // The small text follows the title on its line, and wraps under it.
+          (Text(title).font(Typo.display).foregroundColor(Palette.ink)
+            + Text(subtitle.map { "    \($0)" } ?? "").font(Typo.caption).foregroundColor(Palette.ink2))
+            .fixedSize(horizontal: false, vertical: true)
           Spacer(minLength: Metrics.sm)
           toolbar
         }
