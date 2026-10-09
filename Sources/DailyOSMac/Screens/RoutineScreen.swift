@@ -7,8 +7,8 @@ import DailyOSCore
 /// starts and ends, its day types (workday / weekend) and their modes (作品集日
 /// / Cutto 日), each drawn as the day it describes. A coloured block is time
 /// kept for one category — the day's to-dos of that category go into it; a
-/// grey one is fixed (getting up, meals, meetings). Dashed is a floor: the
-/// least that category gets on a busy day.
+/// grey one is fixed (getting up, meals, meetings). A solid outline and a 保底
+/// tag mark a floor: the least that category gets on a busy day.
 ///
 /// The frame changes rarely and the times inside it more often, so editing is
 /// in place: click a block to change it, every change is saved at once.
@@ -491,7 +491,7 @@ private struct RoutineBlockView: View {
         HStack(spacing: Metrics.xxs) {
           Text(block.title).font(Typo.label).foregroundStyle(Palette.ink).lineLimit(1)
           if let category, isSlot { Text(category.label).font(Typo.caption).foregroundStyle(color) }
-          if block.floor == true { Text("保底").font(Typo.caption).foregroundStyle(color) }
+          if block.floor == true { FloorTag(color: color) }
         }
         if let note = block.note, !note.isEmpty, block.minutes >= 40 {
           Text(note).font(Typo.caption).foregroundStyle(Palette.ink3).lineLimit(2)
@@ -505,7 +505,7 @@ private struct RoutineBlockView: View {
     .background(isSlot ? color.opacity(0.14) : Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     .overlay {
       if block.floor == true {
-        RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(color, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+        RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(color, lineWidth: 1.5)
       }
     }
     .contentShape(Rectangle())
@@ -758,4 +758,18 @@ private struct RulesPanel: View {
 
 #Preview("作息") {
   RoutineScreen().environment(AppState.previewOwner())
+}
+
+/// 保底: filled, so a floor reads as a commitment, not as a maybe.
+struct FloorTag: View {
+  let color: Color
+
+  var body: some View {
+    Text("保底")
+      .font(Typo.caption.weight(.semibold))
+      .foregroundStyle(Palette.page)
+      .padding(.horizontal, 5)
+      .padding(.vertical, 1)
+      .background(color, in: Capsule())
+  }
 }
