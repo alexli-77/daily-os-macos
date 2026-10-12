@@ -112,6 +112,10 @@ open class AppState {
   /// Still only in memory: quitting the app forgets it, which is honest — the
   /// poll watching for the result dies with the process as well.
   public var planRunStartedAt: Date?
+  /// Today's latest `daily_plan` run, when it failed. An expired CLI login
+  /// failed every run for two days while this page said "正在生成" and then
+  /// "还没有计划"; the reason belongs on the page.
+  public var planRunFailure: PlanRunFailure?
 
   /// Enough of the plan to tell a new one from the one that was already there.
   ///
@@ -733,5 +737,16 @@ open class AppState {
     let thread = ChatThread(id: "th_\(UUID().uuidString.prefix(8))", title: "新对话", updatedAt: .now, messages: [])
     threads.insert(thread, at: 0)
     selectedThreadID = thread.id
+  }
+}
+
+/// A `daily_plan` run that ended in failure, and the service's reason.
+public struct PlanRunFailure: Sendable, Equatable {
+  public let startedAt: Date
+  public let reason: String
+
+  public init(startedAt: Date, reason: String) {
+    self.startedAt = startedAt
+    self.reason = reason
   }
 }

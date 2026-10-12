@@ -226,7 +226,15 @@ private struct CallSheetPanel: View {
       VStack(alignment: .leading, spacing: Metrics.sm) {
         if let startedAt = state.planRunStartedAt { StartedNote(at: startedAt) }
 
-        if schedule.rows.isEmpty {
+        if schedule.rows.isEmpty, !isRunning, let failure = state.planRunFailure {
+          EmptyState(
+            icon: "exclamationmark.triangle",
+            title: "今天的计划没生成出来",
+            message: "\(Fmt.time(failure.startedAt)) 那次失败了：\(failure.reason)",
+            actionTitle: "再试一次",
+            action: generate
+          )
+        } else if schedule.rows.isEmpty {
           EmptyState(
             icon: "tray",
             title: isRunning ? "计划正在生成" : "今天还没有计划",
