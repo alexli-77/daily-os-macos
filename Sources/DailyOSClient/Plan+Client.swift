@@ -61,6 +61,10 @@ struct TodayPlanResponse: Decodable {
   struct Stale: Decodable { let id: String; let text: String; let days: Int }
   /// Captures carried past the service's threshold, oldest first.
   let staleCaptures: [Stale]?
+  /// Today's latest daily_plan run. Absent before the service sent it, and
+  /// when nothing has run today.
+  struct LastRun: Decodable { let status: String; let startedAt: String; let error: String? }
+  let lastRun: LastRun?
   let today: String
 }
 
@@ -75,21 +79,35 @@ public struct TodayPlan: Sendable, Equatable {
   public let generatedAt: Date?
   /// Captures carried long enough to deserve a decision, oldest first.
   public let staleCaptures: [StaleCapture]
+  /// Set when today's latest daily_plan run failed.
+  public let lastRunFailure: PlanRunFailure?
 
-  public init(items: [TodoItem], staleDate: String?, hasPlan: Bool, generatedAt: Date? = nil, staleCaptures: [StaleCapture] = []) {
+  public init(
+    items: [TodoItem],
+    staleDate: String?,
+    hasPlan: Bool,
+    generatedAt: Date? = nil,
+    staleCaptures: [StaleCapture] = [],
+    lastRunFailure: PlanRunFailure? = nil
+  ) {
     self.items = items
     self.staleDate = staleDate
     self.hasPlan = hasPlan
     self.generatedAt = generatedAt
     self.staleCaptures = staleCaptures
+    self.lastRunFailure = lastRunFailure
   }
 }
 
 extension DailyOSClient {
   public func todayPlan() async throws -> TodayPlan {
     let response: TodayPlanResponse = try await get("/api/today/plan")
+    let failure = response.lastRun.flatMap { run -> PlanRunFailure? in
+      guard run.status == "failed", let startedAt = TodoWireDate.timestamp(run.startedAt) else { return nil }
+      return PlanRunFailure(startedAt: startedAt, reason: Self.runFailureReason(run.error))
+    }
     guard let plan = response.plan else {
-      return TodayPlan(items: [], staleDate: nil, hasPlan: false)
+      return TodayPlan(items: [], staleDate: nil, hasPlan: false, lastRunFailure: failure)
     }
 
     // A service that knows about MIT marks at least one row (or says the user
@@ -129,8 +147,19 @@ extension DailyOSClient {
       staleDate: plan.stale ? plan.date : nil,
       hasPlan: true,
       generatedAt: plan.generatedAt.flatMap(TodoWireDate.timestamp),
-      staleCaptures: (response.staleCaptures ?? []).map { StaleCapture(id: $0.id, text: $0.text, days: $0.days) }
+      staleCaptures: (response.staleCaptures ?? []).map { StaleCapture(id: $0.id, text: $0.text, days: $0.days) },
+      lastRunFailure: failure
     )
+  }
+
+  /// The run ledger's error without the runner's "Claude Code failed: " prefix.
+  static func runFailureReason(_ error: String?) -> String {
+    let text = (error ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { return "没有记下原因。" }
+    for prefix in ["Claude Code failed: ", "Codex failed: "] where text.hasPrefix(prefix) {
+      return String(text.dropFirst(prefix.count))
+    }
+    return text
   }
 
   /// Record how the user reacted to one ranked plan row.

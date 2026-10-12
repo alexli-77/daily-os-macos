@@ -57,6 +57,7 @@ public final class LiveAppState: AppState {
     // window — but nothing here can see it any more, and a "正在跑" note over a
     // disconnected screen is a claim this app has no way to check.
     planRunStartedAt = nil
+    planRunFailure = nil
     todos = []
     okrFiles = []
     countdowns = []
@@ -219,6 +220,7 @@ public final class LiveAppState: AppState {
       self.planStaleDate = plan.staleDate
       self.planGeneratedAt = plan.generatedAt
       self.staleCaptures = plan.staleCaptures
+      self.planRunFailure = plan.lastRunFailure
       self.hasPlan = plan.hasPlan
       // Rhythm rides in the plan chunk: it shapes the same timeline and a failure
       // to read it is the same "today didn't load" story, not its own banner.
@@ -874,9 +876,10 @@ public final class LiveAppState: AppState {
   public override func generatePlan() async -> ActionOutcome {
     guard let client else { return .failed("没有连接到服务。") }
     do {
+      let pressedAt = Date.now
       try await client.rerunWorkflow("daily_plan")
       planRunStartedAt = .now
-      watchForPlan()
+      watchForPlan(since: pressedAt)
       return .ok("已让 daily_plan 跑起来了，跑完会发一条飞书")
     } catch {
       let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
@@ -901,7 +904,11 @@ public final class LiveAppState: AppState {
   /// into a run that had ten minutes left. Comparing against what was on screen
   /// when the button was pressed is the only version of this question that a
   /// regenerate can answer.
-  private func watchForPlan() {
+  ///
+  /// It also stops when the run this press started has failed: the service
+  /// reports today's latest run with the plan, so a failure shows within one
+  /// poll instead of after ten minutes of "正在生成".
+  private func watchForPlan(since pressedAt: Date) {
     planWatcher?.cancel()
     let before = planFingerprint
     planWatcher = Task { [weak self] in
@@ -911,6 +918,11 @@ public final class LiveAppState: AppState {
         await self.reload()
         if self.planFingerprint != before {
           self.planRunStartedAt = nil
+          return
+        }
+        if let failure = self.planRunFailure, failure.startedAt >= pressedAt.addingTimeInterval(-5) {
+          self.planRunStartedAt = nil
+          self.toast = "daily_plan 失败了：\(failure.reason)"
           return
         }
       }
