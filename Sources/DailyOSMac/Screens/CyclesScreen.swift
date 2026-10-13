@@ -1367,7 +1367,7 @@ private struct CycleOKRInspector: View {
 
 // MARK: - On the one page
 
-/// A cycle's own sections, under the calendar on the 今天 page: 要务 beside
+/// A cycle's own sections, under the schedule in the 今天 page's 双周 view: 要务 beside
 /// the OKR they serve, then 复盘 and 总结 — folded until the cycle's last two
 /// days, when looking back is the job.
 struct CycleSections: View {

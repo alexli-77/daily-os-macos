@@ -75,7 +75,7 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
   }
 
   /// The sidebar groups. Work you do, then work the machine did, then config.
-  /// 周期 is part of 今天 now (日 / 双周 on top, 要务 · OKR · 复盘 under it);
+  /// 周期 is part of 今天 now (its 双周 view: 排期, then 要务 · OKR · 复盘);
   /// the case stays so old links and saved selections still land somewhere.
   public static let workGroup: [AppSection] = [.today, .routine, .okr, .countdown]
   public static let systemGroup: [AppSection] = [.runs, .artifacts, .schedules]

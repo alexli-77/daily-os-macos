@@ -50,9 +50,17 @@ struct TodayScreen: View {
     ScreenScaffold("今天", subtitle: subtitle) {
       let sideBySide = contentWidth >= Self.railBreakpoint && !railStacked
       Group {
-        if view == .cycle, let cycle = shownCycle, state.isViewingSelf {
-          // The cycle, day by day; a day's header zooms into that day.
-          CycleSchedulePanel(cycle: cycle, editable: cycle.isWritable, onOpenDay: openDay, collapsible: true)
+        if view == .cycle, let cycle = shownCycle {
+          // 双周 swaps the whole page, not just its top: the schedule, then the
+          // cycle's 要务 beside its OKR and 复盘 · 总结. 日 shows none of it.
+          VStack(alignment: .leading, spacing: Metrics.md) {
+            // The schedule is only ever your own; a teammate's 双周 is their 要务.
+            if state.isViewingSelf {
+              // The cycle, day by day; a day's header zooms into that day.
+              CycleSchedulePanel(cycle: cycle, editable: cycle.isWritable, onOpenDay: openDay, collapsible: true)
+            }
+            CycleSections(cycle: cycle)
+          }
         } else if sideBySide {
           HStack(alignment: .top, spacing: Metrics.md) {
             mainColumn.frame(maxWidth: .infinity, alignment: .top)
@@ -66,10 +74,6 @@ struct TodayScreen: View {
         }
       }
       .background(widthReader)
-      // Under the calendar: the cycle's 要务 beside its OKR, then 复盘 · 总结.
-      if let cycle = shownCycle {
-        CycleSections(cycle: cycle)
-      }
     } toolbar: {
       HStack(spacing: Metrics.sm) {
         Picker("", selection: $view) {
@@ -166,7 +170,7 @@ struct TodayScreen: View {
   }
 
   /// One line: the date, the cycle, and the countdowns that make the morning card.
-  /// The cycle under the calendar: the one picked, else this one.
+  /// The cycle the 双周 view shows: the one picked, else this one.
   private var shownCycle: Cycle? { state.selectedCycle ?? state.currentCycle }
 
   /// A day's header on the 双周 view: today zooms into 日; a past day opens
