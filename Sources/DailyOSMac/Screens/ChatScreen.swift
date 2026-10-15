@@ -100,7 +100,7 @@ private struct ThreadList: View {
         LazyVStack(alignment: .leading, spacing: 2) {
           ForEach(state.threads) { thread in
             SelectableRow(isSelected: thread.id == state.selectedThread?.id) {
-              state.selectedThreadID = thread.id
+              state.selectThread(thread.id)
             } content: {
               HStack(spacing: Metrics.xs) {
                 VStack(alignment: .leading, spacing: Metrics.xxs) {
@@ -185,7 +185,7 @@ private struct EmptyChatState: View {
       EmptyState(
         icon: "bubble.left.and.text.bubble.right",
         title: "问点什么",
-        message: "能读你的周期、OKR 和本地 Vault。比如问「这一期为什么只完成了一半」。"
+        message: "能看也能改你的作息、排期、要务和 OKR。比如说「看书挪到口语后面」，或者问「这一期为什么只完成了一半」。"
       )
     } else {
       EmptyState(
@@ -218,11 +218,14 @@ private struct MessageBubble: View {
           if !message.toolCalls.isEmpty {
             ToolTrace(calls: message.toolCalls)
           }
-          Text(message.text)
-            .font(Typo.body)
-            .foregroundStyle(Palette.ink)
-            .textSelection(.enabled)
-            .frame(maxWidth: Metrics.readableWidth, alignment: .leading)
+          HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
+            if message.isStreaming { ProgressView().controlSize(.small) }
+            Text(message.text)
+              .font(Typo.body)
+              .foregroundStyle(message.isStreaming ? Palette.inkMuted : Palette.ink)
+              .textSelection(.enabled)
+          }
+          .frame(maxWidth: Metrics.readableWidth, alignment: .leading)
         }
       }
       Text(Fmt.time(message.sentAt))

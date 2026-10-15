@@ -18,6 +18,7 @@ public enum ReloadChunk: String, CaseIterable, Sendable {
   case okr = "OKR"
   case countdowns = "倒数日"
   case service = "服务状态"
+  case chat = "对话"
 
   /// What a failure line calls it. "周期读取失败：…" is actionable; a bare
   /// "加载失败" from a reload with seven independent sources is not.
@@ -100,6 +101,9 @@ extension AppState {
       // line qualifying counts that are no longer on screen.
       countdownTimezone = ""
       countdownCardTimezone = ""
+    case .chat:
+      threads = []
+      selectedThreadID = nil
     case .service:
       // Degraded rather than stopped, which is what a disconnect sets: the
       // connection was probed a moment ago and answered. Something behind this

@@ -733,6 +733,11 @@ open class AppState {
     .unsupported("这一版没有连接到服务。")
   }
 
+  /// Show a conversation. The live store also fetches its messages.
+  open func selectThread(_ id: ChatThread.ID) {
+    selectedThreadID = id
+  }
+
   open func newThread() {
     let thread = ChatThread(id: "th_\(UUID().uuidString.prefix(8))", title: "新对话", updatedAt: .now, messages: [])
     threads.insert(thread, at: 0)

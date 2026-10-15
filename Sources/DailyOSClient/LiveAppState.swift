@@ -258,6 +258,14 @@ public final class LiveAppState: AppState {
       self.service = try await client.serviceStatus()
     }
 
+    await load(.chat) {
+      self.agentMode = try await client.agentMode()
+      self.applyThreads(try await client.chatThreads())
+    }
+    if let id = selectedThread?.id, selectedThread?.messages.isEmpty == true {
+      await loadMessages(id)
+    }
+
     // A full reload has just re-read everything a quiet refresh would, so the
     // floor starts from here as well. Without this, the window coming to the
     // front one second after launch — which is exactly what happens at launch —
@@ -857,6 +865,124 @@ public final class LiveAppState: AppState {
         await reload()
       }
     }
+  }
+
+  // MARK: - 对话
+
+  /// Replace the thread list, keeping messages already fetched or in flight.
+  private func applyThreads(_ fresh: [ChatThread]) {
+    let known = Dictionary(threads.map { ($0.id, $0.messages) }, uniquingKeysWith: { first, _ in first })
+    threads = fresh.map { thread in
+      var thread = thread
+      thread.messages = known[thread.id] ?? []
+      return thread
+    }
+    if let id = selectedThreadID, threads.contains(where: { $0.id == id }) { return }
+    selectedThreadID = threads.first?.id
+  }
+
+  private func loadMessages(_ id: ChatThread.ID) async {
+    guard let client else { return }
+    do {
+      let messages = try await client.chatMessages(session: id)
+      guard let index = threads.firstIndex(where: { $0.id == id }),
+            !threads[index].messages.contains(where: \.isStreaming) else { return }
+      threads[index].messages = messages
+    } catch {
+      toast = "对话记录没读到：\((error as? ClientError)?.errorDescription ?? error.localizedDescription)"
+    }
+  }
+
+  public override func selectThread(_ id: ChatThread.ID) {
+    super.selectThread(id)
+    if threads.first(where: { $0.id == id })?.messages.isEmpty == true {
+      Task { await loadMessages(id) }
+    }
+  }
+
+  public override func newThread() {
+    guard let client else { return }
+    Task {
+      do {
+        let thread = try await client.createChatThread()
+        threads.insert(thread, at: 0)
+        selectedThreadID = thread.id
+      } catch {
+        toast = "新对话没建成：\((error as? ClientError)?.errorDescription ?? error.localizedDescription)"
+      }
+    }
+  }
+
+  public override func deleteThread(_ id: ChatThread.ID) {
+    super.deleteThread(id)
+    write("删除对话") { try await $0.deleteChatThread(id) }
+  }
+
+  /// Send the composer's text and stream the reply into the thread.
+  ///
+  /// The reply bubble shows the service's progress ("正在改 routines.json")
+  /// until the answer arrives. A turn can change the vault, so the pages are
+  /// re-read when it ends.
+  public override func send() {
+    let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty, let client else { return }
+    if threads.contains(where: { $0.messages.contains(where: \.isStreaming) }) {
+      toast = "上一条还在回，等它回完再发。"
+      return
+    }
+    composerText = ""
+    Task {
+      var threadID = selectedThread?.id
+      if threadID == nil {
+        do {
+          let thread = try await client.createChatThread()
+          threads.insert(thread, at: 0)
+          selectedThreadID = thread.id
+          threadID = thread.id
+        } catch {
+          composerText = text
+          toast = "新对话没建成：\((error as? ClientError)?.errorDescription ?? error.localizedDescription)"
+          return
+        }
+      }
+      guard let threadID, let index = threads.firstIndex(where: { $0.id == threadID }) else { return }
+      let replyID = "m_\(UUID().uuidString.prefix(8))"
+      threads[index].messages.append(ChatMessage(id: "m_\(UUID().uuidString.prefix(8))", role: .user, text: text, sentAt: .now))
+      threads[index].messages.append(ChatMessage(id: replyID, role: .assistant, text: "正在想…", sentAt: .now, isStreaming: true))
+      threads[index].updatedAt = .now
+      if threads[index].title == "新对话" { threads[index].title = String(text.prefix(40)) }
+
+      var answer = ""
+      var failure: String?
+      do {
+        for try await event in try await client.sendChat(session: threadID, text: text) {
+          switch event {
+          case .status(let message): updateReply(threadID, replyID, text: message, streaming: true)
+          case .reply(let content):
+            answer = answer.isEmpty ? content : answer + "\n\n" + content
+            updateReply(threadID, replyID, text: answer, streaming: true)
+          case .failed(let message): failure = message
+          case .stopped: failure = failure ?? "已停止。"
+          case .done: break
+          }
+        }
+      } catch {
+        failure = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      }
+      if let failure, answer.isEmpty {
+        updateReply(threadID, replyID, text: "没做成：\(failure)", streaming: false)
+      } else {
+        updateReply(threadID, replyID, text: answer.isEmpty ? "（没有回复）" : answer, streaming: false)
+      }
+      await reload()
+    }
+  }
+
+  private func updateReply(_ threadID: ChatThread.ID, _ replyID: ChatMessage.ID, text: String, streaming: Bool) {
+    guard let thread = threads.firstIndex(where: { $0.id == threadID }),
+          let message = threads[thread].messages.firstIndex(where: { $0.id == replyID }) else { return }
+    threads[thread].messages[message].text = text
+    threads[thread].messages[message].isStreaming = streaming
   }
 
   // MARK: - Today's plan, on demand
