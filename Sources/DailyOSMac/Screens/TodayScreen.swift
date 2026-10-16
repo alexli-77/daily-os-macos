@@ -213,6 +213,9 @@ private struct CallSheetPanel: View {
   @State private var isStarting = false
   /// Where an empty-time click asked to add something, minutes from midnight.
   @State private var addAt: Int?
+  /// Where the empty-time click landed, in the timeline's coordinates. The
+  /// add popover points at it, the way a calendar's new-event popover does.
+  @State private var addPoint: CGPoint = .zero
   /// A 作息 block being dragged or stretched for today: its shown start / end.
   @State private var fixedDrag: (id: String, start: Int, end: Int)?
   /// A drag in progress on the timeline, so the block can follow the pointer
@@ -312,13 +315,21 @@ private struct CallSheetPanel: View {
             .offset(x: Timeline.gutter)
             .onTapGesture(coordinateSpace: .local) { point in
               let minute = origin + Int(point.y / Timeline.pointsPerMinute)
+              addPoint = CGPoint(x: Timeline.gutter + point.x, y: point.y)
               addAt = min(23 * 60 + 30, max(origin, minute / 30 * 30))
             }
           if let addAt {
+            // Padding, not `.offset`: an offset only moves the drawing, and the
+            // popover anchors to the layout frame — which `.offset` leaves at
+            // the top-left corner, so every popover opened up there.
             Color.clear
               .frame(width: 1, height: 1)
-              .offset(x: Timeline.gutter + 60, y: Timeline.y(addAt, from: origin))
-              .popover(isPresented: Binding(get: { self.addAt != nil }, set: { if !$0 { self.addAt = nil } }), arrowEdge: .trailing) {
+              .padding(.leading, addPoint.x)
+              .padding(.top, addPoint.y)
+              .popover(
+                isPresented: Binding(get: { self.addAt != nil }, set: { if !$0 { self.addAt = nil } }),
+                arrowEdge: addPoint.x > (lane + Timeline.gutter) / 2 ? .leading : .trailing
+              ) {
                 QuickAdd(start: addAt) { self.addAt = nil }
                   .environment(state)
               }

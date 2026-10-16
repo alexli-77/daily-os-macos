@@ -254,7 +254,6 @@ struct RoutineScreen: View {
             RoutineBlockView(block: block, category: period.category(block.category))
               .frame(height: max(16, CGFloat(block.minutes) * Self.pointsPerMinute - 2))
               .padding(.leading, 50)
-              .offset(y: y(block.startMinute) + 1)
               .onTapGesture { editingBlock = block }
               .popover(isPresented: Binding(get: { editingBlock?.id == block.id }, set: { if !$0 { editingBlock = nil } }), arrowEdge: .trailing) {
                 BlockEditor(block: block, categories: period.categories) { updated in
@@ -265,6 +264,10 @@ struct RoutineScreen: View {
                   mutateMode { $0.blocks.removeAll { $0.id == block.id } }
                 } onCancel: { editingBlock = nil }
               }
+              // Padding after the popover, not an offset before it: the
+              // popover anchors to the layout frame, and an offset left that
+              // at the top of the column.
+              .padding(.top, y(block.startMinute) + 1)
           }
         }
         .frame(height: y(hours.last.map { $0 * 60 } ?? last) + 8, alignment: .top)
