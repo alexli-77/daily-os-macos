@@ -750,6 +750,7 @@ private struct CallSheetRow: View {
         showsTime: isEditable,
         autoColor: BlockTint.forTask(candidateID: item.id).ink,
         onUnpin: onUnpin.map { unpin in { isEditingRow = false; unpin() } },
+        onDelete: { isEditingRow = false; commands.remove() },
         onCancel: { isEditingRow = false },
         onSave: saveEdits
       )
@@ -938,9 +939,11 @@ private struct RowCommands {
 
   private var item: TodoItem { row.item }
 
-  /// What the hover menu offers. A capture off the plan only has done and
-  /// deferred (the inbox has no other status); a meal or habit row has no
-  /// tomorrow to be pushed to — tomorrow brings its own.
+  /// What the hover menu offers: states only. Deleting is in the row's editor,
+  /// away from the circle, so a state can't be mis-clicked into a delete.
+  /// A capture off the plan only has done and deferred (the inbox has no other
+  /// status); a meal or habit row has no tomorrow to be pushed to — tomorrow
+  /// brings its own.
   var choices: [StateMenuBar.Choice] {
     let states: [TodoState] = if !isPlanRow {
       [.done, .deferred]
@@ -949,7 +952,7 @@ private struct RowCommands {
     } else {
       [.done, .partial, .missed, .deferred]
     }
-    return states.map { .state($0) } + [.delete]
+    return states.map { .state($0) }
   }
 
   /// Picking the state the row is already in takes it back.
@@ -1053,6 +1056,8 @@ private struct RowEditor: View {
   let autoColor: Color
   /// Set when the row is pinned to a time; releases it to automatic layout.
   let onUnpin: (() -> Void)?
+  /// Takes the row off today's sheet, with an undo in the toast.
+  let onDelete: () -> Void
   let onCancel: () -> Void
   let onSave: () -> Void
 
@@ -1093,6 +1098,9 @@ private struct RowEditor: View {
       }
 
       HStack {
+        Button("删除", action: onDelete)
+          .buttonStyle(QuietButtonStyle(tone: .danger))
+          .help("从今天去掉这一条，可以撤销")
         if let onUnpin {
           Button("回到自动排", action: onUnpin)
             .buttonStyle(QuietButtonStyle(tone: .neutral))
