@@ -147,11 +147,21 @@ open class AppState {
   }
   /// When set, the toast offers 撤销 and runs this. Cleared with the toast.
   public var toastUndo: (@MainActor () -> Void)?
+  /// The label of the toast's button. 撤销 unless the toast asks something else.
+  public var toastActionTitle = "撤销"
 
   /// A toast that can be taken back.
   public func toast(_ text: String, undo: (@MainActor () -> Void)?) {
     toast = text
     toastUndo = undo
+    toastActionTitle = "撤销"
+  }
+
+  /// A toast with a button that does something other than undo.
+  public func toast(_ text: String, action title: String, run: @escaping @MainActor () -> Void) {
+    toast = text
+    toastUndo = run
+    toastActionTitle = title
   }
 
   /// Why the service cannot be reached, when it cannot.
@@ -543,9 +553,24 @@ open class AppState {
   // MARK: 临时安排 / 只改今天
 
   /// Something that came up today. See `AdhocRequest`.
-  open func addAdhoc(_ request: AdhocRequest) async -> (outcome: ActionOutcome, undo: AdhocUndo?) {
-    (.unsupported("没有连接到服务。"), nil)
+  open func addAdhoc(_ request: AdhocRequest) async -> (outcome: ActionOutcome, undo: AdhocUndo?, suggest: PromoteSuggestion?) {
+    (.unsupported("没有连接到服务。"), nil, nil)
   }
+
+  /// A cycle's 计划外 so far. Nil when it could not be read.
+  open func unplanned(cycleID: Cycle.ID) async -> UnplannedRollup? { nil }
+
+  /// 加进要务: file `text` under a cycle's 要务.
+  open func promote(cycleID: Cycle.ID, text: String) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  /// 结束本期: start the end-of-cycle run for this cycle.
+  open func closeCycle(cycleID: Cycle.ID) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  open func closeCycleStatus(cycleID: Cycle.ID) async -> CloseCycleStatus? { nil }
 
   open func undoAdhoc(_ undo: AdhocUndo) async -> ActionOutcome {
     .unsupported("没有连接到服务。")

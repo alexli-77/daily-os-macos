@@ -469,15 +469,49 @@ public final class LiveAppState: AppState {
     }
   }
 
-  public override func addAdhoc(_ request: AdhocRequest) async -> (outcome: ActionOutcome, undo: AdhocUndo?) {
-    guard let client else { return (.failed("没有连接到服务。"), nil) }
+  public override func addAdhoc(_ request: AdhocRequest) async -> (outcome: ActionOutcome, undo: AdhocUndo?, suggest: PromoteSuggestion?) {
+    guard let client else { return (.failed("没有连接到服务。"), nil, nil) }
     do {
       let result = try await client.addAdhoc(request)
       await reload()
-      return (.ok(result.text), result.undo)
+      return (.ok(result.text), result.undo, result.suggest)
     } catch {
-      return (.failed((error as? ClientError)?.errorDescription ?? error.localizedDescription), nil)
+      return (.failed((error as? ClientError)?.errorDescription ?? error.localizedDescription), nil, nil)
     }
+  }
+
+  // MARK: - 计划外 and 结束本期
+
+  public override func unplanned(cycleID: Cycle.ID) async -> UnplannedRollup? {
+    guard let client else { return nil }
+    return try? await client.unplanned(cycleID: cycleID)
+  }
+
+  public override func promote(cycleID: Cycle.ID, text: String) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      let message = try await client.promote(cycleID: cycleID, text: text)
+      await reload()
+      return .ok(message)
+    } catch {
+      return .failed((error as? ClientError)?.errorDescription ?? error.localizedDescription)
+    }
+  }
+
+  public override func closeCycle(cycleID: Cycle.ID) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      let message = try await client.closeCycle(cycleID: cycleID)
+      await reload()
+      return .ok(message)
+    } catch {
+      return .failed((error as? ClientError)?.errorDescription ?? error.localizedDescription)
+    }
+  }
+
+  public override func closeCycleStatus(cycleID: Cycle.ID) async -> CloseCycleStatus? {
+    guard let client else { return nil }
+    return try? await client.closeCycleStatus(cycleID: cycleID)
   }
 
   public override func undoAdhoc(_ undo: AdhocUndo) async -> ActionOutcome {

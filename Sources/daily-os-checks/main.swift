@@ -1215,8 +1215,24 @@ undoState.toast("排期也挪了", undo: { })
 undoState.toast = "已完成"
 check(undoState.toastUndo == nil, "新的普通提示不带前一条的撤销")
 
+// MARK: - 计划外与收尾
+
+let retroTemplate = "😄状态\n情绪：\n计划外吃掉时间的事：\n\n👍做的好\n1. 早起"
+let filled = RetroText.fillingUnplanned(retroTemplate, with: "逛街（2 天，3h）")
+check(filled.contains("计划外吃掉时间的事：逛街（2 天，3h）\n"), "计划外填进复盘那一行")
+check(filled.hasSuffix("1. 早起") && filled.hasPrefix("😄状态"), "复盘别的内容不动")
+check(RetroText.fillingUnplanned(filled, with: "见朋友（1 天）").contains("计划外吃掉时间的事：见朋友（1 天）\n"), "再填一次是替换，不是叠加")
+check(RetroText.fillingUnplanned("自己写的复盘", with: "看展（1 天）") == "自己写的复盘\n\n计划外吃掉时间的事：看展（1 天）", "没有那一行就加在最后")
+check(ChatCommand.palette.contains { $0.label == "今日复盘" && $0.keyword == "今日复盘" }, "聊天按钮叫今日复盘")
+check(!ChatCommand.palette.contains { $0.keyword == "双周复盘" }, "双周复盘不再是聊天按钮，收尾在周期页")
+let actionState = AppState()
+actionState.toast("要加进要务吗？", action: "加进要务") {}
+check(actionState.toastActionTitle == "加进要务" && actionState.toastUndo != nil, "提示可以带别的按钮")
+actionState.toast("已删除", undo: {})
+check(actionState.toastActionTitle == "撤销", "带撤销的提示按钮还是撤销")
+
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态, 手打时间")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态, 手打时间, 计划外与收尾")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

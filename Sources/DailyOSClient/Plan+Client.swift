@@ -212,7 +212,7 @@ extension DailyOSClient {
   }
 
   /// 临时安排. Returns the service's summary and how to undo it.
-  public func addAdhoc(_ request: AdhocRequest) async throws -> (text: String?, undo: AdhocUndo?) {
+  public func addAdhoc(_ request: AdhocRequest) async throws -> (text: String?, undo: AdhocUndo?, suggest: PromoteSuggestion?) {
     struct Displaced: Encodable { let candidateId: String; let rank: Int; let action: String }
     struct Body: Encodable {
       let title: String
@@ -221,13 +221,17 @@ extension DailyOSClient {
       let end: String
       let extra: Bool
       let displaced: [Displaced]
+      let promote: Bool
     }
-    struct Response: Decodable { let text: String?; let undo: AdhocUndo? }
+    struct Suggest: Decodable { let cycleId: String; let text: String; let days: Int; let minutes: Int? }
+    struct Response: Decodable { let text: String?; let undo: AdhocUndo?; let suggestPromote: Suggest? }
     let response: Response = try await post("/api/today/adhoc", body: Body(
       title: request.title, itemKey: request.itemKey, start: request.start, end: request.end, extra: request.extra,
-      displaced: request.displaced.map { Displaced(candidateId: $0.candidateID, rank: $0.rank, action: $0.action.rawValue) }
+      displaced: request.displaced.map { Displaced(candidateId: $0.candidateID, rank: $0.rank, action: $0.action.rawValue) },
+      promote: request.promote
     ))
-    return (response.text, response.undo)
+    let suggest = response.suggestPromote.map { PromoteSuggestion(cycleID: $0.cycleId, text: $0.text, days: $0.days, minutes: $0.minutes) }
+    return (response.text, response.undo, suggest)
   }
 
   public func undoAdhoc(_ undo: AdhocUndo) async throws {
