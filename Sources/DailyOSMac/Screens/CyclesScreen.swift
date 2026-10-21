@@ -508,7 +508,7 @@ private struct MissingSectionPanel: View {
     case .retro:
       "还没有复盘。复盘要你自己写，这里可以放一个空模板。规划下一期时会读三个小标题下的内容。"
     case .review:
-      "还没有总结。可以让 life-review-os 按这一期的要务和复盘生成，生成后可以改。"
+      "还没有总结。写完复盘后点上面的「结束本期」：写总结、起草下期要务，几分钟。"
     }
   }
 
@@ -518,9 +518,9 @@ private struct MissingSectionPanel: View {
     switch kind {
     case .priorities: isCurrent ? (title: "重新生成要务", busy: "生成中…（约十分钟）") : nil
     case .retro: (title: "放一个复盘模板", busy: "写入中…")
-    // The duration is in the label because it is a model call on a local
-    // machine, and a button that looks stuck for a minute gets pressed twice.
-    case .review: (title: "用 AI 生成总结", busy: "生成中…（1-2 分钟）")
+    // 结束本期 writes it, together with the next cycle's 要务: one entry for the
+    // end of a cycle, not two that overwrite each other.
+    case .review: nil
     }
   }
 
@@ -586,6 +586,7 @@ private struct CycleSectionPanel: View {
       VStack(alignment: .leading, spacing: Metrics.sm) {
         if section.pendingDraft != nil {
           DraftBanner(
+            kind: section.kind,
             expanded: $showsDraftComparison,
             onAccept: { state.acceptDraft(cycleID: cycle.id, kind: section.kind) },
             onDiscard: { state.discardDraft(cycleID: cycle.id, kind: section.kind) }
@@ -1062,6 +1063,7 @@ private struct BrokenFrontmatterBanner: View {
 // MARK: - Draft
 
 private struct DraftBanner: View {
+  let kind: CycleSectionKind
   @Binding var expanded: Bool
   let onAccept: () -> Void
   let onDiscard: () -> Void
@@ -1069,7 +1071,7 @@ private struct DraftBanner: View {
   var body: some View {
     HStack(spacing: Metrics.xs) {
       Image(systemName: "arrow.triangle.branch").foregroundStyle(Palette.warn)
-      Text("自动规划生成了新草稿。你改过这一段，所以没有覆盖。")
+      Text(kind == .review ? "结束本期写了新的总结。已经有一版，所以没有覆盖。" : "自动规划生成了新草稿。你改过这一段，所以没有覆盖。")
         .font(Typo.caption)
         .foregroundStyle(Palette.ink)
       Spacer(minLength: Metrics.xs)
@@ -1385,7 +1387,9 @@ struct CycleSections: View {
       }
       section(.priorities)
       if opensReview ?? isClosing {
+        UnplannedPanel(cycle: cycle, editable: editable)
         section(.retro)
+        if editable { CloseCyclePanel(cycle: cycle) }
         section(.review)
       } else {
         Button {
@@ -1485,5 +1489,161 @@ struct CycleSwitcher: View {
     let cycle = state.selectedCycle?.label ?? "周期"
     if !state.isViewingSelf, let member = state.viewingMember { return "\(member.displayName) · \(cycle)" }
     return cycle
+  }
+}
+
+// MARK: - 计划外
+
+/// What this cycle's days went to outside its 要务, from the service's count.
+///
+/// Above the 复盘 because it is what the 复盘 asks about (计划外吃掉时间的事)
+/// and the 总结 is written from it. 加进要务 files one under this cycle's 要务
+/// — or the next one's, once this cycle is over.
+private struct UnplannedPanel: View {
+  @Environment(AppState.self) private var state
+  let cycle: Cycle
+  let editable: Bool
+
+  @State private var rollup: UnplannedRollup?
+  @State private var loaded = false
+
+  var body: some View {
+    Panel("计划外", subtitle: "不在要务里、但花了时间的事") {
+      VStack(alignment: .leading, spacing: Metrics.xs) {
+        if let rollup, !rollup.items.isEmpty {
+          ForEach(rollup.items) { item in
+            HStack(spacing: Metrics.sm) {
+              Text(item.text).inkStyle().lineLimit(2)
+              Spacer(minLength: Metrics.xs)
+              Text(detail(item)).font(Typo.caption).foregroundStyle(Palette.ink3)
+              if editable, let target = promoteTarget {
+                Button(target.label) { promote(item, to: target.id) }
+                  .buttonStyle(QuietButtonStyle())
+              }
+            }
+          }
+        } else {
+          Text(loaded ? "这一期没有计划外的事。" : "读取中…").mutedStyle(Typo.body)
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    } actions: {
+      if editable, let rollup, !rollup.summary.isEmpty, cycle.section(.retro) != nil {
+        Button("填进复盘") { fillRetro(rollup.summary) }
+          .buttonStyle(QuietButtonStyle())
+          .help("把这份统计写进复盘的「计划外吃掉时间的事」那一行")
+      }
+    }
+    .task(id: cycle.id) { await load() }
+  }
+
+  private func load() async {
+    rollup = await state.unplanned(cycleID: cycle.id)
+    loaded = true
+  }
+
+  private func detail(_ item: UnplannedItem) -> String {
+    var parts = ["\(item.days.count) 天"]
+    if let minutes = item.minutes { parts.append(DaySchedule.duration(minutes)) }
+    if item.done { parts.append("做了") }
+    return parts.joined(separator: " · ")
+  }
+
+  /// This cycle while it runs; the next one after it ends, if there is one.
+  private var promoteTarget: (id: Cycle.ID, label: String)? {
+    if cycle.end >= Calendar.current.startOfDay(for: .now) { return (cycle.id, "加进本期要务") }
+    let next = state.cycles.filter { $0.start > cycle.start }.min { $0.start < $1.start }
+    return next.map { ($0.id, "加进下期要务") }
+  }
+
+  private func promote(_ item: UnplannedItem, to cycleID: Cycle.ID) {
+    Task {
+      switch await state.promote(cycleID: cycleID, text: item.text) {
+      case .ok(let message): state.toast = message ?? "加进要务了"
+      case .failed(let why), .unsupported(let why): state.toast = why
+      }
+      await load()
+    }
+  }
+
+  private func fillRetro(_ summary: String) {
+    guard let retro = cycle.section(.retro) else { return }
+    state.updateSection(cycleID: cycle.id, kind: .retro, body: RetroText.fillingUnplanned(retro.body, with: summary))
+    state.toast = "写进复盘了"
+  }
+}
+
+// MARK: - 结束本期
+
+/// The end of a cycle, in one press: the 总结 (a draft beside the old one when
+/// there is one), the next cycle's 要务 and the KR progress. It is the same
+/// run the chat's 双周复盘 was, aimed at this cycle. It takes minutes, so the
+/// panel polls until it is done.
+private struct CloseCyclePanel: View {
+  @Environment(AppState.self) private var state
+  let cycle: Cycle
+
+  @State private var running = false
+  @State private var startedHere = false
+
+  var body: some View {
+    Panel("结束本期") {
+      VStack(alignment: .leading, spacing: Metrics.sm) {
+        Text("写完复盘再点。会写这一期的总结、起草下一期的要务、更新 KR 进度，要几分钟。已经有总结时，新的放成草稿让你对比。")
+          .mutedStyle(Typo.body)
+          .fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: Metrics.sm) {
+          Button(running ? "收尾中…" : "结束本期") { start() }
+            .buttonStyle(MossButtonStyle(prominent: true))
+            .disabled(running)
+          if running {
+            ProgressView().controlSize(.small)
+            Text("好了会自己出现，可以先去做别的。").font(Typo.caption).foregroundStyle(Palette.ink3)
+          }
+        }
+      }
+      .frame(maxWidth: Metrics.readableWidth, alignment: .leading)
+    }
+    .task(id: cycle.id) {
+      // A run started earlier (or from another window) is picked up here.
+      if let status = await state.closeCycleStatus(cycleID: cycle.id), status.running {
+        running = true
+        await watch()
+      }
+    }
+  }
+
+  private func start() {
+    running = true
+    startedHere = true
+    Task {
+      switch await state.closeCycle(cycleID: cycle.id) {
+      case .ok(let message):
+        state.toast = message ?? "开始收尾了"
+        await watch()
+      case .failed(let why), .unsupported(let why):
+        running = false
+        state.toast = why
+      }
+    }
+  }
+
+  /// Every 15 seconds, up to 40 minutes: the run is a model call over the whole cycle.
+  private func watch() async {
+    for _ in 0..<160 {
+      try? await Task.sleep(for: .seconds(15))
+      guard !Task.isCancelled else { return }
+      guard let status = await state.closeCycleStatus(cycleID: cycle.id) else { continue }
+      if status.running { continue }
+      running = false
+      await state.reloadToday()
+      if let error = status.error {
+        state.toast = "结束本期没做完：\(error)"
+      } else {
+        state.toast = "本期收尾好了，去看总结和下期要务" + (status.text.map { "（\($0.split(separator: "\n").count) 处写入）" } ?? "")
+      }
+      return
+    }
+    running = false
   }
 }

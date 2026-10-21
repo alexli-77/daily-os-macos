@@ -443,3 +443,39 @@ extension DailyOSClient {
     return response.chars ?? (response.review?.count ?? 0)
   }
 }
+
+// MARK: - 计划外 and 结束本期
+
+extension DailyOSClient {
+  public func unplanned(cycleID: String) async throws -> UnplannedRollup {
+    struct Item: Decodable { let key: String; let text: String; let days: [String]; let minutes: Int?; let done: Bool }
+    struct Response: Decodable { let items: [Item]; let summary: String }
+    let id = cycleID.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? cycleID
+    let response: Response = try await get("/api/cycles/unplanned?id=\(id)")
+    return UnplannedRollup(
+      items: response.items.map { UnplannedItem(key: $0.key, text: $0.text, days: $0.days, minutes: $0.minutes, done: $0.done) },
+      summary: response.summary
+    )
+  }
+
+  public func promote(cycleID: String, text: String) async throws -> String? {
+    struct Body: Encodable { let id: String; let text: String }
+    struct Response: Decodable { let text: String? }
+    let response: Response = try await post("/api/cycles/promote", body: Body(id: cycleID, text: text))
+    return response.text
+  }
+
+  public func closeCycle(cycleID: String) async throws -> String? {
+    struct Body: Encodable { let id: String }
+    struct Response: Decodable { let text: String? }
+    let response: Response = try await post("/api/cycles/close", body: Body(id: cycleID))
+    return response.text
+  }
+
+  public func closeCycleStatus(cycleID: String) async throws -> CloseCycleStatus {
+    struct Response: Decodable { let running: Bool; let text: String?; let error: String? }
+    let id = cycleID.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? cycleID
+    let response: Response = try await get("/api/cycles/close?id=\(id)")
+    return CloseCycleStatus(running: response.running, text: response.text, error: response.error)
+  }
+}

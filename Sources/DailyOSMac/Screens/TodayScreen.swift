@@ -1300,6 +1300,8 @@ private struct QuickAdd: View {
   @State private var endMinute: Int?
   @State private var items: [CycleScheduleState.Item] = []
   @State private var isSaving = false
+  /// 算进本期要务. Off by default: most of what comes up in a day is a one-off.
+  @State private var promote = false
   @FocusState private var focused: Bool
 
   var body: some View {
@@ -1318,6 +1320,15 @@ private struct QuickAdd: View {
             }
           }
         }
+      }
+      // Only for something that is not already a 要务.
+      if itemKey == nil, state.currentCycle != nil {
+        Toggle(isOn: $promote) {
+          Text("算进本期要务").font(Typo.caption).foregroundStyle(Palette.ink3)
+        }
+        .toggleStyle(.switch)
+        .controlSize(.mini)
+        .help("打开：这件事加进本期要务的「计划外新增」，以后算作要务。一次性的事不用开。")
       }
       HStack {
         Spacer()
@@ -1349,14 +1360,32 @@ private struct QuickAdd: View {
     let end = max(from + 5, min(24 * 60, endMinute ?? from + 60))
     let request = AdhocRequest(
       title: text, itemKey: itemKey, start: DaySchedule.clock(from), end: end == 24 * 60 ? "24:00" : DaySchedule.clock(end),
-      extra: false, displaced: []
+      extra: false, displaced: [], promote: itemKey == nil && promote
     )
     Task {
-      let (outcome, undo) = await state.addAdhoc(request)
+      let (outcome, undo, suggest) = await state.addAdhoc(request)
       isSaving = false
       switch outcome {
       case .ok(let summary):
         onClose()
+        // Asked instead of offering 撤销: the add can still be deleted from the
+        // row, and this question is asked only once per item per cycle.
+        if let suggest {
+          let store = state
+          let span = suggest.minutes.map { "、约 \(DaySchedule.duration($0))" } ?? ""
+          state.toast(
+            "「\(suggest.text)」这一期已经 \(suggest.days) 天\(span)了，算进本期要务吗？",
+            action: "加进要务"
+          ) {
+            Task { @MainActor in
+              switch await store.promote(cycleID: suggest.cycleID, text: suggest.text) {
+              case .ok(let message): store.toast = message ?? "加进了本期要务"
+              case .failed(let why), .unsupported(let why): store.toast = why
+              }
+            }
+          }
+          return
+        }
         var takeBack: (@MainActor () -> Void)?
         if let undo {
           let store = state

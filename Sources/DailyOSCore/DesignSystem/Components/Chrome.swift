@@ -21,7 +21,7 @@ public struct ToastOverlay: ViewModifier {
           // the agreed rule is write back without asking, but never without
           // a way back.
           if let undo = state.toastUndo {
-            Button("撤销") {
+            Button(state.toastActionTitle) {
               state.toastUndo = nil
               state.toast = nil
               undo()

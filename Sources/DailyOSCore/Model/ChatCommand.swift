@@ -24,9 +24,10 @@ public struct ChatCommand: Sendable, Equatable, Identifiable {
   /// replies to something the agent asked, not things you open a conversation
   /// with, and putting them in the palette invites running them out of order.
   public static let palette: [ChatCommand] = [
-    ChatCommand(keyword: "plan", label: "计划", detail: "生成这一期的要务草稿"),
-    ChatCommand(keyword: "review", label: "复盘", detail: "对比计划与执行，写出结论"),
-    ChatCommand(keyword: "双周复盘", label: "双周复盘", detail: "跑 weekly-review 的双周模式"),
+    ChatCommand(keyword: "plan", label: "计划", detail: "重新生成今天的计划"),
+    // 今日复盘, not 复盘: the cycle page's 复盘 is the one you write. The cycle's
+    // own review is 结束本期 on that page, not a chip here.
+    ChatCommand(keyword: "今日复盘", label: "今日复盘", detail: "对比今天的计划和执行，写出结论"),
     ChatCommand(keyword: "weekly", label: "周报", detail: "生成本周周报"),
     ChatCommand(keyword: "progress", label: "进度", detail: "当前周期的完成情况"),
     ChatCommand(keyword: "status", label: "状态", detail: "服务与调度的健康状况"),
