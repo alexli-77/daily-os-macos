@@ -138,7 +138,9 @@ struct CycleSchedulePanel: View {
 
   private static let gutter: CGFloat = 46
   private static let pointsPerMinute: CGFloat = 0.8
-  private static let firstHour = 7
+  /// The whole day: a 作息 that starts at 5:00 is as real as one at 9:00, and
+  /// anything above the first hour drew over the day headers (LEO-342).
+  private static let firstHour = 0
   private static let lastHour = 24
   private static let minColumn: CGFloat = 116
 
@@ -631,7 +633,7 @@ private struct SessionEditor: View {
   let onCancel: () -> Void
 
   private static let presets = [15, 30, 45, 60, 90, 120, 180]
-  private static let clocks: [String] = stride(from: 7 * 60, through: 22 * 60, by: 30).map { DaySchedule.clock($0) }
+  private static let clocks: [String] = stride(from: 0, through: 23 * 60 + 30, by: 30).map { DaySchedule.clock($0) }
 
   init(session: ScheduleSession, days: [CycleScheduleState.Day], isDeadline: Bool, onSave: @escaping (ScheduleSession, Bool) -> Void, onDelete: @escaping () -> Void, onCancel: @escaping () -> Void) {
     _draft = State(initialValue: session)
