@@ -567,6 +567,28 @@ open class AppState {
   /// 排期 calendar) reads it again.
   public var pastEditsRevision = 0
 
+  // MARK: 回收
+
+  /// Past days that ended without their evening review, oldest first. The app
+  /// asks about the first before it shows today. Empty against a service that
+  /// does not know about 回收.
+  public var pendingWrapups: [WrapupDay] = []
+
+  /// Read which past days still need closing out. The base store has none.
+  open func loadPendingWrapups() async {}
+
+  /// Close a past day: `done` (回收完成; the service runs that day's review
+  /// late) or `skip` (leave it as it is, on purpose). Either way it is not
+  /// asked about again.
+  open func resolveWrapup(date: String, action: String) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  /// 挪到今天: an unfinished row of a past day onto today's sheet.
+  open func moveRowToToday(date: String, candidateID: String, rank: Int) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
   // MARK: 日 view: which day
 
   /// The day the 日 view shows. Nil is today, which is what it opens on.

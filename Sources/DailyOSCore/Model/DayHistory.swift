@@ -76,7 +76,7 @@ public struct DayHistory: Sendable, Equatable {
     var parts = ["\(items.count) 条", "完成 \(count(.done))"]
     if count(.partial) > 0 { parts.append("部分 \(count(.partial))") }
     if count(.missed) > 0 { parts.append("未做 \(count(.missed))") }
-    if count(.deferred) > 0 { parts.append("顺延 \(count(.deferred))") }
+    if count(.deferred) > 0 { parts.append("推到明天 \(count(.deferred))") }
     return parts.joined(separator: " · ")
   }
 }
@@ -113,7 +113,7 @@ public enum PastRowEdit {
     case .done: "\(day)记为完成"
     case .partial: "\(day)记为做了一部分"
     case .missed: "\(day)记为未做"
-    case .deferred: "\(day)记为顺延"
+    case .deferred: "\(day)记为推到明天"
     case .open, .deleted: "\(day)的标记撤回了"
     }
   }
@@ -219,5 +219,75 @@ public enum DayLabel {
     let parts = value.split(separator: "-").compactMap { Int($0) }
     guard parts.count == 3 else { return nil }
     return calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+  }
+}
+
+// MARK: - 回收
+
+/// A past day that ended without its evening review, waiting to be closed out
+/// (回收) or skipped. The app asks about it before it shows today: a day whose
+/// close never ran must not slip by unnoticed.
+public struct WrapupDay: Sendable, Equatable, Identifiable {
+  public struct Row: Sendable, Equatable, Identifiable {
+    public let id: String
+    public let rank: Int
+    public let text: String
+    public let state: TodoState
+    /// A 固定日程: today has its own, so it is never moved to today.
+    public let isFixed: Bool
+
+    public init(id: String, rank: Int, text: String, state: TodoState, isFixed: Bool = false) {
+      self.id = id
+      self.rank = rank
+      self.text = text
+      self.state = state
+      self.isFixed = isFixed
+    }
+  }
+
+  public var id: String { date }
+  public let date: String
+  /// The service's today, for labels.
+  public let today: String
+  public let rows: [Row]
+
+  public init(date: String, today: String, rows: [Row]) {
+    self.date = date
+    self.today = today
+    self.rows = rows
+  }
+
+  /// What still needs a decision: rows nobody ticked, and rows left half done.
+  public var unsettled: [Row] { rows.filter { $0.state == .open || $0.state == .partial } }
+}
+
+/// One decision in 回收, and what it sends.
+public enum WrapupChoice: String, Sendable, Hashable, CaseIterable {
+  case done, missed, keep, moveToToday
+
+  public var label: String {
+    switch self {
+    case .done: "完成"
+    case .missed: "未做"
+    case .keep: "就做到这"
+    case .moveToToday: "挪到今天"
+    }
+  }
+
+  /// The choices a row offers. A row half done is not "未做"; a 固定日程 is
+  /// not moved — today has its own.
+  public static func options(for row: WrapupDay.Row) -> [WrapupChoice] {
+    let first: [WrapupChoice] = row.state == .partial ? [.done, .keep] : [.done, .missed]
+    return row.isFixed ? first : first + [.moveToToday]
+  }
+
+  /// The ledger event for the choice, or nil when nothing is recorded (就做到这
+  /// leaves the row as it was; 挪到今天 has its own endpoint).
+  public var event: String? {
+    switch self {
+    case .done: "complete"
+    case .missed: "missed"
+    case .keep, .moveToToday: nil
+    }
   }
 }

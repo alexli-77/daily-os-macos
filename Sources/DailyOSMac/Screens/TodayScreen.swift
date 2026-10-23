@@ -1035,7 +1035,10 @@ private struct RowCommands {
     } else {
       [.done, .partial, .missed, .deferred]
     }
-    return states.map { .state($0) }
+    // What a past day offers instead of 推到明天: bring it to today. Not for a
+    // 固定日程 (today has its own) or a row already settled.
+    let canMove = date != nil && isPlanRow && !item.id.hasPrefix("rhythm:") && (item.state == .open || item.state == .partial)
+    return states.map { .state($0) } + (canMove ? [.moveToToday] : [])
   }
 
   /// Picking the state the row is already in takes it back.
@@ -1043,6 +1046,7 @@ private struct RowCommands {
     switch choice {
     case .state(let target): set(target == item.state ? .open : target)
     case .delete: remove()
+    case .moveToToday: moveToToday()
     }
   }
 
@@ -1077,6 +1081,21 @@ private struct RowCommands {
           Task { @MainActor in _ = await store.sheetFeedback(date: date, candidateID: candidateID, rank: rank, event: "reopen") }
         }
         state.toast([prefix + "已删除", note].compactMap { $0 }.joined(separator: "；"), undo: takeBack)
+      case .failed(let why), .unsupported(let why): state.toast = why
+      }
+    }
+  }
+
+  /// 挪到今天, from a past day: the row goes onto today's sheet and reads as
+  /// carried on its own day.
+  func moveToToday() {
+    guard let date else { return }
+    let candidateID = item.id
+    let rank = row.rank
+    let prefix = dayPrefix
+    Task {
+      switch await state.moveRowToToday(date: date, candidateID: candidateID, rank: rank) {
+      case .ok(let note): state.toast = prefix + (note ?? "挪到今天了")
       case .failed(let why), .unsupported(let why): state.toast = why
       }
     }
@@ -1122,7 +1141,7 @@ private struct RowCommands {
     case .done: "已完成"
     case .partial: "记为做了一部分"
     case .missed: "记为未做"
-    case .deferred: "顺到明天"
+    case .deferred: "推到明天了"
     case .open, .deleted: "已撤回"
     }
   }
@@ -2115,7 +2134,7 @@ private struct SheetFooter: View {
   private var counts: String {
     var parts = ["\(schedule.doneCount)/\(schedule.total) 完成"]
     if schedule.partialCount > 0 { parts.append("\(schedule.partialCount) 部分") }
-    if schedule.deferredCount > 0 { parts.append("\(schedule.deferredCount) 延期") }
+    if schedule.deferredCount > 0 { parts.append("\(schedule.deferredCount) 推到明天") }
     return parts.joined(separator: " · ")
   }
 
@@ -2151,7 +2170,7 @@ private struct ClearState: View {
 
   private var detail: String {
     var parts = ["\(schedule.total) 项", "\(schedule.doneCount) 完成"]
-    if schedule.deferredCount > 0 { parts.append("\(schedule.deferredCount) 延期") }
+    if schedule.deferredCount > 0 { parts.append("\(schedule.deferredCount) 推到明天") }
     return parts.joined(separator: " · ") + "。写一句复盘，明早的计划会读它。"
   }
 }
@@ -2197,7 +2216,7 @@ private struct ExecutionPanel: View {
         stat("完成", schedule.doneCount)
         stat("部分", schedule.partialCount)
         stat("未做", schedule.openCount)
-        stat("延期", schedule.deferredCount)
+        stat("推到明天", schedule.deferredCount)
         stat("过了时段没更新", schedule.lateRows.count)
       }
     }
@@ -2492,7 +2511,7 @@ private struct TeamTodayRow: View {
       } else if item.state == .partial {
         Pill("部分", tone: .accent)
       } else if item.state == .deferred {
-        Pill("已延期", tone: .neutral)
+        Pill("推到明天", tone: .neutral)
       }
       if let minutes = item.estimatedMinutes {
         Text(DaySchedule.duration(minutes)).font(Typo.caption).foregroundStyle(Palette.ink3)

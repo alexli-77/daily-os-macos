@@ -887,7 +887,7 @@ let pastDay = DayHistory(
   date: "2026-09-24", dates: [], today: "2026-09-25", hasPlan: true,
   items: [sheetItem("a", 30, .done), sheetItem("b", 30, .partial), sheetItem("c", 30, .deferred), sheetItem("d", 30)]
 )
-check(pastDay.summary == "4 条 · 完成 1 · 部分 1 · 顺延 1", "摘要按那天留下的状态计数: \(pastDay.summary)")
+check(pastDay.summary == "4 条 · 完成 1 · 部分 1 · 推到明天 1", "摘要按那天留下的状态计数: \(pastDay.summary)")
 check(DayHistory(date: "2026-09-24", dates: [], today: "2026-09-25", hasPlan: true, items: [sheetItem("a", nil)]).summary == "1 条 · 完成 0",
       "没有部分和顺延就不写这两项")
 check(DayHistory(date: "2026-09-10", dates: [], today: "2026-09-25", hasPlan: false, items: []).summary == "这天没有计划",
@@ -903,6 +903,23 @@ check(DayLabel.shift("2026-10-01", by: -1) == "2026-09-30" && DayLabel.shift("20
 check(DayLabel.shift("2026-03-08", by: 1) == "2026-03-09", "跨夏令时也是一天一天地走")
 check(DayLabel.title(for: "2026-10-22", today: "2026-10-23") == "2026年10月22日 周四 · 昨天", "日视图标题像飞书：日期、星期、昨天")
 check(DayLabel.title(for: "2026-10-12", today: "2026-10-23") == "2026年10月12日 周一", "再往前只写日期和星期")
+// 回收：漏了复盘的那天先问；没勾的每条选一个。
+let wrapDay = WrapupDay(date: "2026-10-19", today: "2026-10-23", rows: [
+  .init(id: "linear:A-1", rank: 1, text: "做完的", state: .done),
+  .init(id: "linear:A-2", rank: 2, text: "没勾的", state: .open),
+  .init(id: "weekly:3:ab12cd34", rank: 3, text: "做了一半", state: .partial),
+  .init(id: "rhythm:block:b1", rank: 4, text: "作品集", state: .open, isFixed: true),
+  .init(id: "todo_inbox:x", rank: 5, text: "未做的", state: .missed),
+])
+check(wrapDay.unsettled.map(\.id) == ["linear:A-2", "weekly:3:ab12cd34", "rhythm:block:b1"], "回收只问没勾的和做了一半的")
+check(WrapupChoice.options(for: wrapDay.rows[1]) == [.done, .missed, .moveToToday], "没勾的：完成 / 未做 / 挪到今天")
+check(WrapupChoice.options(for: wrapDay.rows[2]) == [.done, .keep, .moveToToday], "做了一半的不该有「未做」")
+check(!WrapupChoice.options(for: wrapDay.rows[3]).contains(.moveToToday), "固定日程今天也有，不挪")
+check(WrapupChoice.done.event == "complete" && WrapupChoice.missed.event == "missed" && WrapupChoice.keep.event == nil && WrapupChoice.moveToToday.event == nil,
+      "完成和未做记账，就做到这什么都不记，挪到今天走自己的路")
+check(StateMenuBar.label(.state(.deferred)) == "推到明天", "顺延改名：推到明天")
+check(StateMenuBar.label(.moveToToday) == "挪到今天", "往日的行能挪到今天")
+
 let quarterHours = Array(stride(from: 5 * 60, to: 24 * 60, by: 15))
 check(DaySchedule.listAnchor(quarterHours, selected: 10 * 60, now: 14 * 60) == 10 * 60, "时间列表打开在已选的时间，不是 05:00")
 check(DaySchedule.listAnchor(quarterHours, selected: nil, now: 14 * 60 + 7) == 14 * 60 + 15 || DaySchedule.listAnchor(quarterHours, selected: nil, now: 14 * 60 + 7) == 14 * 60,
@@ -1335,7 +1352,7 @@ check(UpdateInfo.resolve(localCommit: "abc123", localBuiltAt: localAt, manifestV
       "url 解析不了就不提示")
 
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态, 手打时间, 计划外与收尾, 更新检查, 往日可改, 日视图看往日, 时间列表定位")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态, 手打时间, 计划外与收尾, 更新检查, 往日可改, 日视图看往日, 时间列表定位, 回收")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

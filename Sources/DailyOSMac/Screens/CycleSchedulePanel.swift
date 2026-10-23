@@ -736,8 +736,13 @@ private struct PastBlockCard: View {
     case .ready(let id, let rank):
       VStack(alignment: .leading, spacing: Metrics.xxs) {
         Text("那天做得怎样").font(Typo.caption).foregroundStyle(Palette.ink3)
-        StateMenuBar(state: current, choices: PastRowEdit.choices.map { .state($0) }) { choice in
-          if case .state(let target) = choice { set(PastRowEdit.picked(target, from: current), id: id, rank: rank) }
+        let canMove = !id.hasPrefix("rhythm:") && (current == .open || current == .partial)
+        StateMenuBar(state: current, choices: PastRowEdit.choices.map { .state($0) } + (canMove ? [.moveToToday] : [])) { choice in
+          switch choice {
+          case .state(let target): set(PastRowEdit.picked(target, from: current), id: id, rank: rank)
+          case .moveToToday: move(id: id, rank: rank)
+          case .delete: break
+          }
         }
         .disabled(isSending)
       }
@@ -797,6 +802,24 @@ private struct PastBlockCard: View {
             Task { @MainActor in _ = await store.editPastRow(date: date, candidateID: id, rank: rank, event: PastRowEdit.event(for: previous)) }
           })
         }
+      case .failed(let why), .unsupported(let why):
+        current = previous
+        phase = .failed(why)
+      }
+    }
+  }
+
+  /// 挪到今天: onto today's sheet; on this day it reads as carried.
+  private func move(id: String, rank: Int) {
+    let previous = current
+    current = .deferred
+    isSending = true
+    let store = state
+    Task {
+      let outcome = await store.moveRowToToday(date: date, candidateID: id, rank: rank)
+      isSending = false
+      switch outcome {
+      case .ok(let note): store.toast = "\(dayLabel)：" + (note ?? "挪到今天了")
       case .failed(let why), .unsupported(let why):
         current = previous
         phase = .failed(why)

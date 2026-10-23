@@ -230,6 +230,10 @@ public final class LiveAppState: AppState {
       self.todayRoutine = rhythm.routine
     }
 
+    // Every open of the app (and every wake, see DailyOSApp) asks which past
+    // days still need closing out; the root view asks about them before today.
+    await loadPendingWrapups()
+
     await load(.teamToday) {
       // Same cache the Cycles screen's teammate view reads; a teammate who has
       // not pushed a plan yet still comes back, with no items, so the panel can
@@ -602,6 +606,39 @@ public final class LiveAppState: AppState {
     } catch {
       let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
       return .failure(DayHistoryError(reason))
+    }
+  }
+
+  /// Quiet on failure, and never clears what is there: a service from before
+  /// 回收 answers 404, and that must mean "nothing to ask", not an error banner.
+  public override func loadPendingWrapups() async {
+    guard let client, connection.state.isConnected else { return }
+    if let days = try? await client.pendingWrapups() { pendingWrapups = days }
+  }
+
+  public override func resolveWrapup(date: String, action: String) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      let text = try await client.resolveWrapup(date: date, action: action)
+      pendingWrapups.removeAll { $0.date == date }
+      pastEditsRevision += 1
+      return .ok(text)
+    } catch {
+      return .failed((error as? ClientError)?.errorDescription ?? error.localizedDescription)
+    }
+  }
+
+  /// Today's sheet gains the row, so today's plan is read again.
+  public override func moveRowToToday(date: String, candidateID: String, rank: Int) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      let text = try await client.moveRowToToday(date: date, candidateID: candidateID, rank: rank)
+      pastEditsRevision += 1
+      await reload()
+      if viewedDate == date { await showDay(date) }
+      return .ok(text)
+    } catch {
+      return .failed((error as? ClientError)?.errorDescription ?? error.localizedDescription)
     }
   }
 
