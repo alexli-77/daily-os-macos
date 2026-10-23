@@ -337,8 +337,9 @@ private struct Composer: View {
           .font(Typo.body)
           .lineLimit(1...6)
           .padding(Metrics.xs)
-          .background(Palette.surfaceSunken)
+          .background(Palette.surface)
           .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
+          .overlay(RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous).strokeBorder(Palette.line, lineWidth: 0.5))
           .onSubmit { state.send() }
         Button("发送") { state.send() }
           .buttonStyle(MossButtonStyle())
