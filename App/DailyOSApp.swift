@@ -125,6 +125,9 @@ struct DailyOSApp: App {
     // nothing — which is what lets the app open to its own empty screens
     // instead of to a folder picker.
     if state == nil { state = LiveAppState(connection: connection) }
+    // Independent of the service — a new build is worth knowing about even when
+    // the local service is down. Fire-and-forget; it only ever sets a flag.
+    Task { await state?.checkForUpdate() }
     if connection.state.isConnected {
       await state?.reload()
       // Started and stopped here, in the one function that decides whether

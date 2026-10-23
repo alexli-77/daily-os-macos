@@ -1211,6 +1211,16 @@ public final class LiveAppState: AppState {
     weather = snapshot
   }
 
+  // MARK: - Update check
+
+  private let updateChecker = UpdateChecker()
+
+  /// One-shot at launch. Leaves `updateAvailable` as-is on failure so a flaky
+  /// network cannot clear a nag that was true a moment ago.
+  public override func checkForUpdate() async {
+    if let info = await updateChecker.check() { updateAvailable = info }
+  }
+
   /// Fire a write, and put the truth back if it fails.
   private func write(
     _ what: String,
