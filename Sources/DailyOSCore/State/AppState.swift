@@ -700,6 +700,10 @@ open class AppState {
   /// Today's weather, or nil when it has never been fetched.
   public var weather: WeatherSnapshot?
 
+  /// A newer published build, or nil when this is current / unknown. Set by the
+  /// one-shot check at launch; drives the Settings → 服务 "有新版本" row (LEO-296).
+  public var updateAvailable: UpdateInfo?
+
   /// Who is signed in to the console, as opposed to which team member this
   /// machine syncs as. Nil when nobody is.
   public var session: ConsoleSession?
@@ -707,6 +711,10 @@ open class AppState {
   /// Fetch weather for the configured place. Cheap to call — the live version
   /// only goes to the network when the cache is stale.
   open func refreshWeather(force: Bool = false) async {}
+
+  /// Check the published manifest for a newer build. Network only, no service
+  /// needed; stays quiet on any failure.
+  open func checkForUpdate() async {}
 
   /// Re-read today's plan and rhythm now. For a change made elsewhere — the
   /// 作息时间 settings — that the Today page would otherwise only pick up on

@@ -1231,8 +1231,30 @@ check(actionState.toastActionTitle == "加进要务" && actionState.toastUndo !=
 actionState.toast("已删除", undo: {})
 check(actionState.toastActionTitle == "撤销", "带撤销的提示按钮还是撤销")
 
+// MARK: - 更新检查（LEO-296）
+// manifest 比本机新才提示；没构建戳的手打版、同一 commit、本机反而更新，都不提示。
+
+let localAt = Date(timeIntervalSince1970: 1_000)
+let newerAt = Date(timeIntervalSince1970: 2_000)
+let olderAt = Date(timeIntervalSince1970: 500)
+let goodURL = "https://github.com/alexli-77/daily-os-macos/releases/latest"
+
+check(UpdateInfo.resolve(localCommit: "", localBuiltAt: localAt, manifestVersion: "0.1.20", manifestCommit: "zzz", manifestURL: goodURL, manifestDate: newerAt) == nil,
+      "没构建戳的本机版不提示更新")
+check(UpdateInfo.resolve(localCommit: "abc123", localBuiltAt: localAt, manifestVersion: "0.1.19", manifestCommit: "abc123", manifestURL: goodURL, manifestDate: newerAt) == nil,
+      "同一 commit 不提示")
+let newer = UpdateInfo.resolve(localCommit: "abc123", localBuiltAt: localAt, manifestVersion: "0.1.20", manifestCommit: "def456", manifestURL: goodURL, manifestDate: newerAt)
+check(newer?.commit == "def456" && newer?.version == "0.1.20" && newer?.url.absoluteString == goodURL,
+      "manifest 更新时返回新版本信息")
+check(UpdateInfo.resolve(localCommit: "abc123", localBuiltAt: localAt, manifestVersion: "0.1.18", manifestCommit: "old999", manifestURL: goodURL, manifestDate: olderAt) == nil,
+      "本机比 manifest 新（开发机领先）不提示")
+check(UpdateInfo.resolve(localCommit: "abc123", localBuiltAt: nil, manifestVersion: "0.1.20", manifestCommit: "def456", manifestURL: goodURL, manifestDate: nil) != nil,
+      "commit 不同、无日期可比时按落后处理")
+check(UpdateInfo.resolve(localCommit: "abc123", localBuiltAt: localAt, manifestVersion: "0.1.20", manifestCommit: "def456", manifestURL: "not a url ::://", manifestDate: newerAt) == nil,
+      "url 解析不了就不提示")
+
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态, 手打时间, 计划外与收尾")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态, 手打时间, 计划外与收尾, 更新检查")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

@@ -17,6 +17,7 @@ import DailyOSCore
 /// talks about those.
 struct ServiceSection: View {
   @Environment(AppState.self) private var state
+  @Environment(\.openURL) private var openURL
   let store: SettingsStore
   let snapshot: SettingsSnapshot
 
@@ -47,6 +48,22 @@ struct ServiceSection: View {
               .fixedSize(horizontal: false, vertical: true)
             if BuildInfo.isDirty {
               Pill("有未提交改动", tone: .warn)
+            }
+          }
+        }
+        if let update = state.updateAvailable {
+          PanelDivider()
+          // Not signed / notarised yet (LEO-296: no Apple account), so this is a
+          // nudge, not an auto-update — the button opens the download page.
+          KeyValueRow("有新版本") {
+            HStack(spacing: Metrics.xs) {
+              Text(update.label)
+                .font(Typo.mono)
+                .foregroundStyle(Palette.inkMuted)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+              Button("下载") { openURL(update.url) }
+                .buttonStyle(QuietButtonStyle())
             }
           }
         }
