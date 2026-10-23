@@ -54,7 +54,7 @@ struct MacRootView: View {
         Button {
           state.chatPanelOpen.toggle()
         } label: {
-          Image(systemName: "bubble.left.and.bubble.right")
+          ChatBotMark().frame(width: 18, height: 18)
         }
         .help("聊天（⌘⇧C）")
       }

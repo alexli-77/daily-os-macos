@@ -164,9 +164,11 @@ private struct Conversation: View {
         .padding(Metrics.screenPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
       }
-      .background(Palette.paper)
       Composer()
     }
+    // LEO-346: a soft green-tinted canvas (light → mint), the app icon's green
+    // family carried into the chat. Kept pale so white cards and text stay legible.
+    .background(Palette.chatCanvas)
   }
 }
 
@@ -194,27 +196,36 @@ private struct EmptyChatState: View {
   var body: some View {
     if state.agentMode.allowsFreeChat {
       VStack(spacing: Metrics.lg) {
-        EmptyState(
-          icon: "bubble.left.and.text.bubble.right",
-          title: "你好，我是 Daily OS 助手",
-          message: "能看也能改你的作息、排期、要务和 OKR，也能告诉你怎么改设置。试试点下面的例子："
-        )
+        VStack(spacing: Metrics.sm) {
+          ChatBotMark().frame(width: 60, height: 60)
+          Text("你好，我是 Daily OS 助手")
+            .font(Typo.heading)
+            .foregroundStyle(Palette.ink)
+          Text("能看也能改你的作息、排期、要务和 OKR，也能告诉你怎么改设置。试试点下面的例子：")
+            .font(Typo.body)
+            .foregroundStyle(Palette.inkMuted)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+        }
         VStack(spacing: Metrics.xs) {
           ForEach(chatExamplePrompts, id: \.self) { prompt in
             Button { state.composerText = prompt } label: {
-              Text("「\(prompt)」")
+              Text(prompt)
                 .font(Typo.body)
                 .foregroundStyle(Palette.ink)
-                .padding(.horizontal, Metrics.sm)
-                .padding(.vertical, Metrics.xs)
+                .padding(.horizontal, Metrics.md)
+                .padding(.vertical, Metrics.xs + 2)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Metrics.radiusMedium, style: .continuous))
+                // White pills read cleanly on the green canvas.
+                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.line, lineWidth: 0.5))
             }
             .buttonStyle(.plain)
           }
         }
         .frame(maxWidth: 420)
       }
+      .frame(maxWidth: .infinity)
       .padding(Metrics.lg)
     } else {
       EmptyState(
