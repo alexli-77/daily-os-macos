@@ -899,8 +899,17 @@ check(DayHistory(date: "2026-09-24", dates: [], today: "2026-09-25", hasPlan: tr
 check(!DayHistory(date: "2026-09-24", dates: [], today: "2026-09-25", hasPlan: true, items: []).editable,
       "服务没说能改，往日就是只读——旧服务会把补记记到今天")
 check(PastRowEdit.choices == [.done, .partial, .missed], "往日只能补记 完成 / 部分 / 未做，没有顺延和删除")
-check(PastRowEdit.toggled(.open) == .done && PastRowEdit.toggled(.done) == .open, "圆圈：勾上，再点撤回")
-check(PastRowEdit.toggled(.missed) == .done && PastRowEdit.toggled(.partial) == .done, "记成未做或部分的，点圆圈就是其实做完了")
+check(DayLabel.shift("2026-10-01", by: -1) == "2026-09-30" && DayLabel.shift("2025-12-31", by: 1) == "2026-01-01", "前一天 / 后一天跨月跨年")
+check(DayLabel.shift("2026-03-08", by: 1) == "2026-03-09", "跨夏令时也是一天一天地走")
+check(DayLabel.title(for: "2026-10-22", today: "2026-10-23") == "2026年10月22日 周四 · 昨天", "日视图标题像飞书：日期、星期、昨天")
+check(DayLabel.title(for: "2026-10-12", today: "2026-10-23") == "2026年10月12日 周一", "再往前只写日期和星期")
+let quarterHours = Array(stride(from: 5 * 60, to: 24 * 60, by: 15))
+check(DaySchedule.listAnchor(quarterHours, selected: 10 * 60, now: 14 * 60) == 10 * 60, "时间列表打开在已选的时间，不是 05:00")
+check(DaySchedule.listAnchor(quarterHours, selected: nil, now: 14 * 60 + 7) == 14 * 60 + 15 || DaySchedule.listAnchor(quarterHours, selected: nil, now: 14 * 60 + 7) == 14 * 60,
+      "没选过时间就打开在现在附近")
+check(DaySchedule.listAnchor(quarterHours, selected: 13 * 60 + 7, now: 0) == 13 * 60 + 15 || DaySchedule.listAnchor(quarterHours, selected: 13 * 60 + 7, now: 0) == 13 * 60,
+      "手打的 13:07 打开在最近的一刻钟")
+check(DaySchedule.listAnchor([], selected: 600, now: 600) == nil, "没有选项不崩")
 check(PastRowEdit.picked(.missed, from: .missed) == .open && PastRowEdit.picked(.partial, from: .done) == .partial,
       "再点当前状态是撤回，点别的就换过去")
 check(PastRowEdit.event(for: .done) == "complete" && PastRowEdit.event(for: .partial) == "partial"
@@ -918,6 +927,52 @@ check(editableDay.row(candidateID: "todo_inbox:x", itemKey: nil)?.id == "todo_in
 check(editableDay.row(candidateID: "rhythm:block:b1", itemKey: nil) == nil && editableDay.row(candidateID: nil, itemKey: "ffffffff") == nil,
       "那天计划里没有的，找不到就说找不到")
 check(editableDay.row(candidateID: nil, itemKey: "")?.id == nil, "空 key 不该匹配到随便哪一行")
+
+// 日视图里看往日：同一张通告单，改动带着那天的日期，只落在那天。
+@MainActor final class PastDayStore: AppState {
+  var sent: [(date: String, id: String, event: String, start: String?, minutes: Int?)] = []
+  var refuse = false
+  override func loadDayHistory(date: String?) async -> Result<DayHistory, DayHistoryError> {
+    .success(DayHistory(
+      date: date ?? "2026-10-22", dates: [], today: "2026-10-23", hasPlan: true,
+      items: [sheetItem("a", 30), sheetItem("b", 60, .done)], editable: true
+    ))
+  }
+  override func editPastRow(
+    date: String, candidateID: String, rank: Int, event: String,
+    text: String? = nil, note: String? = nil, minutes: Int? = nil, start: String? = nil, color: String? = nil, mit: Bool? = nil
+  ) async -> ActionOutcome {
+    sent.append((date, candidateID, event, start, minutes))
+    return refuse ? .failed("不行") : .ok(nil)
+  }
+}
+let pastStore = PastDayStore()
+pastStore.plan = [sheetItem("today-row", 30)]
+await pastStore.showDay("2026-10-22")
+check(pastStore.isViewingPast && pastStore.sheetItems.map(\.id) == ["a", "b"], "看往日时通告单画的是那天的行")
+_ = await pastStore.sheetFeedback(date: "2026-10-22", candidateID: "a", rank: 1, event: "complete")
+check(pastStore.sheetItems.first?.state == .done, "往日勾上马上画出来")
+check(pastStore.sent.last?.date == "2026-10-22" && pastStore.sent.last?.event == "complete", "勾的那一下带着那天的日期发出去")
+check(pastStore.plan.first?.state == .open, "今天的计划一点没动")
+_ = await pastStore.sheetPlace(date: "2026-10-22", candidateID: "a", rank: 1, start: 15 * 60)
+check(pastStore.sheetItems.first?.pinnedStart == 15 * 60 && pastStore.sent.last?.start == "15:00", "往日也能拖到别的钟点")
+_ = await pastStore.sheetEstimate(date: "2026-10-22", candidateID: "a", rank: 1, minutes: nil)
+check(pastStore.sent.last?.minutes == 0 && pastStore.sheetItems.first?.estimatedMinutes == nil, "清掉估时在线上是 0")
+_ = await pastStore.sheetFeedback(date: "2026-10-22", candidateID: "b", rank: 2, event: "remove")
+check(!pastStore.sheetItems.contains { $0.id == "b" }, "往日删掉一行，那天就没了这一行")
+pastStore.refuse = true
+_ = await pastStore.sheetFeedback(date: "2026-10-22", candidateID: "a", rank: 1, event: "missed")
+check(pastStore.sheetItems.first(where: { $0.id == "a" })?.state == .open, "服务拒了就重读那天，不留一个假的状态")
+pastStore.refuse = false
+await pastStore.stepDay(by: -1)
+check(pastStore.viewedDate == "2026-10-21", "‹ 往前一天")
+await pastStore.stepDay(by: 1)
+await pastStore.stepDay(by: 1)
+check(!pastStore.isViewingPast && pastStore.sheetItems.map(\.id) == ["today-row"], "› 走到今天就回到今天的计划")
+await pastStore.stepDay(by: 1)
+check(!pastStore.isViewingPast, "今天以后不往前走")
+_ = await pastStore.sheetFeedback(date: nil, candidateID: "today-row", rank: 1, event: "complete")
+check(pastStore.sent.count == 5, "今天的勾不走往日那条路")
 
 // MARK: - 倒数日
 //
@@ -1280,7 +1335,7 @@ check(UpdateInfo.resolve(localCommit: "abc123", localBuiltAt: localAt, manifestV
       "url 解析不了就不提示")
 
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态, 手打时间, 计划外与收尾, 更新检查, 往日可改")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态, 手打时间, 计划外与收尾, 更新检查, 往日可改, 日视图看往日, 时间列表定位")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

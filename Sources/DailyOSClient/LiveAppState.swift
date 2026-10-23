@@ -605,13 +605,16 @@ public final class LiveAppState: AppState {
     }
   }
 
-  /// Not optimistic here: the sheet draws the change itself and needs to know
-  /// whether to take it back. Nothing on Today moves, so no reload — only the
+  /// Not optimistic here: `AppState.editShownDay` draws the change and takes
+  /// it back on a refusal. Today's plan does not move, so no reload — only the
   /// revision, for the 排期 calendar that draws past days' ticks.
-  public override func editPastRow(date: String, candidateID: String, rank: Int, event: String, text: String? = nil, note: String? = nil) async -> ActionOutcome {
+  public override func editPastRow(
+    date: String, candidateID: String, rank: Int, event: String,
+    text: String? = nil, note: String? = nil, minutes: Int? = nil, start: String? = nil, color: String? = nil, mit: Bool? = nil
+  ) async -> ActionOutcome {
     guard let client else { return .failed("没有连接到服务。") }
     do {
-      try await client.recordPlanFeedback(candidateID: candidateID, rank: rank, event: event, note: note, text: text, date: date)
+      try await client.recordPlanFeedback(candidateID: candidateID, rank: rank, event: event, note: note, minutes: minutes, start: start, text: text, color: color, mit: mit, date: date)
       pastEditsRevision += 1
       return .ok(nil)
     } catch {

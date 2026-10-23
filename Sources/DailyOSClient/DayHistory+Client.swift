@@ -42,7 +42,7 @@ struct DayPlanResponse: Decodable {
   let review: Review?
   let rawPlan: String?
   /// The service takes dated edits for this day. Absent from a service that
-  /// predates them, which keeps 往日 read-only there.
+  /// predates them, which keeps a past day read-only there.
   let editable: Bool?
 }
 
@@ -51,19 +51,9 @@ extension DailyOSClient {
   public func dayHistory(date: String?) async throws -> DayHistory {
     let path = date.map { "/api/day/plan?date=\($0)" } ?? "/api/day/plan"
     let response: DayPlanResponse = try await get(path)
-    let items = response.todos
-      .sorted { $0.rank < $1.rank }
-      .map { todo in
-        TodoItem(
-          id: todo.candidateId,
-          text: todo.text,
-          kind: .priority,
-          state: Self.planState(for: response.feedback[todo.candidateId]),
-          sourceRef: Self.sourceRef(for: todo.candidateId),
-          estimatedMinutes: todo.minutes,
-          note: response.notes?[todo.candidateId].flatMap { $0.isEmpty ? nil : $0 }
-        )
-      }
+    // Exactly as Today maps its rows — pinned times, colours, MIT, 固定日程 —
+    // because the 日 view draws a past day with the same timeline.
+    let items = Self.planItems(response.todos, feedback: response.feedback, notes: response.notes, carriedFrom: nil)
     let review = response.review.map { review in
       DayReview(
         items: review.reconciliation.enumerated().map { index, item in
@@ -91,21 +81,5 @@ extension DailyOSClient {
       rawPlan: response.rawPlan,
       editable: response.editable ?? false
     )
-  }
-
-  /// Same mapping as Today's plan rows: the ledger's last event for the day.
-  private static func planState(for event: String?) -> TodoState {
-    switch event {
-    case "complete": .done
-    case "partial": .partial
-    case "missed": .missed
-    case "defer": .deferred
-    default: .open
-    }
-  }
-
-  /// `linear:CUTTO-1038` → `CUTTO-1038`; other sources carry no reference worth showing.
-  private static func sourceRef(for candidateID: String) -> String? {
-    candidateID.hasPrefix("linear:") ? String(candidateID.dropFirst("linear:".count)) : nil
   }
 }

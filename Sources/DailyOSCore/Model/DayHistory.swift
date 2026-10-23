@@ -3,12 +3,13 @@ import Foundation
 /// One past day: the plan it ended with, the state each row was left in, and
 /// what the evening review made of it.
 ///
-/// Editable the way a calendar's past events are: still the same rows, so a
-/// tick forgotten in the evening, a wording that turned out wrong, or a note
-/// on what actually happened can be put right afterwards. The edit goes to the
+/// The 日 view draws it the way it draws today — same timeline, same circle,
+/// same editor — because a calendar's past day is still the same day: a tick
+/// forgotten in the evening, a wording that turned out wrong or a block that
+/// actually ran later can be put right afterwards. Every edit goes to the
 /// service with the day's date and lands on that day only. `editable` is false
 /// against a service that predates dated edits — it would have stamped a past
-/// tick onto today — and the view stays read-only then.
+/// tick onto today — and the day is shown read-only then.
 public struct DayHistory: Sendable, Equatable {
   /// `YYYY-MM-DD`, the day on screen.
   public let date: String
@@ -80,20 +81,14 @@ public struct DayHistory: Sendable, Equatable {
   }
 }
 
-/// What a past day's row can still be told, and how each answer goes on the wire.
+/// What a past day's row can be put in, and how each answer goes on the wire.
 ///
-/// The same four-state vocabulary as Today, minus 顺延 and 删除: those
-/// reschedule (push the 要务 to the next day, skip its session), and a day
-/// that is over has nothing left to schedule. The service refuses them for a
-/// past date too; leaving them out here means no button that can only fail.
+/// The same four-state vocabulary as Today, minus 顺延: 顺到明天 is a decision
+/// about tomorrow, and a past day's tomorrow has already happened. The service
+/// refuses it for a past date too; leaving it out here means no button that
+/// can only fail.
 public enum PastRowEdit {
   public static let choices: [TodoState] = [.done, .partial, .missed]
-
-  /// The circle: tick, or take the tick back. Any other state ticks — a row
-  /// marked 未做 and then clicked was done after all.
-  public static func toggled(_ state: TodoState) -> TodoState {
-    state == .done ? .open : .done
-  }
 
   /// Picking the state the row is already in takes it back, as on Today.
   public static func picked(_ target: TodoState, from current: TodoState) -> TodoState {
@@ -183,6 +178,33 @@ public enum DayLabel {
       let weekday = ["日", "一", "二", "三", "四", "五", "六"][(parts.weekday ?? 1) - 1]
       return "\(parts.month ?? 0)月\(parts.day ?? 0)日 周\(weekday)"
     }
+  }
+
+  /// "2026年10月22日 周四" — the 日 view's title, as 飞书 writes it, with
+  /// "昨天" / "前天" appended when it is one of those.
+  public static func title(for date: String, today: String) -> String {
+    guard let day = parse(date) else { return date }
+    let parts = calendar.dateComponents([.year, .month, .day, .weekday], from: day)
+    let weekday = ["日", "一", "二", "三", "四", "五", "六"][(parts.weekday ?? 1) - 1]
+    let base = "\(parts.year ?? 0)年\(parts.month ?? 0)月\(parts.day ?? 0)日 周\(weekday)"
+    let relative = text(for: date, today: today)
+    return ["今天", "昨天", "前天"].contains(relative) ? "\(base) · \(relative)" : base
+  }
+
+  /// The day `days` away from `date`, by the calendar. Nil for a date that
+  /// cannot be read.
+  public static func shift(_ date: String, by days: Int) -> String? {
+    guard let day = parse(date), let moved = calendar.date(byAdding: .day, value: days, to: day) else { return nil }
+    let parts = calendar.dateComponents([.year, .month, .day], from: moved)
+    return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+  }
+
+  /// This Mac's calendar day, `YYYY-MM-DD`. The 日 view asks the service for
+  /// its own today when it has one; this is for deciding, before that, whether
+  /// a date is in the past at all.
+  public static func localToday(_ now: Date = .now) -> String {
+    let parts = Calendar.current.dateComponents([.year, .month, .day], from: now)
+    return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
   }
 
   /// Fixed UTC so a day never shifts across a DST change or a time zone —

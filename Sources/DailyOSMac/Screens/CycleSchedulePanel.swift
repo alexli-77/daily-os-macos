@@ -60,7 +60,7 @@ struct CycleSchedulePanel: View {
         }
       }
     }
-    // A tick recorded in 往日 or on a past block's card changes how that day's
+    // A tick recorded on a past day (its 日 view, or a past block's card) changes how that day's
     // blocks are drawn; the revision reads the schedule again.
     .task(id: "\(cycle.id)#\(state.pastEditsRevision)") { await load() }
     .onDisappear {
@@ -677,7 +677,7 @@ struct CycleSchedulePanel: View {
   }
 }
 
-/// What clicking a past block opens: how it went that day, set the way 往日
+/// What clicking a past block opens: how it went that day, set the way the 日 view
 /// sets it, and the way into that day. A past event's card, in calendar terms
 /// — the same card, only nothing on it moves the block any more.
 private struct PastBlockCard: View {
@@ -721,7 +721,7 @@ private struct PastBlockCard: View {
           Label("打开这一天", systemImage: "arrow.up.forward.square")
         }
         .buttonStyle(QuietButtonStyle(tone: .neutral))
-        .help("在往日里看这一天的整张计划和复盘")
+        .help("在「日」里打开这一天，整张通告单都能改")
       }
     }
     .padding(Metrics.md)
@@ -744,7 +744,7 @@ private struct PastBlockCard: View {
     case .notOnSheet:
       note("那天的计划里没有这一条，没有可以补记的。")
     case .readOnly:
-      note("现在连着的服务还不能补记往日，更新 Daily OS 后再试。")
+      note("现在连着的服务还不能改往日，更新 Daily OS 后再试。")
     case .failed(let why):
       Text(why).font(Typo.caption).foregroundStyle(Palette.warn)
         .fixedSize(horizontal: false, vertical: true)
@@ -764,7 +764,7 @@ private struct PastBlockCard: View {
         current = row.state
         phase = .ready(id: row.id, rank: rank)
       } else if let candidateID {
-        // 往日 replays a day's plan rows, and a 固定日程 is not one of them —
+        // A service from before past days carried their 固定日程 has no row for it —
         // but its state is that day's ledger like any row's, so it is written there.
         phase = .ready(id: candidateID, rank: 0)
       } else {

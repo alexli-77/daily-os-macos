@@ -542,7 +542,7 @@ open class AppState {
   /// `nil` clears the estimate back to "unknown", which has to stay reachable —
   /// otherwise a mis-tap turns an honest blank into a wrong number that can
   /// never be taken back.
-  /// A past day's plan and review, for the 往日 view. `nil` asks for the most
+  /// A past day's plan and review, for the 日 view of that day. `nil` asks for the most
   /// recent day before today that has a plan. The shell answers from mock data
   /// so previews and the demo have something to show; a live store asks the
   /// service.
@@ -550,17 +550,151 @@ open class AppState {
     .success(MockData.dayHistory(date: date))
   }
 
-  /// Correct one row of a past day: how it was left (`complete` / `partial` /
-  /// `missed` / `reopen`), or its wording and a note (`update`). Lands on
-  /// `date` only — today's sheet is not touched. Only for a day whose
-  /// `DayHistory.editable` is true.
-  open func editPastRow(date: String, candidateID: String, rank: Int, event: String, text: String? = nil, note: String? = nil) async -> ActionOutcome {
+  /// Send one edit of a past day's row: how it was left (`complete` /
+  /// `partial` / `missed` / `reopen`), its wording, note, colour, MIT or
+  /// length (`update`), its clock time (`place` / `unplace`), or taking it off
+  /// that day (`remove`). Lands on `date` only — today's sheet is not touched.
+  /// Only for a day whose `DayHistory.editable` is true. Callers go through
+  /// the `sheet…` methods below, which also redraw the day first.
+  open func editPastRow(
+    date: String, candidateID: String, rank: Int, event: String,
+    text: String? = nil, note: String? = nil, minutes: Int? = nil, start: String? = nil, color: String? = nil, mit: Bool? = nil
+  ) async -> ActionOutcome {
     .unsupported("这一版没有连接到服务。")
   }
 
   /// Bumped after a past day is edited, so anything drawing that day (the
-  /// 排期 calendar behind the 往日 sheet) reads it again.
+  /// 排期 calendar) reads it again.
   public var pastEditsRevision = 0
+
+  // MARK: 日 view: which day
+
+  /// The day the 日 view shows. Nil is today, which is what it opens on.
+  ///
+  /// A past day is shown *in* the 日 view, with the same timeline, circle and
+  /// editor as today — the way 飞书 and Google Calendar step back a day with
+  /// ‹ — rather than in a separate window of its own.
+  public private(set) var viewedDate: String?
+  /// That day, once read. Nil while it loads, and while today is shown.
+  public private(set) var viewedDay: DayHistory?
+  /// Why that day could not be read.
+  public private(set) var viewedDayError: String?
+  public var isViewingPast: Bool { viewedDate != nil }
+
+  /// The rows the call sheet draws: today's plan, or the shown day's.
+  public var sheetItems: [TodoItem] { viewedDate == nil ? plan : (viewedDay?.items ?? []) }
+
+  /// Show a day in the 日 view. Nil, today or a later day means today.
+  public func showDay(_ date: String?) async {
+    let today = viewedDay?.today ?? DayLabel.localToday()
+    guard let date, date < today else {
+      viewedDate = nil
+      viewedDay = nil
+      viewedDayError = nil
+      return
+    }
+    // Same day again (a reload) keeps what is on screen until the new read lands.
+    if viewedDate != date { viewedDay = nil }
+    viewedDate = date
+    viewedDayError = nil
+    let result = await loadDayHistory(date: date)
+    guard viewedDate == date else { return }
+    switch result {
+    case .success(let day): viewedDay = day
+    case .failure(let error): viewedDayError = error.message
+    }
+  }
+
+  /// One day back or forward from the day shown. Forward stops at today.
+  public func stepDay(by days: Int) async {
+    let today = viewedDay?.today ?? DayLabel.localToday()
+    guard let target = DayLabel.shift(viewedDate ?? today, by: days) else { return }
+    await showDay(target)
+  }
+
+  // MARK: Writes from the call sheet
+
+  /// The call sheet's writes. `date` is the day the sheet was showing when the
+  /// edit was made — captured by the caller, so an undo pressed after stepping
+  /// to another day still goes to the right one. Nil is today, and goes
+  /// through the plan methods exactly as before.
+  public func sheetFeedback(date: String?, candidateID: String, rank: Int, event: String, note: String? = nil) async -> ActionOutcome {
+    guard let date else { return await planFeedback(candidateID: candidateID, rank: rank, event: event, note: note) }
+    return await editShownDay(date: date, candidateID: candidateID, rank: rank, event: event, note: note) { item in
+      switch event {
+      case "complete": item.state = .done
+      case "partial": item.state = .partial
+      case "missed": item.state = .missed
+      case "reopen": item.state = .open
+      default: break
+      }
+    }
+  }
+
+  public func sheetEstimate(date: String?, candidateID: String, rank: Int, minutes: Int?) async -> ActionOutcome {
+    guard let date else { return await setPlanEstimate(candidateID: candidateID, rank: rank, minutes: minutes) }
+    // Zero on the wire is "back to unknown", as on today's sheet.
+    return await editShownDay(date: date, candidateID: candidateID, rank: rank, event: "update", minutes: minutes ?? 0) { item in
+      item.estimatedMinutes = minutes
+    }
+  }
+
+  public func sheetPlace(date: String?, candidateID: String, rank: Int, start: Int?) async -> ActionOutcome {
+    guard let date else { return await placePlanItem(candidateID, rank: rank, start: start) }
+    return await editShownDay(
+      date: date, candidateID: candidateID, rank: rank,
+      event: start == nil ? "unplace" : "place", start: start.map(DaySchedule.clock)
+    ) { item in
+      item.pinnedStart = start
+      if start != nil && item.estimatedMinutes == nil { item.estimatedMinutes = 30 }
+    }
+  }
+
+  public func sheetUpdate(date: String?, candidateID: String, rank: Int, text: String?, color: String?, note: String?, mit: Bool?) async -> ActionOutcome {
+    guard let date else { return await updatePlanRow(candidateID: candidateID, rank: rank, text: text, color: color, note: note, mit: mit) }
+    return await editShownDay(date: date, candidateID: candidateID, rank: rank, event: "update", text: text, note: note, color: color, mit: mit) { item in
+      if let text { item.text = text }
+      if let color { item.colorTag = color == "auto" ? nil : color }
+      if let note { item.note = note }
+      if let mit {
+        item.isMIT = mit
+        item.mitByUser = true
+      }
+    }
+  }
+
+  /// A past day's edit: drawn on the shown day first, then sent with its
+  /// date. A refusal, or anything the local change cannot draw (a deleted row
+  /// put back), reads the day again.
+  private func editShownDay(
+    date: String, candidateID: String, rank: Int, event: String,
+    text: String? = nil, note: String? = nil, minutes: Int? = nil, start: String? = nil, color: String? = nil, mit: Bool? = nil,
+    change: (inout TodoItem) -> Void
+  ) async -> ActionOutcome {
+    let isShown = viewedDay?.date == date
+    // A service that does not say `editable` would ignore the date and stamp
+    // the edit on today. Refused here, before anything is drawn or sent.
+    if isShown, viewedDay?.editable == false {
+      return .failed("现在连着的服务还不能改往日，更新 Daily OS 后再试。")
+    }
+    let present = isShown && viewedDay?.items.contains { $0.id == candidateID } == true
+    if isShown, var day = viewedDay {
+      if event == "remove" {
+        day.items.removeAll { $0.id == candidateID }
+      } else if let index = day.items.firstIndex(where: { $0.id == candidateID }) {
+        change(&day.items[index])
+      }
+      viewedDay = day
+    }
+    let outcome = await editPastRow(date: date, candidateID: candidateID, rank: rank, event: event, text: text, note: note, minutes: minutes, start: start, color: color, mit: mit)
+    let refresh: Bool
+    switch outcome {
+    case .ok: refresh = isShown && !present
+    case .failed, .unsupported: refresh = isShown
+    }
+    if refresh, viewedDate == date { await showDay(date) }
+    return outcome
+  }
 
   // MARK: 临时安排 / 只改今天
 
