@@ -33,6 +33,9 @@ public enum CycleWeekLayout {
     /// A 固定日程's category colour.
     public var color: String? = nil
     public var floor: Bool = false
+    /// A 固定日程's plan-row id (`rhythm:block:<id>`), so a past one can be
+    /// ticked from the calendar. Sessions are found by their 要务 key instead.
+    public var candidateID: String? = nil
   }
 
   public struct DayLayout: Sendable, Equatable {
@@ -64,7 +67,7 @@ public enum CycleWeekLayout {
       busy.append((block.start, block.end))
     }
     for row in day.fixed {
-      blocks.append(Placed(id: "fixed:\(day.date):\(row.candidateID)", kind: .fixed, title: row.text, start: row.start, end: row.end, session: nil, state: row.state, color: row.color, floor: row.floor))
+      blocks.append(Placed(id: "fixed:\(day.date):\(row.candidateID)", kind: .fixed, title: row.text, start: row.start, end: row.end, session: nil, state: row.state, color: row.color, floor: row.floor, candidateID: row.candidateID))
       busy.append((row.start, row.end))
     }
     for session in sessions {

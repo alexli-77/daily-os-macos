@@ -550,6 +550,18 @@ open class AppState {
     .success(MockData.dayHistory(date: date))
   }
 
+  /// Correct one row of a past day: how it was left (`complete` / `partial` /
+  /// `missed` / `reopen`), or its wording and a note (`update`). Lands on
+  /// `date` only — today's sheet is not touched. Only for a day whose
+  /// `DayHistory.editable` is true.
+  open func editPastRow(date: String, candidateID: String, rank: Int, event: String, text: String? = nil, note: String? = nil) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  /// Bumped after a past day is edited, so anything drawing that day (the
+  /// 排期 calendar behind the 往日 sheet) reads it again.
+  public var pastEditsRevision = 0
+
   // MARK: 临时安排 / 只改今天
 
   /// Something that came up today. See `AdhocRequest`.

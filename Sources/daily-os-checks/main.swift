@@ -892,6 +892,32 @@ check(DayHistory(date: "2026-09-24", dates: [], today: "2026-09-25", hasPlan: tr
       "没有部分和顺延就不写这两项")
 check(DayHistory(date: "2026-09-10", dates: [], today: "2026-09-25", hasPlan: false, items: []).summary == "这天没有计划",
       "没计划和有计划但没条目要说得不一样")
+check(DayHistory(date: "2026-09-24", dates: [], today: "2026-09-25", hasPlan: true, items: [sheetItem("a", 30, .missed), sheetItem("b", 30)]).summary
+      == "2 条 · 完成 0 · 未做 1", "补记的未做也算进摘要")
+
+// 往日可以改：像日历里过去的日程一样能点开。只补记完成情况和文字，不重新排。
+check(!DayHistory(date: "2026-09-24", dates: [], today: "2026-09-25", hasPlan: true, items: []).editable,
+      "服务没说能改，往日就是只读——旧服务会把补记记到今天")
+check(PastRowEdit.choices == [.done, .partial, .missed], "往日只能补记 完成 / 部分 / 未做，没有顺延和删除")
+check(PastRowEdit.toggled(.open) == .done && PastRowEdit.toggled(.done) == .open, "圆圈：勾上，再点撤回")
+check(PastRowEdit.toggled(.missed) == .done && PastRowEdit.toggled(.partial) == .done, "记成未做或部分的，点圆圈就是其实做完了")
+check(PastRowEdit.picked(.missed, from: .missed) == .open && PastRowEdit.picked(.partial, from: .done) == .partial,
+      "再点当前状态是撤回，点别的就换过去")
+check(PastRowEdit.event(for: .done) == "complete" && PastRowEdit.event(for: .partial) == "partial"
+      && PastRowEdit.event(for: .missed) == "missed" && PastRowEdit.event(for: .open) == "reopen",
+      "往日的状态和账本事件一一对应，没勾就是 reopen")
+check(PastRowEdit.said(.done, day: "昨天") == "昨天记为完成", "提示说清是哪天")
+let editableDay = DayHistory(
+  date: "2026-10-22", dates: [], today: "2026-10-23", hasPlan: true,
+  items: [sheetItem("linear:CUTTO-1312", 30, .done), sheetItem("weekly:3:ab12cd34", 60), sheetItem("todo_inbox:x", 30)],
+  editable: true
+)
+check(editableDay.rank(of: "weekly:3:ab12cd34") == 2 && editableDay.rank(of: "nope") == nil, "往日一行的 rank 就是它在那天的位置")
+check(editableDay.row(candidateID: nil, itemKey: "ab12cd34")?.id == "weekly:3:ab12cd34", "排期里的格子按要务 key 找到那天的那一行")
+check(editableDay.row(candidateID: "todo_inbox:x", itemKey: nil)?.id == "todo_inbox:x", "有 id 的直接按 id 找")
+check(editableDay.row(candidateID: "rhythm:block:b1", itemKey: nil) == nil && editableDay.row(candidateID: nil, itemKey: "ffffffff") == nil,
+      "那天计划里没有的，找不到就说找不到")
+check(editableDay.row(candidateID: nil, itemKey: "")?.id == nil, "空 key 不该匹配到随便哪一行")
 
 // MARK: - 倒数日
 //
@@ -1254,7 +1280,7 @@ check(UpdateInfo.resolve(localCommit: "abc123", localBuiltAt: localAt, manifestV
       "url 解析不了就不提示")
 
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态, 手打时间, 计划外与收尾, 更新检查")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态, 手打时间, 计划外与收尾, 更新检查, 往日可改")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

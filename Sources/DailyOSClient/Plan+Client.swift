@@ -183,7 +183,8 @@ extension DailyOSClient {
     start: String? = nil,
     text: String? = nil,
     color: String? = nil,
-    mit: Bool? = nil
+    mit: Bool? = nil,
+    date: String? = nil
   ) async throws -> String? {
     struct Request: Encodable {
       let candidateId: String
@@ -199,6 +200,10 @@ extension DailyOSClient {
       let color: String?
       /// Make the row today's MIT or take it off, on `update` only.
       let mit: Bool?
+      /// `YYYY-MM-DD` of a past day being corrected from 往日. Absent means
+      /// today. Only sent when `/api/day/plan` said the day is `editable` —
+      /// an older service ignores the field and would stamp the edit on today.
+      let date: String?
     }
     struct Response: Decodable {
       /// What the cycle schedule did in step (顺延 / 删除 / 恢复 a 要务 row).
@@ -206,7 +211,7 @@ extension DailyOSClient {
     }
     let response: Response = try await post(
       "/api/today/todo-feedback",
-      body: Request(candidateId: candidateID, rank: rank, event: event, note: note, minutes: minutes, start: start, text: text, color: color, mit: mit)
+      body: Request(candidateId: candidateID, rank: rank, event: event, note: note, minutes: minutes, start: start, text: text, color: color, mit: mit, date: date)
     )
     return response.schedule
   }

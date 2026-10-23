@@ -37,8 +37,13 @@ struct DayPlanResponse: Decodable {
   let plan: Plan?
   let todos: [TodayPlanResponse.Todo]
   let feedback: [String: String]
+  /// The note left on each row that day. Optional: older services do not send it.
+  let notes: [String: String]?
   let review: Review?
   let rawPlan: String?
+  /// The service takes dated edits for this day. Absent from a service that
+  /// predates them, which keeps 往日 read-only there.
+  let editable: Bool?
 }
 
 extension DailyOSClient {
@@ -55,7 +60,8 @@ extension DailyOSClient {
           kind: .priority,
           state: Self.planState(for: response.feedback[todo.candidateId]),
           sourceRef: Self.sourceRef(for: todo.candidateId),
-          estimatedMinutes: todo.minutes
+          estimatedMinutes: todo.minutes,
+          note: response.notes?[todo.candidateId].flatMap { $0.isEmpty ? nil : $0 }
         )
       }
     let review = response.review.map { review in
@@ -82,7 +88,8 @@ extension DailyOSClient {
       generatedAt: response.plan?.generatedAt.flatMap { $0.isEmpty ? nil : TodoWireDate.timestamp($0) },
       items: items,
       review: review,
-      rawPlan: response.rawPlan
+      rawPlan: response.rawPlan,
+      editable: response.editable ?? false
     )
   }
 
