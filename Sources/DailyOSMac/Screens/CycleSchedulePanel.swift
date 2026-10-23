@@ -42,6 +42,8 @@ struct CycleSchedulePanel: View {
   @State private var editing: ScheduleSession?
   @State private var drag: Drag?
   @State private var adding: AddRequest?
+  /// How far the hours have scrolled, so the labels beside them can follow.
+  @State private var gridOffset: CGFloat = 0
 
   private struct AddRequest: Equatable { let date: String; let start: Int }
 
@@ -146,8 +148,18 @@ struct CycleSchedulePanel: View {
 
   private func y(_ minute: Int) -> CGFloat { CGFloat(minute - Self.firstHour * 60) * Self.pointsPerMinute }
 
-  /// The whole cycle, day by day. The hours stay put while the days scroll
-  /// sideways; it opens on today.
+  /// How much of the day the grid shows at once (LEO-343). The whole day is
+  /// there, but 24 hours at once made the 双周 page run on past everything
+  /// under it; twelve is a working day with its morning.
+  private static let visibleHours = 12
+  /// Room above 00:00 and below 24:00 so their labels are not cut in half.
+  private static let gridInset: CGFloat = 8
+  private static var viewport: CGFloat { CGFloat(visibleHours * 60) * pointsPerMinute }
+
+  /// The whole cycle, day by day. The day headers and the hours stay put: the
+  /// days scroll sideways under the headers, the hours scroll inside a
+  /// fixed-height window beside the hour labels. It opens on today, at the
+  /// cycle's earliest block.
   private func week(_ data: CycleScheduleState) -> some View {
     let days = data.days
     let allDay = allDayHeight(days, data: data)
@@ -161,7 +173,13 @@ struct CycleSchedulePanel: View {
               .padding(.trailing, 6).padding(.top, 4)
               .frame(height: allDay, alignment: .topTrailing)
           }
-          hourLabels.frame(height: y(Self.lastHour * 60), alignment: .topLeading)
+          // The labels follow the grid's vertical scroll; they are not in it,
+          // so they do not slide away when the days scroll sideways.
+          hourLabels
+            .padding(.top, Self.gridInset)
+            .offset(y: -gridOffset)
+            .frame(height: Self.viewport, alignment: .topLeading)
+            .clipped()
         }
         .frame(width: Self.gutter)
         ScrollViewReader { proxy in
@@ -169,27 +187,57 @@ struct CycleSchedulePanel: View {
             VStack(alignment: .leading, spacing: 0) {
               weekHeader(days, data: data, column: column)
               allDayStrip(days, data: data, column: column)
-              ZStack(alignment: .topLeading) {
-                hourLines(width: column * CGFloat(days.count))
-                HStack(spacing: 0) {
-                  ForEach(days) { day in
-                    dayColumn(day, data: data, column: column, days: days)
+              ScrollView(.vertical) {
+                ZStack(alignment: .topLeading) {
+                  hourLines(width: column * CGFloat(days.count))
+                  HStack(spacing: 0) {
+                    ForEach(days) { day in
+                      dayColumn(day, data: data, column: column, days: days)
+                    }
                   }
+                  // Hour marks to scroll to; `.offset` would not move them.
+                  VStack(spacing: 0) {
+                    ForEach(Self.firstHour..<Self.lastHour, id: \.self) { hour in
+                      Color.clear.frame(height: 60 * Self.pointsPerMinute).id(Self.hourID(hour))
+                    }
+                  }
+                  .allowsHitTesting(false)
                 }
+                .frame(height: y(Self.lastHour * 60))
+                .coordinateSpace(name: "schedule.week")
+                .padding(.vertical, Self.gridInset)
+                .background(ScrollOffsetReader { gridOffset = $0 })
               }
-              .frame(height: y(Self.lastHour * 60))
-              .coordinateSpace(name: "schedule.week")
+              .scrollIndicators(.never)
+              .frame(height: Self.viewport)
             }
           }
-          .onAppear { proxy.scrollTo(data.today, anchor: .leading) }
+          .onAppear {
+            // Hours first: the hour marks span every day, so scrolling to one
+            // also moves sideways — today then puts the days back.
+            // A little below the top edge, so that hour's label is not cut in half.
+            proxy.scrollTo(Self.hourID(openingHour(days, data: data)), anchor: UnitPoint(x: 0.5, y: 12 / Self.viewport))
+            proxy.scrollTo(data.today, anchor: .leading)
+          }
         }
       }
     }
     .frame(height: weekHeight(days, data: data))
   }
 
+  /// Where the grid opens: the hour of the cycle's earliest block, so a 5:00
+  /// 作息 is in view rather than an empty night. 07:00 when nothing is placed.
+  private func openingHour(_ days: [CycleScheduleState.Day], data: CycleScheduleState) -> Int {
+    let earliest = days.flatMap { CycleWeekLayout.layout($0, in: data).blocks.map(\.start) }.min()
+    let hour = earliest.map { $0 / 60 } ?? 7
+    return min(max(hour, Self.firstHour), Self.lastHour - Self.visibleHours)
+  }
+
+  private static func hourID(_ hour: Int) -> String { "schedule.hour.\(hour)" }
+
+
   private func weekHeight(_ days: [CycleScheduleState.Day], data: CycleScheduleState) -> CGFloat {
-    48 + allDayHeight(days, data: data) + y(Self.lastHour * 60) + 8
+    48 + allDayHeight(days, data: data) + Self.viewport + 8
   }
 
   private func allDayHeight(_ days: [CycleScheduleState.Day], data: CycleScheduleState) -> CGFloat {
@@ -701,5 +749,46 @@ private struct SchedulePointer: ViewModifier {
   let enabled: Bool
   func body(content: Content) -> some View {
     if enabled { content.pointerStyleLink() } else { content }
+  }
+}
+
+/// Reports how far the scroll view it sits in has scrolled vertically.
+///
+/// A `GeometryReader` preference does not update while a ScrollView nested in
+/// another one scrolls on macOS 14, so the hour labels beside the 排期 grid
+/// stayed on 00:00 while the grid showed 05:00. The clip view's bounds are the
+/// scroll position itself; watching them cannot drift.
+private struct ScrollOffsetReader: NSViewRepresentable {
+  let onChange: (CGFloat) -> Void
+
+  func makeNSView(context: Context) -> Probe { Probe(onChange: onChange) }
+  func updateNSView(_ view: Probe, context: Context) { view.onChange = onChange }
+
+  final class Probe: NSView {
+    var onChange: (CGFloat) -> Void
+    private weak var clip: NSClipView?
+
+    init(onChange: @escaping (CGFloat) -> Void) {
+      self.onChange = onChange
+      super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    // Selector-based: the center drops the observer when the view goes away.
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      if let clip { NotificationCenter.default.removeObserver(self, name: NSView.boundsDidChangeNotification, object: clip) }
+      clip = nil
+      guard window != nil, let found = enclosingScrollView?.contentView else { return }
+      clip = found
+      found.postsBoundsChangedNotifications = true
+      NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: found)
+      DispatchQueue.main.async { [weak self] in self?.scrolled() }
+    }
+
+    @objc private func scrolled() {
+      if let clip { onChange(clip.bounds.origin.y) }
+    }
   }
 }
