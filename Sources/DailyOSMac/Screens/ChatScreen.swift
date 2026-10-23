@@ -177,16 +177,45 @@ private struct Conversation: View {
 /// question; with it off, the only thing that will work is one of seven words.
 /// Showing the same encouraging prompt in both cases is how you get someone
 /// typing a paragraph into a command parser.
+/// Example prompts shown on a fresh free-chat session — a greeting plus a few
+/// taps that teach the range of what the assistant does. Tapping fills the
+/// composer rather than sending, so a data-changing example is reviewed first.
+private let chatExamplePrompts = [
+  "把午餐挪到 12:30",
+  "本期要务加一条：联系导师",
+  "这一期为什么只完成了一半",
+  "看书挪到口语后面",
+  "怎么关掉通知",
+]
+
 private struct EmptyChatState: View {
   @Environment(AppState.self) private var state
 
   var body: some View {
     if state.agentMode.allowsFreeChat {
-      EmptyState(
-        icon: "bubble.left.and.text.bubble.right",
-        title: "问点什么",
-        message: "能看也能改你的作息、排期、要务和 OKR。比如说「看书挪到口语后面」，或者问「这一期为什么只完成了一半」。"
-      )
+      VStack(spacing: Metrics.lg) {
+        EmptyState(
+          icon: "bubble.left.and.text.bubble.right",
+          title: "你好，我是 Daily OS 助手",
+          message: "能看也能改你的作息、排期、要务和 OKR，也能告诉你怎么改设置。试试点下面的例子："
+        )
+        VStack(spacing: Metrics.xs) {
+          ForEach(chatExamplePrompts, id: \.self) { prompt in
+            Button { state.composerText = prompt } label: {
+              Text("「\(prompt)」")
+                .font(Typo.body)
+                .foregroundStyle(Palette.ink)
+                .padding(.horizontal, Metrics.sm)
+                .padding(.vertical, Metrics.xs)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Metrics.radiusMedium, style: .continuous))
+            }
+            .buttonStyle(.plain)
+          }
+        }
+        .frame(maxWidth: 420)
+      }
+      .padding(Metrics.lg)
     } else {
       EmptyState(
         icon: "terminal",
@@ -290,8 +319,10 @@ private struct Composer: View {
       Divider()
       if !state.agentMode.allowsFreeChat {
         AgentModeNotice()
+        // Command chips are the command-mode fallback. In free chat you just
+        // talk (and the empty state teaches how), so the row is dropped there.
+        CommandPalette()
       }
-      CommandPalette()
       HStack(alignment: .bottom, spacing: Metrics.xs) {
         TextField(placeholder, text: $state.composerText, axis: .vertical)
           .textFieldStyle(.plain)
