@@ -34,7 +34,7 @@ struct MacRootView: View {
       }
       .frame(minWidth: 560, minHeight: 420)
     }
-    .background(Palette.paper)
+    .background(Palette.chatCanvas)
     .toastOverlay()
     // The chat panel drops from the top on the right, over the detail column —
     // same conversation as the Chat section, reachable from anywhere without
@@ -101,7 +101,7 @@ private struct Sidebar: View {
     // After the inset, so paper covers the footer strip too. Applied inside the
     // scroll view instead, the footer would keep sitting on the split view's
     // own translucent sidebar material.
-    .background(Palette.paper)
+    .background(Palette.chatCanvas)
     .navigationTitle("Daily OS")
   }
 

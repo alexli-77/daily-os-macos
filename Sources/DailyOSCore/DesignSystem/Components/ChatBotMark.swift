@@ -9,7 +9,7 @@ import SwiftUI
 /// same in light and dark.
 public struct ChatBotMark: View {
   private let paper = Color(hex: 0xF6F7F4)
-  private static let bubbleGradient = Gradient(colors: [Color(hex: 0x2A8B6E), Color(hex: 0x14533F)])
+  private static let bubbleGradient = Gradient(colors: [Color(hex: 0x4FB392), Color(hex: 0x2C8C6F)])
 
   public init() {}
 
@@ -36,9 +36,9 @@ public extension Palette {
   /// white cards and text stay legible on top.
   static let chatCanvas = LinearGradient(
     gradient: Gradient(colors: [
-      Color(light: Color(hex: 0xF4F9F5), dark: Color(hex: 0x16251D)),
-      Color(light: Color(hex: 0xE8F2EB), dark: Color(hex: 0x112019)),
-      Color(light: Color(hex: 0xD7ECDF), dark: Color(hex: 0x0E1B15)),
+      Color(light: Color(hex: 0xF7FBF8), dark: Color(hex: 0x18271F)),
+      Color(light: Color(hex: 0xF0F7F2), dark: Color(hex: 0x14211A)),
+      Color(light: Color(hex: 0xE7F2EB), dark: Color(hex: 0x101C16)),
     ]),
     startPoint: .top,
     endPoint: .bottom

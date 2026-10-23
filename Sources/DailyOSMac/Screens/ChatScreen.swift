@@ -33,15 +33,16 @@ struct ChatPanel: View {
   var body: some View {
     VStack(spacing: 0) {
       header
-      Divider()
       Conversation()
     }
     .frame(width: 420)
     .frame(maxHeight: .infinity)
-    .background(Palette.paper)
-    .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusMedium, style: .continuous))
+    // One continuous green canvas top-to-bottom — header, body and composer all
+    // sit on it, no white strips (LEO-346).
+    .background(Palette.chatCanvas)
+    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     .overlay(
-      RoundedRectangle(cornerRadius: Metrics.radiusMedium, style: .continuous)
+      RoundedRectangle(cornerRadius: 12, style: .continuous)
         .stroke(Palette.line)
     )
     .shadow(color: .black.opacity(0.16), radius: 18, y: 6)
@@ -166,9 +167,6 @@ private struct Conversation: View {
       }
       Composer()
     }
-    // LEO-346: a soft green-tinted canvas (light → mint), the app icon's green
-    // family carried into the chat. Kept pale so white cards and text stay legible.
-    .background(Palette.chatCanvas)
   }
 }
 
@@ -327,7 +325,6 @@ private struct Composer: View {
   var body: some View {
     @Bindable var state = state
     VStack(spacing: 0) {
-      Divider()
       if !state.agentMode.allowsFreeChat {
         AgentModeNotice()
         // Command chips are the command-mode fallback. In free chat you just
@@ -349,7 +346,6 @@ private struct Composer: View {
       }
       .padding(Metrics.sm)
     }
-    .background(Palette.surface)
   }
 
   private var placeholder: String {
