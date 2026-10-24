@@ -20,9 +20,6 @@ struct TodayScreen: View {
   /// and inbox ids are ledger ids, so they cannot collide.
   @State private var selectedTaskID: TodoItem.ID?
   @State private var showsExecution = false
-  @State private var showsPastDays = false
-  /// The past day a click on the calendar asked to see.
-  @State private var pastDay: String?
   /// 日 or 双周. Not remembered: the page always opens on today.
   @State private var view: PlanView = .day
   @State private var isCreatingCycle = false
@@ -47,7 +44,7 @@ struct TodayScreen: View {
   private let clock = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
   var body: some View {
-    ScreenScaffold("今天", subtitle: subtitle) {
+    ScreenScaffold(screenTitle, subtitle: subtitle) {
       let sideBySide = contentWidth >= Self.railBreakpoint && !railStacked
       Group {
         if view == .cycle, let cycle = shownCycle {
@@ -97,15 +94,8 @@ struct TodayScreen: View {
           .accessibilityAddTraits(railStacked ? [] : [.isSelected])
           .help(railStacked ? "侧栏放回右边" : "侧栏收到下面")
         }
-        Button {
-          showsPastDays = true
-        } label: {
-          Image(systemName: "clock.arrow.circlepath")
-        }
-        .buttonStyle(MossButtonStyle(prominent: false))
-        .accessibilityLabel("往日")
-        .help("看前几天的计划和复盘")
-        if view == .day {
+        if view == .day { dayNavigation }
+        if view == .day && !state.isViewingPast {
         Button {
           withAnimation(.snappy(duration: 0.2)) { showsExecution.toggle() }
         } label: {
@@ -119,7 +109,6 @@ struct TodayScreen: View {
       }
     }
     .onReceive(clock) { now = $0 }
-    .sheet(isPresented: $showsPastDays, onDismiss: { pastDay = nil }) { PastDaysSheet(initialDate: pastDay) }
     .sheet(isPresented: $isCreatingCycle) { NewCycleSheet() }
     .onAppear {
       // The page shows this cycle unless another was picked.
@@ -132,8 +121,51 @@ struct TodayScreen: View {
   /// so this column stays "one screen of today's plan".
   @ViewBuilder private var mainColumn: some View {
     VStack(alignment: .leading, spacing: Metrics.md) {
-      if showsExecution { ExecutionPanel(schedule: schedule) }
+      if state.isViewingPast {
+        pastDayColumn
+      } else {
+        if showsExecution { ExecutionPanel(schedule: schedule) }
+        CallSheetPanel(schedule: schedule, selectedID: $selectedTaskID)
+      }
+    }
+  }
+
+  /// A past day, in the same call sheet as today: read, then drawn and edited
+  /// the same way. The evening review follows it.
+  @ViewBuilder private var pastDayColumn: some View {
+    if let error = state.viewedDayError {
+      Panel {
+        EmptyState(icon: "exclamationmark.triangle", title: "读不到这一天", message: error, actionTitle: "重试") {
+          Task { await state.showDay(state.viewedDate) }
+        }
+      }
+    } else if let day = state.viewedDay {
       CallSheetPanel(schedule: schedule, selectedID: $selectedTaskID)
+      if let review = day.review { DayReviewPanel(review: review) }
+    } else {
+      Panel { ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 120) }
+    }
+  }
+
+  /// 今天 ‹ › — 飞书's and Google Calendar's day stepping. A past day opens
+  /// here, in the 日 view, not in a window of its own.
+  private var dayNavigation: some View {
+    HStack(spacing: 2) {
+      Button("今天") { Task { await state.showDay(nil) } }
+        .buttonStyle(MossButtonStyle(prominent: false))
+        .disabled(!state.isViewingPast)
+        .help("回到今天")
+      Button { Task { await state.stepDay(by: -1) } } label: { Image(systemName: "chevron.left") }
+        .buttonStyle(MossButtonStyle(prominent: false))
+        .keyboardShortcut("[", modifiers: .command)
+        .accessibilityLabel("前一天")
+        .help("前一天（⌘[）")
+      Button { Task { await state.stepDay(by: 1) } } label: { Image(systemName: "chevron.right") }
+        .buttonStyle(MossButtonStyle(prominent: false))
+        .keyboardShortcut("]", modifiers: .command)
+        .disabled(!state.isViewingPast)
+        .accessibilityLabel("后一天")
+        .help("后一天（⌘]）")
     }
   }
 
@@ -142,8 +174,9 @@ struct TodayScreen: View {
   /// and the 记过的 list are gone.
   @ViewBuilder private var rail: some View {
     VStack(alignment: .leading, spacing: Metrics.md) {
-      DayTimePanel(schedule: schedule, blocks: state.planMealBlocks)
-      TeamTodayPanel()
+      DayTimePanel(schedule: schedule, blocks: state.isViewingPast ? [] : state.planMealBlocks, title: state.isViewingPast ? "这天的时间" : "今天的时间")
+      // Teammates' lists are today's; next to a past day they would read as that day's.
+      if !state.isViewingPast { TeamTodayPanel() }
     }
   }
 
@@ -158,10 +191,18 @@ struct TodayScreen: View {
   /// The plan only. Inbox captures are a scratchpad, not scheduled work — they
   /// have their own panel in the rail and no longer get folded into the clock
   /// (which is what made the call sheet long and the "预计结束" projection lie).
-  private var items: [TodoItem] { state.plan }
+  private var items: [TodoItem] { state.sheetItems }
 
   private var schedule: DaySchedule {
-    DaySchedule.build(
+    if let day = state.viewedDay, state.isViewingPast {
+      // A day that is over: no "now" on it, so nothing is late.
+      return DaySchedule.build(
+        items: items,
+        startMinute: DayStart.resolve(generatedAt: day.generatedAt, workStart: state.planWorkStartMinute),
+        nowMinute: 0
+      )
+    }
+    return DaySchedule.build(
       items: items,
       startMinute: DayStart.resolve(generatedAt: state.planGeneratedAt, workStart: state.planWorkStartMinute),
       nowMinute: DaySchedule.minute(of: now),
@@ -173,18 +214,17 @@ struct TodayScreen: View {
   /// The cycle the 双周 view shows: the one picked, else this one.
   private var shownCycle: Cycle? { state.selectedCycle ?? state.currentCycle }
 
-  /// A day's header on the 双周 view: today zooms into 日; a past day opens
-  /// that day as it was; a day not yet here has nothing more to show.
+  /// A day's header on the 双周 view, or a past block's 打开这一天: that day
+  /// in the 日 view — today, or a past day in the same call sheet. A day not
+  /// yet here has nothing more to show.
   private func openDay(_ date: String) {
     let today = Self.dayFormatter.string(from: now)
-    if date == today {
-      withAnimation(.snappy(duration: 0.2)) { view = .day }
-    } else if date < today {
-      pastDay = date
-      showsPastDays = true
-    } else {
+    if date > today {
       state.toast = "这一天还没到，在双周里排它"
+      return
     }
+    withAnimation(.snappy(duration: 0.2)) { view = .day }
+    Task { await state.showDay(date < today ? date : nil) }
   }
 
   private static let dayFormatter: DateFormatter = {
@@ -194,7 +234,18 @@ struct TodayScreen: View {
     return formatter
   }()
 
+  /// 今天, or the day being looked at: 昨天 / 前天 / 10月12日 周一.
+  private var screenTitle: String {
+    guard view == .day, let date = state.viewedDate else { return "今天" }
+    return DayLabel.text(for: date, today: state.viewedDay?.today ?? Self.dayFormatter.string(from: now))
+  }
+
   private var subtitle: String {
+    if view == .day, let date = state.viewedDate {
+      let title = DayLabel.title(for: date, today: state.viewedDay?.today ?? Self.dayFormatter.string(from: now))
+      let base = title.components(separatedBy: " · ").first ?? title
+      return "\(base) · 改动只记在这一天，今天的计划不动"
+    }
     var parts = [Fmt.dayHeading()]
     if let cycle = state.currentCycle { parts.append(cycle.label) }
     parts += Countdown.forCard(state.countdowns).map { "\($0.title) \($0.daysLabel)" }
@@ -228,12 +279,29 @@ private struct CallSheetPanel: View {
   @State private var isOverMenu = false
   @State private var menuHide: Task<Void, Never>?
 
-  var body: some View {
-    Panel("今天的通告单") {
-      VStack(alignment: .leading, spacing: Metrics.sm) {
-        if let startedAt = state.planRunStartedAt { StartedNote(at: startedAt) }
+  /// The day on the sheet: nil for today, else the past day being looked at.
+  private var date: String? { state.viewedDate }
 
-        if schedule.rows.isEmpty, !isRunning, let failure = state.planRunFailure {
+  private var title: String {
+    guard let date else { return "今天的通告单" }
+    return "\(DayLabel.text(for: date, today: state.viewedDay?.today ?? DayLabel.localToday()))的通告单"
+  }
+
+  /// Today's sheet only: the dated row blocks (meals, routines) belong to today.
+  private var blocks: [DaySchedule.FixedBlock] { date == nil ? state.planMealBlocks : [] }
+
+  var body: some View {
+    Panel(title) {
+      VStack(alignment: .leading, spacing: Metrics.sm) {
+        if date == nil, let startedAt = state.planRunStartedAt { StartedNote(at: startedAt) }
+
+        if date != nil, schedule.rows.isEmpty {
+          EmptyState(
+            icon: "tray",
+            title: state.viewedDay?.hasPlan == false ? "这天没有生成计划" : "这天的计划没有条目",
+            message: state.viewedDay?.rawPlan == nil ? "" : "这天的计划是旧格式，没法排到时间轴上。"
+          )
+        } else if schedule.rows.isEmpty, !isRunning, let failure = state.planRunFailure {
           EmptyState(
             icon: "exclamationmark.triangle",
             title: "今天的计划没生成出来",
@@ -254,18 +322,18 @@ private struct CallSheetPanel: View {
         } else {
           // The day's progress right under the subtitle, above the banners and
           // the timeline, where it is read first (LEO-336).
-          SheetFooter(schedule: schedule)
-          if !schedule.lateRows.isEmpty {
+          SheetFooter(schedule: schedule, isPast: date != nil)
+          if date == nil, !schedule.lateRows.isEmpty {
             OverdueBanner(rows: schedule.lateRows, pushAll: pushLateToNow)
           }
-          if !state.staleCaptures.isEmpty {
+          if date == nil, !state.staleCaptures.isEmpty {
             StaleCaptureBanner(captures: state.staleCaptures, abandon: abandon)
           }
           sheet
         }
       }
     } actions: {
-      if let routine = state.todayRoutine, routine.modes.count > 1 {
+      if date == nil, let routine = state.todayRoutine, routine.modes.count > 1 {
         // 作品集日 / Cutto 日: decided at the morning meeting, switched here.
         Picker("", selection: Binding(get: { routine.mode.id }, set: { switchMode(to: $0, in: routine) })) {
           ForEach(routine.modes, id: \.id) { mode in Text(mode.label).tag(mode.id) }
@@ -275,7 +343,7 @@ private struct CallSheetPanel: View {
         .fixedSize()
         .help("今天按哪种作息过。切换后格子跟着变，to-do 要点「重新生成」才会挪。")
       }
-      if !schedule.rows.isEmpty {
+      if date == nil, !schedule.rows.isEmpty {
         Button(isRunning ? "正在生成…" : "重新生成", action: generate)
           .buttonStyle(QuietButtonStyle())
           .disabled(isStarting || isRunning)
@@ -295,7 +363,7 @@ private struct CallSheetPanel: View {
   @ViewBuilder private var sheet: some View {
     let range = timelineRange
     let origin = range.lowerBound
-    let blocks = state.planMealBlocks.filter { $0.end > range.lowerBound && $0.start < range.upperBound }
+    let blocks = self.blocks.filter { $0.end > range.lowerBound && $0.start < range.upperBound }
     let slotted = schedule.rows.enumerated().filter { $0.element.start != nil && $0.element.end != nil }
     let unslotted = schedule.rows.enumerated().filter { $0.element.start == nil || $0.element.end == nil }
     let columns = TimelineColumns.assign(
@@ -314,6 +382,12 @@ private struct CallSheetPanel: View {
             .frame(width: lane, height: Timeline.y(range.upperBound, from: origin))
             .offset(x: Timeline.gutter)
             .onTapGesture(coordinateSpace: .local) { point in
+              // Adding to a day that is over writes into that day's plan file,
+              // which is not built yet; say so rather than doing nothing.
+              guard date == nil else {
+                state.toast = "过去的日子还不能新加一条，已有的都可以改"
+                return
+              }
               let minute = origin + Int(point.y / Timeline.pointsPerMinute)
               addPoint = CGPoint(x: Timeline.gutter + point.x, y: point.y)
               addAt = min(23 * 60 + 30, max(origin, minute / 30 * 30))
@@ -408,7 +482,7 @@ private struct CallSheetPanel: View {
     let canResize = row.start != nil && (row.item.state == .open || row.item.state == .partial)
     return CallSheetRow(
       row: row,
-      isPlanRow: index < state.plan.count,
+      isPlanRow: index < state.sheetItems.count,
       selectedID: $selectedID,
       onUnpin: row.item.pinnedStart == nil ? nil : { unpin(row) },
       compact: compact,
@@ -432,7 +506,7 @@ private struct CallSheetPanel: View {
   // MARK: State menu
 
   private func stateMenu(index: Int, row: DaySchedule.Row) -> some View {
-    let commands = RowCommands(state: state, row: row, isPlanRow: index < state.plan.count)
+    let commands = RowCommands(state: state, row: row, isPlanRow: index < state.sheetItems.count, date: date)
     return StateMenuBar(state: row.item.state, choices: commands.choices) { choice in
       menuRowID = nil
       commands.pick(choice)
@@ -492,8 +566,9 @@ private struct CallSheetPanel: View {
     self.drag = nil
     // Let go where it already was: nothing to pin.
     guard drag.value != row.start else { return }
+    let date = self.date
     Task {
-      let outcome = await state.placePlanItem(row.id, rank: row.rank, start: drag.value)
+      let outcome = await state.sheetPlace(date: date, candidateID: row.id, rank: row.rank, start: drag.value)
       switch outcome {
       case .ok(let message): state.toast = message ?? "已放到 \(DaySchedule.clock(drag.value))"
       case .failed(let why), .unsupported(let why): state.toast = why
@@ -513,8 +588,9 @@ private struct CallSheetPanel: View {
     guard drag.value != (row.end ?? 0) - (row.start ?? 0) else { return }
     // A partial row is drawn at half its estimate; what is stored is the whole.
     let estimate = row.item.state == .partial ? drag.value * 2 : drag.value
+    let date = self.date
     Task {
-      let outcome = await state.setPlanEstimate(candidateID: row.id, rank: row.rank, minutes: estimate)
+      let outcome = await state.sheetEstimate(date: date, candidateID: row.id, rank: row.rank, minutes: estimate)
       switch outcome {
       case .ok(let message): state.toast = message ?? "已改为 \(DaySchedule.duration(estimate))"
       case .failed(let why), .unsupported(let why): state.toast = why
@@ -555,8 +631,9 @@ private struct CallSheetPanel: View {
   }
 
   private func unpin(_ row: DaySchedule.Row) {
+    let date = self.date
     Task {
-      let outcome = await state.placePlanItem(row.id, rank: row.rank, start: nil)
+      let outcome = await state.sheetPlace(date: date, candidateID: row.id, rank: row.rank, start: nil)
       switch outcome {
       case .ok(let message): state.toast = message ?? "已取消固定"
       case .failed(let why), .unsupported(let why): state.toast = why
@@ -567,8 +644,8 @@ private struct CallSheetPanel: View {
   /// Whole hours from the first thing on the day to the last, so the earliest
   /// routine and the projected end both fit.
   private var timelineRange: ClosedRange<Int> {
-    let starts = state.planMealBlocks.map(\.start) + schedule.rows.compactMap(\.start)
-    let ends = state.planMealBlocks.map(\.end) + schedule.rows.compactMap(\.end)
+    let starts = blocks.map(\.start) + schedule.rows.compactMap(\.start)
+    let ends = blocks.map(\.end) + schedule.rows.compactMap(\.end)
     let lower = max(0, (starts.min() ?? schedule.now) / 60 * 60)
     let upper = min(24 * 60, ((ends.max() ?? lower) + 59) / 60 * 60)
     return lower...max(upper, lower + 60)
@@ -672,7 +749,7 @@ private struct CallSheetRow: View {
   @State private var editText = ""
 
   private var item: TodoItem { row.item }
-  private var commands: RowCommands { RowCommands(state: state, row: row, isPlanRow: isPlanRow) }
+  private var commands: RowCommands { RowCommands(state: state, row: row, isPlanRow: isPlanRow, date: state.viewedDate) }
   private var isEditable: Bool { item.state == .open || item.state == .partial }
   private var isStruck: Bool { item.state == .done || item.state == .deferred }
   /// Done, deferred or 未做: nothing more to do today, so the row goes grey.
@@ -748,6 +825,7 @@ private struct CallSheetRow: View {
         canBeMIT: canBeMIT,
         mitByUser: item.mitByUser,
         showsTime: isEditable,
+        dayWord: state.isViewingPast ? "这一天" : "今天",
         autoColor: BlockTint.forTask(candidateID: item.id).ink,
         onUnpin: onUnpin.map { unpin in { isEditingRow = false; unpin() } },
         onDelete: { isEditingRow = false; commands.remove() },
@@ -896,18 +974,19 @@ private struct CallSheetRow: View {
     guard edits || newMinutes != nil || newStart != nil else { return }
     let candidateID = item.id
     let rank = row.rank
+    let date = state.viewedDate
     Task {
       var failure: String?
       if edits, isPlanRow {
-        let outcome = await state.updatePlanRow(candidateID: candidateID, rank: rank, text: newText, color: newColor, note: newNote, mit: newMIT)
+        let outcome = await state.sheetUpdate(date: date, candidateID: candidateID, rank: rank, text: newText, color: newColor, note: newNote, mit: newMIT)
         if case .failed(let why) = outcome { failure = why } else if case .unsupported(let why) = outcome { failure = why }
       }
       if failure == nil, let newMinutes {
-        let outcome = await state.setPlanEstimate(candidateID: candidateID, rank: rank, minutes: newMinutes)
+        let outcome = await state.sheetEstimate(date: date, candidateID: candidateID, rank: rank, minutes: newMinutes)
         if case .failed(let why) = outcome { failure = why } else if case .unsupported(let why) = outcome { failure = why }
       }
       if failure == nil, let newStart {
-        let outcome = await state.placePlanItem(candidateID, rank: rank, start: newStart)
+        let outcome = await state.sheetPlace(date: date, candidateID: candidateID, rank: rank, start: newStart)
         if case .failed(let why) = outcome { failure = why } else if case .unsupported(let why) = outcome { failure = why }
       }
       state.toast = failure ?? "已保存"
@@ -936,6 +1015,9 @@ private struct RowCommands {
   let state: AppState
   let row: DaySchedule.Row
   let isPlanRow: Bool
+  /// The past day the sheet shows, nil for today. Captured with the row, so
+  /// an undo after stepping to another day still reaches this one.
+  var date: String? = nil
 
   private var item: TodoItem { row.item }
 
@@ -947,12 +1029,16 @@ private struct RowCommands {
   var choices: [StateMenuBar.Choice] {
     let states: [TodoState] = if !isPlanRow {
       [.done, .deferred]
-    } else if item.id.hasPrefix("rhythm:") {
+    } else if item.id.hasPrefix("rhythm:") || date != nil {
+      // A past day has no tomorrow left to push to: see `PastRowEdit`.
       [.done, .partial, .missed]
     } else {
       [.done, .partial, .missed, .deferred]
     }
-    return states.map { .state($0) }
+    // What a past day offers instead of 推到明天: bring it to today. Not for a
+    // 固定日程 (today has its own) or a row already settled.
+    let canMove = date != nil && isPlanRow && !item.id.hasPrefix("rhythm:") && (item.state == .open || item.state == .partial)
+    return states.map { .state($0) } + (canMove ? [.moveToToday] : [])
   }
 
   /// Picking the state the row is already in takes it back.
@@ -960,6 +1046,7 @@ private struct RowCommands {
     switch choice {
     case .state(let target): set(target == item.state ? .open : target)
     case .delete: remove()
+    case .moveToToday: moveToToday()
     }
   }
 
@@ -970,8 +1057,9 @@ private struct RowCommands {
       let (failure, note) = await send(target)
       if let failure { state.toast = failure; return }
       guard isPlanRow else { return }
-      let undo = self.undo(to: previous)
-      state.toast([Self.said(target), note].compactMap { $0 }.joined(separator: "；"), undo: undo)
+      // 顺延 cannot be sent for a past day, so a past row that was 顺延 has no way back to it.
+      let undo = date != nil && previous == .deferred ? nil : self.undo(to: previous)
+      state.toast([dayPrefix + Self.said(target), note].compactMap { $0 }.joined(separator: "；"), undo: undo)
     }
   }
 
@@ -983,14 +1071,31 @@ private struct RowCommands {
     }
     let candidateID = item.id
     let rank = row.rank
+    let date = self.date
+    let prefix = dayPrefix
     Task {
-      switch await state.planFeedback(candidateID: candidateID, rank: rank, event: "remove", note: nil) {
+      switch await state.sheetFeedback(date: date, candidateID: candidateID, rank: rank, event: "remove") {
       case .ok(let note):
         let store = state
         let takeBack: @MainActor () -> Void = {
-          Task { @MainActor in _ = await store.planFeedback(candidateID: candidateID, rank: rank, event: "reopen", note: nil) }
+          Task { @MainActor in _ = await store.sheetFeedback(date: date, candidateID: candidateID, rank: rank, event: "reopen") }
         }
-        state.toast(["已删除", note].compactMap { $0 }.joined(separator: "；"), undo: takeBack)
+        state.toast([prefix + "已删除", note].compactMap { $0 }.joined(separator: "；"), undo: takeBack)
+      case .failed(let why), .unsupported(let why): state.toast = why
+      }
+    }
+  }
+
+  /// 挪到今天, from a past day: the row goes onto today's sheet and reads as
+  /// carried on its own day.
+  func moveToToday() {
+    guard let date else { return }
+    let candidateID = item.id
+    let rank = row.rank
+    let prefix = dayPrefix
+    Task {
+      switch await state.moveRowToToday(date: date, candidateID: candidateID, rank: rank) {
+      case .ok(let note): state.toast = prefix + (note ?? "挪到今天了")
       case .failed(let why), .unsupported(let why): state.toast = why
       }
     }
@@ -1019,10 +1124,16 @@ private struct RowCommands {
     case .deferred: "defer"
     default: "reopen"
     }
-    switch await state.planFeedback(candidateID: item.id, rank: row.rank, event: event, note: nil) {
+    switch await state.sheetFeedback(date: date, candidateID: item.id, rank: row.rank, event: event) {
     case .ok(let note): return (nil, note)
     case .failed(let why), .unsupported(let why): return (why, nil)
     }
+  }
+
+  /// "昨天：" before a toast about a past day, so it is clear which sheet moved.
+  private var dayPrefix: String {
+    guard let date else { return "" }
+    return DayLabel.text(for: date, today: state.viewedDay?.today ?? DayLabel.localToday()) + "："
   }
 
   private static func said(_ state: TodoState) -> String {
@@ -1030,7 +1141,7 @@ private struct RowCommands {
     case .done: "已完成"
     case .partial: "记为做了一部分"
     case .missed: "记为未做"
-    case .deferred: "顺到明天"
+    case .deferred: "推到明天了"
     case .open, .deleted: "已撤回"
     }
   }
@@ -1052,6 +1163,8 @@ private struct RowEditor: View {
   /// The MIT shown is the user's own choice, not the plan's suggestion.
   let mitByUser: Bool
   let showsTime: Bool
+  /// 今天, or 这一天 for a past day: what the edits are scoped to.
+  var dayWord = "今天"
   /// The colour the row has when none is chosen, for the 按来源 swatch.
   let autoColor: Color
   /// Set when the row is pinned to a time; releases it to automatic layout.
@@ -1082,7 +1195,7 @@ private struct RowEditor: View {
         field("时间") { TimeRangeField(start: $start, end: $end) }
       }
 
-      field("颜色 · 只对今天") {
+      field("颜色 · 只对\(dayWord)") {
         HStack(spacing: Metrics.xs) {
           swatch(autoColor, selected: color == nil, label: "按来源") { color = nil }
           ForEach(Palette.rowColorNames, id: \.self) { name in
@@ -1100,7 +1213,7 @@ private struct RowEditor: View {
       HStack {
         Button("删除", action: onDelete)
           .buttonStyle(QuietButtonStyle(tone: .danger))
-          .help("从今天去掉这一条，可以撤销")
+          .help("从\(dayWord)去掉这一条，可以撤销")
         if let onUnpin {
           Button("回到自动排", action: onUnpin)
             .buttonStyle(QuietButtonStyle(tone: .neutral))
@@ -1211,6 +1324,7 @@ private struct ClockField: View {
   var label: (Int) -> String = { ClockField.clock($0) }
 
   @State private var text = ""
+  @State private var showsList = false
   @FocusState private var focused: Bool
 
   init(minute: Binding<Int?>, options: [Int], allowsMidnight: Bool = false, label: ((Int) -> String)? = nil) {
@@ -1228,19 +1342,23 @@ private struct ClockField: View {
         .frame(width: 46)
         .focused($focused)
         .onSubmit(commit)
-      Menu {
-        ForEach(options, id: \.self) { option in
-          Button(label(option)) {
-            minute = option
-            text = Self.clock(option)
-          }
-        }
-      } label: {
+      // A list of our own, not a `Menu`: a menu always opens at its first
+      // item (05:00), while a calendar's time list opens on the time already
+      // chosen — or on now, for one not chosen yet — the way 飞书 does.
+      Button { showsList.toggle() } label: {
         Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+          .frame(width: 14, height: 16)
+          .contentShape(Rectangle())
       }
-      .menuStyle(.borderlessButton)
-      .menuIndicator(.hidden)
-      .fixedSize()
+      .buttonStyle(.plain)
+      .foregroundStyle(Palette.ink3)
+      .popover(isPresented: $showsList, arrowEdge: .bottom) {
+        ClockList(options: options, selected: minute, label: label) { option in
+          minute = option
+          text = Self.clock(option)
+          showsList = false
+        }
+      }
     }
     .padding(.horizontal, 8)
     .padding(.vertical, 4)
@@ -1264,6 +1382,54 @@ private struct ClockField: View {
 
   static func parse(_ text: String, allowsMidnight: Bool) -> Int? {
     DaySchedule.minute(typed: text, allowsMidnight: allowsMidnight)
+  }
+}
+
+/// The times to pick from, opened on the one already chosen — or on now, when
+/// none is — with that one marked. Scrolls to it on open rather than starting
+/// at the top of the day.
+private struct ClockList: View {
+  let options: [Int]
+  let selected: Int?
+  let label: (Int) -> String
+  let onPick: (Int) -> Void
+
+  @State private var hovered: Int?
+
+  var body: some View {
+    ScrollViewReader { proxy in
+      ScrollView {
+        VStack(alignment: .leading, spacing: 0) {
+          ForEach(options, id: \.self) { option in
+            let isSelected = option == selected
+            Text(label(option))
+              .font(Typo.body.monospacedDigit())
+              .foregroundStyle(isSelected ? Palette.mint800 : Palette.ink)
+              .padding(.horizontal, 10)
+              .padding(.vertical, 5)
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .background(
+                isSelected ? Palette.mint100 : hovered == option ? Palette.surfaceSunken : Color.clear,
+                in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+              )
+              .contentShape(Rectangle())
+              .onHover { inside in
+                if inside { hovered = option } else if hovered == option { hovered = nil }
+              }
+              .onTapGesture { onPick(option) }
+              .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
+              .id(option)
+          }
+        }
+        .padding(4)
+      }
+      .frame(width: options.contains { label($0).count > 6 } ? 170 : 104, height: 260)
+      .onAppear {
+        guard let anchor = DaySchedule.listAnchor(options, selected: selected, now: DaySchedule.minute(of: .now)) else { return }
+        // After the popover has laid out; on the same pass the scroll is lost.
+        DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: .center) }
+      }
+    }
   }
 }
 
@@ -1757,6 +1923,7 @@ private struct FixedBlockView: View {
 private struct DayTimePanel: View {
   let schedule: DaySchedule
   let blocks: [DaySchedule.FixedBlock]
+  var title = "今天的时间"
 
   private struct Line: Identifiable {
     let id: String
@@ -1786,7 +1953,7 @@ private struct DayTimePanel: View {
     let lines = self.lines
     if !lines.isEmpty {
       let longest = lines.map(\.minutes).max() ?? 1
-      Panel("今天的时间") {
+      Panel(title) {
         VStack(alignment: .leading, spacing: Metrics.xs) {
           ForEach(lines) { line in
             HStack(spacing: Metrics.sm) {
@@ -1941,6 +2108,8 @@ private struct OverdueBanner: View {
 
 private struct SheetFooter: View {
   let schedule: DaySchedule
+  /// A day that is over has no "还需 / 预计结束", only what was left undone.
+  var isPast = false
 
   var body: some View {
     HStack(spacing: Metrics.sm) {
@@ -1965,12 +2134,15 @@ private struct SheetFooter: View {
   private var counts: String {
     var parts = ["\(schedule.doneCount)/\(schedule.total) 完成"]
     if schedule.partialCount > 0 { parts.append("\(schedule.partialCount) 部分") }
-    if schedule.deferredCount > 0 { parts.append("\(schedule.deferredCount) 延期") }
+    if schedule.deferredCount > 0 { parts.append("\(schedule.deferredCount) 推到明天") }
     return parts.joined(separator: " · ")
   }
 
   /// The projected finish, and an honest note when it is built on partial data.
   private var tail: String {
+    if isPast {
+      return schedule.remaining > 0 ? "没做完的约 \(DaySchedule.duration(schedule.remaining))" : "都处理了"
+    }
     let base = "还需 \(DaySchedule.duration(schedule.remaining)) · 预计 \(DaySchedule.clock(schedule.endOfDay)) 结束"
     guard schedule.missingEstimates > 0 else { return base }
     return base + " · \(schedule.missingEstimates) 项没估时，未计入"
@@ -1998,7 +2170,7 @@ private struct ClearState: View {
 
   private var detail: String {
     var parts = ["\(schedule.total) 项", "\(schedule.doneCount) 完成"]
-    if schedule.deferredCount > 0 { parts.append("\(schedule.deferredCount) 延期") }
+    if schedule.deferredCount > 0 { parts.append("\(schedule.deferredCount) 推到明天") }
     return parts.joined(separator: " · ") + "。写一句复盘，明早的计划会读它。"
   }
 }
@@ -2044,7 +2216,7 @@ private struct ExecutionPanel: View {
         stat("完成", schedule.doneCount)
         stat("部分", schedule.partialCount)
         stat("未做", schedule.openCount)
-        stat("延期", schedule.deferredCount)
+        stat("推到明天", schedule.deferredCount)
         stat("过了时段没更新", schedule.lateRows.count)
       }
     }
@@ -2339,7 +2511,7 @@ private struct TeamTodayRow: View {
       } else if item.state == .partial {
         Pill("部分", tone: .accent)
       } else if item.state == .deferred {
-        Pill("已延期", tone: .neutral)
+        Pill("推到明天", tone: .neutral)
       }
       if let minutes = item.estimatedMinutes {
         Text(DaySchedule.duration(minutes)).font(Typo.caption).foregroundStyle(Palette.ink3)
@@ -2403,4 +2575,52 @@ private struct EstimateChipStyle: ButtonStyle {
   TodayScreen()
     .environment(AppState.previewEmpty())
     .frame(width: 940, height: 720)
+}
+
+// MARK: - A past day's review
+
+/// That evening's `daily_review`, under a past day's call sheet: what the
+/// review made of each row, and its note. Written that night; edits made
+/// afterwards on the sheet above do not rewrite it.
+private struct DayReviewPanel: View {
+  let review: DayReview
+
+  var body: some View {
+    Panel("那天晚上的复盘") {
+      VStack(alignment: .leading, spacing: Metrics.xs) {
+        ForEach(review.items) { item in
+          HStack(alignment: .firstTextBaseline, spacing: Metrics.sm) {
+            Pill(item.status.label, tone: tone(for: item.status))
+              .frame(width: 56, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+              Text(item.text).font(Typo.body).foregroundStyle(Palette.ink)
+                .fixedSize(horizontal: false, vertical: true)
+              if let evidence = item.evidence {
+                Text(evidence).font(Typo.caption).foregroundStyle(Palette.ink3)
+                  .fixedSize(horizontal: false, vertical: true)
+              }
+            }
+          }
+          .padding(.vertical, 2)
+        }
+        if let note = review.note {
+          Text(note)
+            .font(Typo.body).foregroundStyle(Palette.ink2)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(Metrics.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
+            .padding(.top, Metrics.xs)
+        }
+      }
+    }
+  }
+
+  private func tone(for status: DayReview.Item.Status) -> Tone {
+    switch status {
+    case .done: .ok
+    case .progressed: .accent
+    case .open: .neutral
+    }
+  }
 }

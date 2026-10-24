@@ -9,7 +9,9 @@ import DailyOSCore
 ///
 /// A filled block with a time is a big rock — a slot reserved before anything
 /// else is planned around it. A light block is a day's session with no fixed
-/// time. ◆ is the 要务's deadline. Days before today are history and read-only.
+/// time. ◆ is the 要务's deadline. Days before today are history: drawn paler
+/// and not movable, but — like a past event in Google Calendar or 飞书 — a
+/// block there still opens, to record how it went that day.
 struct CycleSchedulePanel: View {
   @Environment(AppState.self) private var state
   let cycle: Cycle
@@ -40,6 +42,8 @@ struct CycleSchedulePanel: View {
   @State private var pollTask: Task<Void, Never>?
   @State private var confirmsRegenerate = false
   @State private var editing: ScheduleSession?
+  /// The past block whose card is open, by block id.
+  @State private var pastOpen: String?
   @State private var drag: Drag?
   @State private var adding: AddRequest?
   /// How far the hours have scrolled, so the labels beside them can follow.
@@ -56,7 +60,9 @@ struct CycleSchedulePanel: View {
         }
       }
     }
-    .task(id: cycle.id) { await load() }
+    // A tick recorded on a past day (its 日 view, or a past block's card) changes how that day's
+    // blocks are drawn; the revision reads the schedule again.
+    .task(id: "\(cycle.id)#\(state.pastEditsRevision)") { await load() }
     .onDisappear {
       pollTask?.cancel()
       pollTask = nil
@@ -344,7 +350,7 @@ struct CycleSchedulePanel: View {
       ForEach(layout.blocks) { block in
         let placement = columns[block.id] ?? .init(column: 0, count: 1)
         let width = (column - 4) / CGFloat(placement.count)
-        blockView(block, isPast: isPast, height: max(14, CGFloat(block.end - block.start) * Self.pointsPerMinute - 2))
+        blockView(block, date: day.date, isPast: isPast, height: max(14, CGFloat(block.end - block.start) * Self.pointsPerMinute - 2))
           .frame(width: max(width - 2, 10))
           .offset(x: 2 + width * CGFloat(placement.column), y: y(drag?.id == block.id ? drag!.start : block.start) + 1)
           .offset(x: drag?.id == block.id ? drag!.dx : 0)
@@ -372,7 +378,7 @@ struct CycleSchedulePanel: View {
     }
   }
 
-  @ViewBuilder private func blockView(_ block: CycleWeekLayout.Placed, isPast: Bool, height: CGFloat) -> some View {
+  @ViewBuilder private func blockView(_ block: CycleWeekLayout.Placed, date: String, isPast: Bool, height: CGFloat) -> some View {
     let style = Self.style(block)
     let time = "\(DaySchedule.clock(block.start))–\(DaySchedule.clock(min(block.end, 24 * 60 - 1)))"
     // A step leads; the 要务 it belongs to follows in small type, so a day
@@ -405,8 +411,37 @@ struct CycleSchedulePanel: View {
         RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(style.ink.opacity(0.7), lineWidth: 1.2)
       }
     }
-    .help("\(Self.clean(block.title))\n\(time)\(Self.kindNote(block.kind))")
-    if let session = block.session {
+    .help("\(Self.clean(block.title))\n\(time)\(Self.kindNote(block.kind))\(isPast && editable && (block.session != nil || block.kind == .fixed) ? "\n点开记一下这天做得怎样" : "")")
+    if isPast, editable, block.session != nil || block.kind == .fixed {
+      // A day that is over: the block is not moved or re-planned any more, but
+      // it opens, like a past event, to say how it went.
+      content
+        .contentShape(Rectangle())
+        .onTapGesture { pastOpen = block.id }
+        .pointerStyleLink()
+        .popover(isPresented: pastBinding(block.id), arrowEdge: .trailing) {
+          PastBlockCard(
+            date: date,
+            dayLabel: DayLabel.text(for: date, today: data?.today ?? date),
+            title: Self.clean(block.title),
+            time: time,
+            candidateID: block.candidateID,
+            itemKey: block.session?.itemKey,
+            drawnState: block.state,
+            // The card closes first: a sheet asked for while a popover is still
+            // going away can be dropped.
+            onOpenDay: onOpenDay.map { open in
+              {
+                pastOpen = nil
+                Task { @MainActor in
+                  try? await Task.sleep(for: .milliseconds(250))
+                  open(date)
+                }
+              }
+            }
+          )
+        }
+    } else if let session = block.session {
       content
         .contentShape(Rectangle())
         .onTapGesture { if editable && !isPast { editing = session } }
@@ -508,6 +543,10 @@ struct CycleSchedulePanel: View {
 
   private func editorBinding(_ session: ScheduleSession) -> Binding<Bool> {
     Binding(get: { editing?.id == session.id }, set: { if !$0 { editing = nil } })
+  }
+
+  private func pastBinding(_ id: String) -> Binding<Bool> {
+    Binding(get: { pastOpen == id }, set: { if !$0 { pastOpen = nil } })
   }
 
   private func addBinding(_ date: String) -> Binding<Bool> {
@@ -635,6 +674,167 @@ struct CycleSchedulePanel: View {
   /// The 要务 text without its markdown emphasis; MIT shows as a pill instead.
   static func clean(_ text: String) -> String {
     text.replacingOccurrences(of: "**MIT**", with: "").replacingOccurrences(of: "**", with: "").trimmingCharacters(in: .whitespaces)
+  }
+}
+
+/// What clicking a past block opens: how it went that day, set the way the 日 view
+/// sets it, and the way into that day. A past event's card, in calendar terms
+/// — the same card, only nothing on it moves the block any more.
+private struct PastBlockCard: View {
+  @Environment(AppState.self) private var state
+  let date: String
+  let dayLabel: String
+  let title: String
+  let time: String
+  /// A 固定日程's own row id. A session has none here; it is found on that
+  /// day's sheet by its 要务 key.
+  let candidateID: String?
+  let itemKey: String?
+  /// How the calendar drew it, shown until that day's sheet has been read.
+  let drawnState: String?
+  let onOpenDay: (() -> Void)?
+
+  private enum Phase {
+    case loading
+    case ready(id: String, rank: Int)
+    /// The 要务 had a session that day, but the day's plan never listed it.
+    case notOnSheet
+    /// The service cannot take a past day's edit (see `DayHistory.editable`).
+    case readOnly
+    case failed(String)
+  }
+
+  @State private var phase: Phase = .loading
+  @State private var current: TodoState = .open
+  @State private var isSending = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Metrics.sm) {
+      VStack(alignment: .leading, spacing: 2) {
+        Text("\(dayLabel) · \(time)").font(Typo.caption).foregroundStyle(Palette.ink3)
+        Text(title).font(Typo.bodyStrong).foregroundStyle(Palette.ink)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      status
+      if let onOpenDay {
+        Button(action: onOpenDay) {
+          Label("打开这一天", systemImage: "arrow.up.forward.square")
+        }
+        .buttonStyle(QuietButtonStyle(tone: .neutral))
+        .help("在「日」里打开这一天，整张通告单都能改")
+      }
+    }
+    .padding(Metrics.md)
+    .frame(width: 300, alignment: .leading)
+    .task { await load() }
+  }
+
+  @ViewBuilder private var status: some View {
+    switch phase {
+    case .loading:
+      ProgressView().controlSize(.small)
+    case .ready(let id, let rank):
+      VStack(alignment: .leading, spacing: Metrics.xxs) {
+        Text("那天做得怎样").font(Typo.caption).foregroundStyle(Palette.ink3)
+        let canMove = !id.hasPrefix("rhythm:") && (current == .open || current == .partial)
+        StateMenuBar(state: current, choices: PastRowEdit.choices.map { .state($0) } + (canMove ? [.moveToToday] : [])) { choice in
+          switch choice {
+          case .state(let target): set(PastRowEdit.picked(target, from: current), id: id, rank: rank)
+          case .moveToToday: move(id: id, rank: rank)
+          case .delete: break
+          }
+        }
+        .disabled(isSending)
+      }
+    case .notOnSheet:
+      note("那天的计划里没有这一条，没有可以补记的。")
+    case .readOnly:
+      note("现在连着的服务还不能改往日，更新 Daily OS 后再试。")
+    case .failed(let why):
+      Text(why).font(Typo.caption).foregroundStyle(Palette.warn)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
+  private func note(_ text: String) -> some View {
+    Text(text).font(Typo.caption).foregroundStyle(Palette.ink3).fixedSize(horizontal: false, vertical: true)
+  }
+
+  private func load() async {
+    current = Self.state(drawnState)
+    switch await state.loadDayHistory(date: date) {
+    case .success(let day):
+      guard day.editable else { phase = .readOnly; return }
+      if let row = day.row(candidateID: candidateID, itemKey: itemKey), let rank = day.rank(of: row.id) {
+        current = row.state
+        phase = .ready(id: row.id, rank: rank)
+      } else if let candidateID {
+        // A service from before past days carried their 固定日程 has no row for it —
+        // but its state is that day's ledger like any row's, so it is written there.
+        phase = .ready(id: candidateID, rank: 0)
+      } else {
+        phase = .notOnSheet
+      }
+    case .failure(let error):
+      phase = .failed(error.message)
+    }
+  }
+
+  /// Drawn first, sent after; a refusal puts it back. The window's toast
+  /// carries 撤销, which works after the card has closed.
+  private func set(_ target: TodoState, id: String, rank: Int) {
+    let previous = current
+    guard target != previous else { return }
+    current = target
+    isSending = true
+    let store = state
+    let date = date
+    Task {
+      let outcome = await store.editPastRow(date: date, candidateID: id, rank: rank, event: PastRowEdit.event(for: target))
+      isSending = false
+      switch outcome {
+      case .ok:
+        // 顺延 cannot be sent for a past day, so a row that was 顺延 has no way back to it.
+        if previous == .deferred {
+          store.toast = PastRowEdit.said(target, day: dayLabel)
+        } else {
+          store.toast(PastRowEdit.said(target, day: dayLabel), undo: {
+            Task { @MainActor in _ = await store.editPastRow(date: date, candidateID: id, rank: rank, event: PastRowEdit.event(for: previous)) }
+          })
+        }
+      case .failed(let why), .unsupported(let why):
+        current = previous
+        phase = .failed(why)
+      }
+    }
+  }
+
+  /// 挪到今天: onto today's sheet; on this day it reads as carried.
+  private func move(id: String, rank: Int) {
+    let previous = current
+    current = .deferred
+    isSending = true
+    let store = state
+    Task {
+      let outcome = await store.moveRowToToday(date: date, candidateID: id, rank: rank)
+      isSending = false
+      switch outcome {
+      case .ok(let note): store.toast = "\(dayLabel)：" + (note ?? "挪到今天了")
+      case .failed(let why), .unsupported(let why):
+        current = previous
+        phase = .failed(why)
+      }
+    }
+  }
+
+  private static func state(_ drawn: String?) -> TodoState {
+    switch drawn {
+    case "complete": .done
+    case "partial": .partial
+    case "missed": .missed
+    case "defer": .deferred
+    default: .open
+    }
   }
 }
 

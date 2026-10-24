@@ -3,10 +3,13 @@ import Foundation
 /// One past day: the plan it ended with, the state each row was left in, and
 /// what the evening review made of it.
 ///
-/// Read-only by construction. Ticking yesterday's row would record feedback
-/// against today's date (the service stamps the ledger with the day it
-/// receives the event), so a past day is something you look at, not something
-/// you edit — the view has no controls that write.
+/// The 日 view draws it the way it draws today — same timeline, same circle,
+/// same editor — because a calendar's past day is still the same day: a tick
+/// forgotten in the evening, a wording that turned out wrong or a block that
+/// actually ran later can be put right afterwards. Every edit goes to the
+/// service with the day's date and lands on that day only. `editable` is false
+/// against a service that predates dated edits — it would have stamped a past
+/// tick onto today — and the day is shown read-only then.
 public struct DayHistory: Sendable, Equatable {
   /// `YYYY-MM-DD`, the day on screen.
   public let date: String
@@ -19,12 +22,15 @@ public struct DayHistory: Sendable, Equatable {
   public let hasPlan: Bool
   /// Absent for plans only recoverable from the daily memory file.
   public let generatedAt: Date?
-  /// In the day's final order, each carrying the state it was left in.
-  public let items: [TodoItem]
+  /// In the day's final order, each carrying the state it was left in. `var`
+  /// so an edit shows at once, before the service answers.
+  public var items: [TodoItem]
   public let review: DayReview?
   /// A plan from before the structured format, as its original text. Shown
   /// instead of pretending the day had no plan.
   public let rawPlan: String?
+  /// The service takes edits for this day (see the type's note).
+  public let editable: Bool
 
   public init(
     date: String,
@@ -34,7 +40,8 @@ public struct DayHistory: Sendable, Equatable {
     generatedAt: Date? = nil,
     items: [TodoItem],
     review: DayReview? = nil,
-    rawPlan: String? = nil
+    rawPlan: String? = nil,
+    editable: Bool = false
   ) {
     self.date = date
     self.dates = dates
@@ -44,6 +51,21 @@ public struct DayHistory: Sendable, Equatable {
     self.items = items
     self.review = review
     self.rawPlan = rawPlan
+    self.editable = editable
+  }
+
+  /// A row's rank on that day's sheet — its position, as Today counts it.
+  public func rank(of id: TodoItem.ID) -> Int? {
+    items.firstIndex { $0.id == id }.map { $0 + 1 }
+  }
+
+  /// The row a 排期 block stands for on this day: a 固定日程 by its own id, a
+  /// 要务 session by its 要务 key (`weekly:<n>:<key>` — the `<n>` is the 要务's
+  /// place in that cycle's list, which the calendar does not know).
+  public func row(candidateID: String?, itemKey: String?) -> TodoItem? {
+    if let candidateID, let item = items.first(where: { $0.id == candidateID }) { return item }
+    guard let itemKey, !itemKey.isEmpty else { return nil }
+    return items.first { $0.id.hasPrefix("weekly:") && $0.id.hasSuffix(":\(itemKey)") }
   }
 
   /// "6 条 · 完成 2 · 部分 1 · 顺延 1". Counts the ticks as they were left,
@@ -53,8 +75,47 @@ public struct DayHistory: Sendable, Equatable {
     let count = { (state: TodoState) in items.filter { $0.state == state }.count }
     var parts = ["\(items.count) 条", "完成 \(count(.done))"]
     if count(.partial) > 0 { parts.append("部分 \(count(.partial))") }
-    if count(.deferred) > 0 { parts.append("顺延 \(count(.deferred))") }
+    if count(.missed) > 0 { parts.append("未做 \(count(.missed))") }
+    if count(.deferred) > 0 { parts.append("推到明天 \(count(.deferred))") }
     return parts.joined(separator: " · ")
+  }
+}
+
+/// What a past day's row can be put in, and how each answer goes on the wire.
+///
+/// The same four-state vocabulary as Today, minus 顺延: 顺到明天 is a decision
+/// about tomorrow, and a past day's tomorrow has already happened. The service
+/// refuses it for a past date too; leaving it out here means no button that
+/// can only fail.
+public enum PastRowEdit {
+  public static let choices: [TodoState] = [.done, .partial, .missed]
+
+  /// Picking the state the row is already in takes it back, as on Today.
+  public static func picked(_ target: TodoState, from current: TodoState) -> TodoState {
+    target == current ? .open : target
+  }
+
+  /// The ledger event that puts a row in `state`. Untouched is `reopen`, which
+  /// clears whatever the row was left in.
+  public static func event(for state: TodoState) -> String {
+    switch state {
+    case .done: "complete"
+    case .partial: "partial"
+    case .missed: "missed"
+    case .deferred: "defer"
+    case .open, .deleted: "reopen"
+    }
+  }
+
+  /// The toast after a change, naming the day so it is clear which sheet moved.
+  public static func said(_ state: TodoState, day: String) -> String {
+    switch state {
+    case .done: "\(day)记为完成"
+    case .partial: "\(day)记为做了一部分"
+    case .missed: "\(day)记为未做"
+    case .deferred: "\(day)记为推到明天"
+    case .open, .deleted: "\(day)的标记撤回了"
+    }
   }
 }
 
@@ -119,6 +180,33 @@ public enum DayLabel {
     }
   }
 
+  /// "2026年10月22日 周四" — the 日 view's title, as 飞书 writes it, with
+  /// "昨天" / "前天" appended when it is one of those.
+  public static func title(for date: String, today: String) -> String {
+    guard let day = parse(date) else { return date }
+    let parts = calendar.dateComponents([.year, .month, .day, .weekday], from: day)
+    let weekday = ["日", "一", "二", "三", "四", "五", "六"][(parts.weekday ?? 1) - 1]
+    let base = "\(parts.year ?? 0)年\(parts.month ?? 0)月\(parts.day ?? 0)日 周\(weekday)"
+    let relative = text(for: date, today: today)
+    return ["今天", "昨天", "前天"].contains(relative) ? "\(base) · \(relative)" : base
+  }
+
+  /// The day `days` away from `date`, by the calendar. Nil for a date that
+  /// cannot be read.
+  public static func shift(_ date: String, by days: Int) -> String? {
+    guard let day = parse(date), let moved = calendar.date(byAdding: .day, value: days, to: day) else { return nil }
+    let parts = calendar.dateComponents([.year, .month, .day], from: moved)
+    return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+  }
+
+  /// This Mac's calendar day, `YYYY-MM-DD`. The 日 view asks the service for
+  /// its own today when it has one; this is for deciding, before that, whether
+  /// a date is in the past at all.
+  public static func localToday(_ now: Date = .now) -> String {
+    let parts = Calendar.current.dateComponents([.year, .month, .day], from: now)
+    return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+  }
+
   /// Fixed UTC so a day never shifts across a DST change or a time zone —
   /// these are calendar labels, not instants.
   private static var calendar: Calendar {
@@ -131,5 +219,75 @@ public enum DayLabel {
     let parts = value.split(separator: "-").compactMap { Int($0) }
     guard parts.count == 3 else { return nil }
     return calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+  }
+}
+
+// MARK: - 回收
+
+/// A past day that ended without its evening review, waiting to be closed out
+/// (回收) or skipped. The app asks about it before it shows today: a day whose
+/// close never ran must not slip by unnoticed.
+public struct WrapupDay: Sendable, Equatable, Identifiable {
+  public struct Row: Sendable, Equatable, Identifiable {
+    public let id: String
+    public let rank: Int
+    public let text: String
+    public let state: TodoState
+    /// A 固定日程: today has its own, so it is never moved to today.
+    public let isFixed: Bool
+
+    public init(id: String, rank: Int, text: String, state: TodoState, isFixed: Bool = false) {
+      self.id = id
+      self.rank = rank
+      self.text = text
+      self.state = state
+      self.isFixed = isFixed
+    }
+  }
+
+  public var id: String { date }
+  public let date: String
+  /// The service's today, for labels.
+  public let today: String
+  public let rows: [Row]
+
+  public init(date: String, today: String, rows: [Row]) {
+    self.date = date
+    self.today = today
+    self.rows = rows
+  }
+
+  /// What still needs a decision: rows nobody ticked, and rows left half done.
+  public var unsettled: [Row] { rows.filter { $0.state == .open || $0.state == .partial } }
+}
+
+/// One decision in 回收, and what it sends.
+public enum WrapupChoice: String, Sendable, Hashable, CaseIterable {
+  case done, missed, keep, moveToToday
+
+  public var label: String {
+    switch self {
+    case .done: "完成"
+    case .missed: "未做"
+    case .keep: "就做到这"
+    case .moveToToday: "挪到今天"
+    }
+  }
+
+  /// The choices a row offers. A row half done is not "未做"; a 固定日程 is
+  /// not moved — today has its own.
+  public static func options(for row: WrapupDay.Row) -> [WrapupChoice] {
+    let first: [WrapupChoice] = row.state == .partial ? [.done, .keep] : [.done, .missed]
+    return row.isFixed ? first : first + [.moveToToday]
+  }
+
+  /// The ledger event for the choice, or nil when nothing is recorded (就做到这
+  /// leaves the row as it was; 挪到今天 has its own endpoint).
+  public var event: String? {
+    switch self {
+    case .done: "complete"
+    case .missed: "missed"
+    case .keep, .moveToToday: nil
+    }
   }
 }

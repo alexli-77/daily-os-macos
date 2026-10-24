@@ -110,10 +110,30 @@ extension DailyOSClient {
       return TodayPlan(items: [], staleDate: nil, hasPlan: false, lastRunFailure: failure)
     }
 
+    let items = Self.planItems(response.todos, feedback: response.feedback, notes: response.notes, carriedFrom: response.carriedFrom)
+
+    return TodayPlan(
+      items: items,
+      staleDate: plan.stale ? plan.date : nil,
+      hasPlan: true,
+      generatedAt: plan.generatedAt.flatMap(TodoWireDate.timestamp),
+      staleCaptures: (response.staleCaptures ?? []).map { StaleCapture(id: $0.id, text: $0.text, days: $0.days) },
+      lastRunFailure: failure
+    )
+  }
+
+  /// A day's plan rows as the call sheet draws them. One mapping for today and
+  /// for a past day, so the 日 view shows both the same way.
+  static func planItems(
+    _ todos: [TodayPlanResponse.Todo],
+    feedback: [String: String],
+    notes: [String: String]?,
+    carriedFrom: [String: String]?
+  ) -> [TodoItem] {
     // A service that knows about MIT marks at least one row (or says the user
     // took it off); one that predates the field marks none, and the rank decides.
-    let knowsMIT = response.todos.contains { $0.mit != nil }
-    let items = response.todos
+    let knowsMIT = todos.contains { $0.mit != nil }
+    return todos
       .sorted { $0.rank < $1.rank }
       .map { todo -> TodoItem in
         // The identity is the candidate id, because that is what feedback is
@@ -124,13 +144,13 @@ extension DailyOSClient {
           id: todo.candidateId,
           text: todo.text,
           kind: .priority,
-          state: Self.state(for: response.feedback[todo.candidateId]),
+          state: Self.state(for: feedback[todo.candidateId]),
           // Already the user's own number when they have corrected one: the
           // service merges the newest ledger edit over the model's guess, so
           // this client never has to know an override mechanism exists.
           estimatedMinutes: todo.minutes,
-          note: response.notes?[todo.candidateId],
-          carriedFrom: response.carriedFrom?[todo.candidateId],
+          note: notes?[todo.candidateId].flatMap { $0.isEmpty ? nil : $0 },
+          carriedFrom: carriedFrom?[todo.candidateId],
           pinnedStart: todo.start.flatMap(DayStart.minute(fromClock:)),
           colorTag: todo.color,
           isMIT: knowsMIT ? (todo.mit ?? false) : nil,
@@ -141,15 +161,6 @@ extension DailyOSClient {
           categoryLabel: todo.category
         )
       }
-
-    return TodayPlan(
-      items: items,
-      staleDate: plan.stale ? plan.date : nil,
-      hasPlan: true,
-      generatedAt: plan.generatedAt.flatMap(TodoWireDate.timestamp),
-      staleCaptures: (response.staleCaptures ?? []).map { StaleCapture(id: $0.id, text: $0.text, days: $0.days) },
-      lastRunFailure: failure
-    )
   }
 
   /// The run ledger's error without the runner's "Claude Code failed: " prefix.
@@ -183,7 +194,8 @@ extension DailyOSClient {
     start: String? = nil,
     text: String? = nil,
     color: String? = nil,
-    mit: Bool? = nil
+    mit: Bool? = nil,
+    date: String? = nil
   ) async throws -> String? {
     struct Request: Encodable {
       let candidateId: String
@@ -199,6 +211,10 @@ extension DailyOSClient {
       let color: String?
       /// Make the row today's MIT or take it off, on `update` only.
       let mit: Bool?
+      /// `YYYY-MM-DD` of a past day being edited in the 日 view. Absent means
+      /// today. Only sent when `/api/day/plan` said the day is `editable` —
+      /// an older service ignores the field and would stamp the edit on today.
+      let date: String?
     }
     struct Response: Decodable {
       /// What the cycle schedule did in step (顺延 / 删除 / 恢复 a 要务 row).
@@ -206,7 +222,7 @@ extension DailyOSClient {
     }
     let response: Response = try await post(
       "/api/today/todo-feedback",
-      body: Request(candidateId: candidateID, rank: rank, event: event, note: note, minutes: minutes, start: start, text: text, color: color, mit: mit)
+      body: Request(candidateId: candidateID, rank: rank, event: event, note: note, minutes: minutes, start: start, text: text, color: color, mit: mit, date: date)
     )
     return response.schedule
   }
