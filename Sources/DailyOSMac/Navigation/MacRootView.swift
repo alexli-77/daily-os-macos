@@ -40,29 +40,33 @@ struct MacRootView: View {
     // same conversation as the Chat section, reachable from anywhere without
     // leaving the current screen. topTrailing so it hangs under the toolbar's
     // chat button; the transition slides it down from the top edge.
-    .overlay(alignment: .topTrailing) {
+    // The dialog rises from the bottom-right, above the launcher it came from.
+    .overlay(alignment: .bottomTrailing) {
       if state.chatPanelOpen {
         ChatPanel(isOpen: $state.chatPanelOpen)
-          .padding(.trailing, Metrics.sm)
-          .transition(.move(edge: .top).combined(with: .opacity))
+          .frame(maxHeight: 580)
+          .padding(.trailing, Metrics.md)
+          .transition(.move(edge: .bottom).combined(with: .opacity))
           .zIndex(1)
       }
     }
-    // A floating button in the top-right corner, on the topmost layer — not a
-    // window-toolbar item. macOS 26 wraps toolbar items in a Liquid-Glass
+    // A floating launcher box in the bottom-right corner, on the topmost layer —
+    // not a window-toolbar item. macOS 26 wraps toolbar items in a Liquid-Glass
     // container that paints a white rounded square behind the mark, which
     // `.buttonStyle(.plain)` can't drop; a plain overlay has no such chrome.
-    // Hidden while the panel is open, which hangs from the same corner.
-    .overlay(alignment: .topTrailing) {
+    // Hidden while the panel is open, which rises from the same corner.
+    .overlay(alignment: .bottomTrailing) {
       if !state.chatPanelOpen {
         Button {
           state.chatPanelOpen.toggle()
         } label: {
-          ChatBotMark().frame(width: 32, height: 32)
+          ChatBotMark(showsTail: false)
+            .frame(width: 48, height: 48)
+            .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
         }
         .buttonStyle(.plain)
-        .padding(.top, Metrics.sm)
-        .padding(.trailing, Metrics.md)
+        .padding(.trailing, Metrics.lg)
+        .padding(.bottom, Metrics.lg)
         .transition(.opacity)
         .zIndex(2)
         .help("聊天（⌘⇧C）")

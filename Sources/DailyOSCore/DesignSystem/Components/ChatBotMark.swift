@@ -9,25 +9,39 @@ import SwiftUI
 /// same in light and dark.
 public struct ChatBotMark: View {
   private let paper = Color(hex: 0xF6F7F4)
+  private let showsTail: Bool
 
-  public init() {}
+  /// `showsTail: false` drops the speech-bubble tail and squares the body into a
+  /// plain rounded box — the form the floating bottom-right launcher wants.
+  public init(showsTail: Bool = true) {
+    self.showsTail = showsTail
+  }
 
   public var body: some View {
     GeometryReader { geo in
       let side = min(geo.size.width, geo.size.height)
-      ChatBubbleShape(tail: side * 0.18)
-        .fill(Palette.chatAccent)
+      filledShape(side: side)
         .overlay {
-          // One white ring in the bubble body (above the tail) — concept C, a
-          // nod to the app icon's rings without the seven-dot crowding.
+          // One white ring — concept C, a nod to the app icon's rings without
+          // the seven-dot crowding. Nudged up over the tail when there is one;
+          // dead-centre in the box when there isn't.
           Circle()
             .strokeBorder(paper, lineWidth: side * 0.082)
             .frame(width: side * 0.34, height: side * 0.34)
-            .offset(y: -side * 0.08)
+            .offset(y: showsTail ? -side * 0.08 : 0)
         }
     }
     .aspectRatio(1, contentMode: .fit)
     .accessibilityHidden(true)
+  }
+
+  @ViewBuilder
+  private func filledShape(side: CGFloat) -> some View {
+    if showsTail {
+      ChatBubbleShape(tail: side * 0.18).fill(Palette.chatAccent)
+    } else {
+      RoundedRectangle(cornerRadius: side * 0.28, style: .continuous).fill(Palette.chatAccent)
+    }
   }
 }
 
