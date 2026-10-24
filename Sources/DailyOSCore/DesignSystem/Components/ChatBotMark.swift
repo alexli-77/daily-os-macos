@@ -18,10 +18,12 @@ public struct ChatBotMark: View {
       ChatBubbleShape(tail: side * 0.18)
         .fill(Palette.chatAccent)
         .overlay {
-          // The seven dots sit in the bubble body (above the tail), centred.
-          DailyOSMark(style: .solid, tint: paper)
-            .frame(width: side * 0.52, height: side * 0.52)
-            .offset(y: -side * 0.07)
+          // One white ring in the bubble body (above the tail) — concept C, a
+          // nod to the app icon's rings without the seven-dot crowding.
+          Circle()
+            .strokeBorder(paper, lineWidth: side * 0.082)
+            .frame(width: side * 0.34, height: side * 0.34)
+            .offset(y: -side * 0.08)
         }
     }
     .aspectRatio(1, contentMode: .fit)
