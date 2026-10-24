@@ -30,6 +30,10 @@ public struct ChatBotMark: View {
 }
 
 public extension Palette {
+  /// The app-wide canvas (LEO-346): a faint green-tinted near-white, the gradient
+  /// canvas's top tone. Replaces the old warm grey behind every screen.
+  static let appCanvas = Color(light: Color(hex: 0xFBFCFB), dark: Color(hex: 0x181D1A))
+
   /// The chat's moss-green accent — the bot mark bubble and the send button.
   /// A mid moss gradient, matching the "执行情况" bar-chart icon's green family.
   static let chatAccent = LinearGradient(

@@ -54,7 +54,7 @@ struct CyclesScreen: View {
       }
     }
     .animation(.easeOut(duration: 0.18), value: showsOKR)
-    .background(Palette.paper)
+    .background(Palette.appCanvas)
     .sheet(isPresented: $isCreating) { NewCycleSheet() }
   }
 }
@@ -1192,7 +1192,7 @@ struct NewCycleSheet: View {
       .padding(Metrics.md)
     }
     .frame(width: 460)
-    .background(Palette.paper)
+    .background(Palette.appCanvas)
   }
 
   /// The newest cycle, which is the one the service will follow. Read here only

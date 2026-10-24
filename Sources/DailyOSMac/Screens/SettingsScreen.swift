@@ -86,7 +86,7 @@ struct SettingsScreen: View {
       }
       .frame(maxWidth: .infinity)
     }
-    .background(Palette.paper)
+    .background(Palette.appCanvas)
     // The log list is the one section whose data is not in `/api/state`, so it
     // is fetched when you arrive rather than on every settings load — nobody
     // opening 模型 needs seven days of request records pulled first.

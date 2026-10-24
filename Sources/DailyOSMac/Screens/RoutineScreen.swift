@@ -65,7 +65,7 @@ struct RoutineScreen: View {
       }
       .frame(maxWidth: .infinity)
     }
-    .background(Palette.paper)
+    .background(Palette.appCanvas)
     .task { await load() }
     .sheet(isPresented: $editsPeriod) {
       if let period = currentPeriod {
@@ -115,7 +115,7 @@ struct RoutineScreen: View {
         .padding(Metrics.xs)
       }
     }
-    .background(Palette.paper)
+    .background(Palette.appCanvas)
   }
 
   // MARK: Detail

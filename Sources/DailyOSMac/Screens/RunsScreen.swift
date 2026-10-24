@@ -22,7 +22,7 @@ struct RunsScreen: View {
       }
       .frame(maxWidth: .infinity)
     }
-    .background(Palette.paper)
+    .background(Palette.appCanvas)
   }
 }
 
