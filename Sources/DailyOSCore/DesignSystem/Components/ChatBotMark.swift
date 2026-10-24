@@ -1,0 +1,99 @@
+import SwiftUI
+
+/// The chat entry/assistant mark (LEO-346): the seven-ring mark inside a speech
+/// bubble, in the app icon's own deep-green gradient. Reuses `DailyOSMark` so the
+/// seven life areas stay byte-identical to the app icon; the bubble just says
+/// "this is where you talk to it".
+///
+/// Fixed brand greens, not theme colours — like the app icon, the mark reads the
+/// same in light and dark.
+public struct ChatBotMark: View {
+  private let paper = Color(hex: 0xF6F7F4)
+  private let showsTail: Bool
+
+  /// `showsTail: false` drops the speech-bubble tail and squares the body into a
+  /// plain rounded box — the form the floating bottom-right launcher wants.
+  public init(showsTail: Bool = true) {
+    self.showsTail = showsTail
+  }
+
+  public var body: some View {
+    GeometryReader { geo in
+      let side = min(geo.size.width, geo.size.height)
+      filledShape(side: side)
+        .overlay {
+          // One white ring — concept C, a nod to the app icon's rings without
+          // the seven-dot crowding. Nudged up over the tail when there is one;
+          // dead-centre in the box when there isn't.
+          Circle()
+            .strokeBorder(paper, lineWidth: side * 0.082)
+            .frame(width: side * 0.34, height: side * 0.34)
+            .offset(y: showsTail ? -side * 0.08 : 0)
+        }
+    }
+    .aspectRatio(1, contentMode: .fit)
+    .accessibilityHidden(true)
+  }
+
+  @ViewBuilder
+  private func filledShape(side: CGFloat) -> some View {
+    if showsTail {
+      ChatBubbleShape(tail: side * 0.18).fill(Palette.chatAccent)
+    } else {
+      RoundedRectangle(cornerRadius: side * 0.28, style: .continuous).fill(Palette.chatAccent)
+    }
+  }
+}
+
+public extension Palette {
+  /// The app-wide canvas (LEO-346): a faint green-tinted near-white, the gradient
+  /// canvas's top tone. Replaces the old warm grey behind every screen.
+  static let appCanvas = Color(light: Color(hex: 0xFBFCFB), dark: Color(hex: 0x181D1A))
+
+  /// The chat's moss-green accent — the bot mark bubble and the send button.
+  /// A mid moss gradient, matching the "执行情况" bar-chart icon's green family.
+  static let chatAccent = LinearGradient(
+    gradient: Gradient(colors: [Color(hex: 0x3C9D80), Color(hex: 0x256E58)]),
+    startPoint: .topLeading,
+    endPoint: .bottomTrailing
+  )
+
+  /// The chat window's soft green canvas (LEO-346): pale mint in light mode,
+  /// deep green in dark. The app icon's green family, kept pale enough that
+  /// white cards and text stay legible on top.
+  static let chatCanvas = LinearGradient(
+    gradient: Gradient(colors: [
+      Color(light: Color(hex: 0xFBFCFB), dark: Color(hex: 0x202522)),
+      Color(light: Color(hex: 0xEAEFEB), dark: Color(hex: 0x191E1A)),
+      Color(light: Color(hex: 0xD2DCD4), dark: Color(hex: 0x121613)),
+    ]),
+    startPoint: .top,
+    endPoint: .bottom
+  )
+}
+
+/// A rounded speech bubble with a short tail at the bottom-left.
+public struct ChatBubbleShape: Shape {
+  public var tail: CGFloat
+
+  public init(tail: CGFloat = 8) {
+    self.tail = tail
+  }
+
+  public func path(in rect: CGRect) -> Path {
+    // The bubble body occupies the top ~82%; the tail drops from the lower-left.
+    let bodyHeight = rect.height - tail
+    let body = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: bodyHeight)
+    let radius = min(body.width, body.height) * 0.26
+    var path = Path(roundedRect: body, cornerRadius: radius)
+
+    let tailX = rect.minX + rect.width * 0.26
+    var tailPath = Path()
+    tailPath.move(to: CGPoint(x: tailX, y: body.maxY - radius * 0.3))
+    tailPath.addLine(to: CGPoint(x: tailX - tail * 0.5, y: rect.maxY))
+    tailPath.addLine(to: CGPoint(x: tailX + tail * 1.4, y: body.maxY - radius * 0.3))
+    tailPath.closeSubpath()
+    path.addPath(tailPath)
+    return path
+  }
+}

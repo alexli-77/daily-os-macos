@@ -33,15 +33,16 @@ struct ChatPanel: View {
   var body: some View {
     VStack(spacing: 0) {
       header
-      Divider()
       Conversation()
     }
-    .frame(width: 420)
+    .frame(width: 360)
     .frame(maxHeight: .infinity)
-    .background(Palette.paper)
-    .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusMedium, style: .continuous))
+    // One continuous green canvas top-to-bottom — header, body and composer all
+    // sit on it, no white strips (LEO-346).
+    .background(Palette.chatCanvas)
+    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     .overlay(
-      RoundedRectangle(cornerRadius: Metrics.radiusMedium, style: .continuous)
+      RoundedRectangle(cornerRadius: 12, style: .continuous)
         .stroke(Palette.line)
     )
     .shadow(color: .black.opacity(0.16), radius: 18, y: 6)
@@ -51,7 +52,6 @@ struct ChatPanel: View {
 
   private var header: some View {
     HStack(spacing: Metrics.xs) {
-      Text("聊天").font(Typo.label)
       Spacer()
       Button { showHistory.toggle() } label: {
         Image(systemName: "clock.arrow.circlepath")
@@ -164,7 +164,6 @@ private struct Conversation: View {
         .padding(Metrics.screenPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
       }
-      .background(Palette.paper)
       Composer()
     }
   }
@@ -194,27 +193,36 @@ private struct EmptyChatState: View {
   var body: some View {
     if state.agentMode.allowsFreeChat {
       VStack(spacing: Metrics.lg) {
-        EmptyState(
-          icon: "bubble.left.and.text.bubble.right",
-          title: "你好，我是 Daily OS 助手",
-          message: "能看也能改你的作息、排期、要务和 OKR，也能告诉你怎么改设置。试试点下面的例子："
-        )
+        VStack(spacing: Metrics.sm) {
+          ChatBotMark().frame(width: 60, height: 60)
+          Text("你好，我是 Daily OS 助手")
+            .font(Typo.heading)
+            .foregroundStyle(Palette.ink)
+          Text("能看也能改你的作息、排期、要务和 OKR，也能告诉你怎么改设置。试试点下面的例子：")
+            .font(Typo.body)
+            .foregroundStyle(Palette.inkMuted)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+        }
         VStack(spacing: Metrics.xs) {
           ForEach(chatExamplePrompts, id: \.self) { prompt in
             Button { state.composerText = prompt } label: {
-              Text("「\(prompt)」")
+              Text(prompt)
                 .font(Typo.body)
                 .foregroundStyle(Palette.ink)
-                .padding(.horizontal, Metrics.sm)
-                .padding(.vertical, Metrics.xs)
+                .padding(.horizontal, Metrics.md)
+                .padding(.vertical, Metrics.xs + 2)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Metrics.radiusMedium, style: .continuous))
+                // White pills read cleanly on the green canvas.
+                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.line, lineWidth: 0.5))
             }
             .buttonStyle(.plain)
           }
         }
         .frame(maxWidth: 420)
       }
+      .frame(maxWidth: .infinity)
       .padding(Metrics.lg)
     } else {
       EmptyState(
@@ -316,29 +324,40 @@ private struct Composer: View {
   var body: some View {
     @Bindable var state = state
     VStack(spacing: 0) {
-      Divider()
       if !state.agentMode.allowsFreeChat {
         AgentModeNotice()
         // Command chips are the command-mode fallback. In free chat you just
         // talk (and the empty state teaches how), so the row is dropped there.
         CommandPalette()
       }
+      // One white pill holding the field and a green circular send button,
+      // matching the design (LEO-346) rather than a text button.
       HStack(alignment: .bottom, spacing: Metrics.xs) {
         TextField(placeholder, text: $state.composerText, axis: .vertical)
           .textFieldStyle(.plain)
           .font(Typo.body)
           .lineLimit(1...6)
-          .padding(Metrics.xs)
-          .background(Palette.surfaceSunken)
-          .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
+          .padding(.vertical, 6)
           .onSubmit { state.send() }
-        Button("发送") { state.send() }
-          .buttonStyle(MossButtonStyle())
-          .disabled(state.composerText.trimmingCharacters(in: .whitespaces).isEmpty)
+        Button { state.send() } label: {
+          Image(systemName: "arrow.up")
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(Color(white: 0.97))
+            .frame(width: 30, height: 30)
+            .background(Circle().fill(Palette.chatAccent))
+        }
+        .buttonStyle(.plain)
+        .opacity(state.composerText.trimmingCharacters(in: .whitespaces).isEmpty ? 0.45 : 1)
+        .disabled(state.composerText.trimmingCharacters(in: .whitespaces).isEmpty)
       }
+      .padding(.leading, Metrics.md)
+      .padding(.trailing, 6)
+      .padding(.vertical, 6)
+      .background(Palette.surface)
+      .clipShape(Capsule(style: .continuous))
+      .overlay(Capsule(style: .continuous).strokeBorder(Palette.line, lineWidth: 0.5))
       .padding(Metrics.sm)
     }
-    .background(Palette.surface)
   }
 
   private var placeholder: String {

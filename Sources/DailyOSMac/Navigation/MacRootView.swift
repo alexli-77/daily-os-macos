@@ -34,7 +34,7 @@ struct MacRootView: View {
       }
       .frame(minWidth: 560, minHeight: 420)
     }
-    .background(Palette.paper)
+    .background(Palette.chatCanvas)
     .toastOverlay()
     // 回收 before today: a past day that ended without its review is asked
     // about first, and the sheet cannot be dismissed without a choice. The
@@ -47,25 +47,40 @@ struct MacRootView: View {
     // same conversation as the Chat section, reachable from anywhere without
     // leaving the current screen. topTrailing so it hangs under the toolbar's
     // chat button; the transition slides it down from the top edge.
-    .overlay(alignment: .topTrailing) {
+    // The dialog rises from the bottom-right, above the launcher it came from.
+    .overlay(alignment: .bottomTrailing) {
       if state.chatPanelOpen {
         ChatPanel(isOpen: $state.chatPanelOpen)
-          .padding(.trailing, Metrics.sm)
-          .transition(.move(edge: .top).combined(with: .opacity))
+          .frame(maxHeight: 580)
+          .padding(.trailing, Metrics.md)
+          .transition(.move(edge: .bottom).combined(with: .opacity))
           .zIndex(1)
       }
     }
-    .animation(.spring(response: 0.32, dampingFraction: 0.86), value: state.chatPanelOpen)
-    .toolbar {
-      ToolbarItem(placement: .automatic) {
+    // A floating launcher box in the bottom-right corner, on the topmost layer —
+    // not a window-toolbar item. macOS 26 wraps toolbar items in a Liquid-Glass
+    // container that paints a white rounded square behind the mark, which
+    // `.buttonStyle(.plain)` can't drop; a plain overlay has no such chrome.
+    // Hidden while the panel is open, which rises from the same corner.
+    .overlay(alignment: .bottomTrailing) {
+      if !state.chatPanelOpen {
         Button {
           state.chatPanelOpen.toggle()
         } label: {
-          Image(systemName: "bubble.left.and.bubble.right")
+          ChatBotMark(showsTail: false)
+            .frame(width: 48, height: 48)
+            .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
         }
+        .buttonStyle(.plain)
+        .padding(.trailing, Metrics.lg)
+        .padding(.bottom, Metrics.lg)
+        .transition(.opacity)
+        .zIndex(2)
         .help("聊天（⌘⇧C）")
+        .accessibilityLabel("聊天")
       }
     }
+    .animation(.spring(response: 0.32, dampingFraction: 0.86), value: state.chatPanelOpen)
   }
 }
 
@@ -108,7 +123,7 @@ private struct Sidebar: View {
     // After the inset, so paper covers the footer strip too. Applied inside the
     // scroll view instead, the footer would keep sitting on the split view's
     // own translucent sidebar material.
-    .background(Palette.paper)
+    .background(Palette.chatCanvas)
     .navigationTitle("Daily OS")
   }
 
