@@ -54,9 +54,9 @@ struct MacRootView: View {
         Button {
           state.chatPanelOpen.toggle()
         } label: {
-          ChatBotMark().frame(width: 20, height: 20)
+          ChatBotMark().frame(width: 28, height: 28)
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
         .help("聊天（⌘⇧C）")
       }
     }
