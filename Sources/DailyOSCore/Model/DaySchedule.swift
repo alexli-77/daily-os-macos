@@ -287,6 +287,13 @@ extension DaySchedule {
     return (0..<(24 * 60)).contains(total) ? total : nil
   }
 
+  /// Which time a time list opens on: the one already chosen, else the one
+  /// nearest `now` — a calendar's list never opens at the top of the day.
+  public static func listAnchor(_ options: [Int], selected: Int?, now: Int) -> Int? {
+    let target = selected ?? now
+    return options.min { abs($0 - target) < abs($1 - target) }
+  }
+
   /// `13:40`, from minutes-since-midnight. Wraps past midnight rather than
   /// printing `26:10` — a day that overruns is still a clock.
   public static func clock(_ minute: Int) -> String {

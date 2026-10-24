@@ -98,7 +98,7 @@ public struct StateCircle: View {
     case .done: "已完成，点一下撤回"
     case .partial: "做了一部分"
     case .missed: "未做"
-    case .deferred: "顺到明天"
+    case .deferred: "推到明天"
     case .open, .deleted: "标记完成"
     }
   }
@@ -115,6 +115,8 @@ public struct StateMenuBar: View {
   public enum Choice: Hashable, Sendable {
     case state(TodoState)
     case delete
+    /// A past day's unfinished row onto today's sheet (回收).
+    case moveToToday
   }
 
   public let state: TodoState
@@ -159,9 +161,11 @@ public struct StateMenuBar: View {
     case .state(.done): "完成"
     case .state(.partial): "部分"
     case .state(.missed): "未做"
-    case .state(.deferred): "顺延"
+    // Was 顺延, which read as jargon: say where it goes.
+    case .state(.deferred): "推到明天"
     case .state: "没开始"
     case .delete: "删除"
+    case .moveToToday: "挪到今天"
     }
   }
 
@@ -173,6 +177,7 @@ public struct StateMenuBar: View {
     case .state(.deferred): "arrow.right.circle"
     case .state: "circle"
     case .delete: "trash"
+    case .moveToToday: "arrow.uturn.right.circle"
     }
   }
 

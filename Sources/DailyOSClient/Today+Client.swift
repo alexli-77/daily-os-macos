@@ -249,7 +249,7 @@ extension DailyOSClient {
     case .deferred: "deferred"
     case .deleted: "deleted"
     case .partial, .missed:
-      throw ClientError.service(message: "随手记的条目只有完成和顺延，「做了一部分」「未做」只有计划行有。")
+      throw ClientError.service(message: "随手记的条目只有完成和推到明天，「做了一部分」「未做」只有计划行有。")
     }
     try await post("/api/todo-inbox", body: TodoInboxUpdateRequest(id: id, status: status))
   }

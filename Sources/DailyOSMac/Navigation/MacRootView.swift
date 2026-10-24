@@ -36,6 +36,13 @@ struct MacRootView: View {
     }
     .background(Palette.chatCanvas)
     .toastOverlay()
+    // 回收 before today: a past day that ended without its review is asked
+    // about first, and the sheet cannot be dismissed without a choice. The
+    // binding ignores writes — the day leaves the list only when it is closed
+    // out or skipped. See `WrapupSheet`.
+    .sheet(item: Binding(get: { state.pendingWrapups.first }, set: { _ in })) { day in
+      WrapupSheet(day: day).environment(state)
+    }
     // The chat panel drops from the top on the right, over the detail column —
     // same conversation as the Chat section, reachable from anywhere without
     // leaving the current screen. topTrailing so it hangs under the toolbar's

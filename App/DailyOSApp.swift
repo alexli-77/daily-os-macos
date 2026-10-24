@@ -89,7 +89,16 @@ struct DailyOSApp: App {
       // rather than here, so this and the poll share one floor instead of
       // double-firing when they land together.
       .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-        Task { await state?.refreshTeamQuietly() }
+        Task {
+          await state?.refreshTeamQuietly()
+          // A day may have ended unclosed while the app sat in the background.
+          await state?.loadPendingWrapups()
+        }
+      }
+      // Waking from sleep is exactly when an evening review was missed: the
+      // date may have moved on too, so everything is read again, 回收 included.
+      .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
+        Task { await state?.reload() }
       }
     }
     .defaultSize(width: 1_080, height: 720)

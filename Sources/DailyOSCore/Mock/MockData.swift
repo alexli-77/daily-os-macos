@@ -267,7 +267,8 @@ public enum MockData {
             .init(id: "todo_inbox:2", text: "整理本周投放数据", status: .open),
           ],
           note: "上午的主线收掉了，下午被临时会议吃掉。"
-        )
+        ),
+        editable: true
       )
     }
   }
