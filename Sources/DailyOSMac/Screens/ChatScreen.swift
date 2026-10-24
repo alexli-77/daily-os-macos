@@ -35,7 +35,7 @@ struct ChatPanel: View {
       header
       Conversation()
     }
-    .frame(width: 420)
+    .frame(width: 360)
     .frame(maxHeight: .infinity)
     // One continuous green canvas top-to-bottom — header, body and composer all
     // sit on it, no white strips (LEO-346).
@@ -52,7 +52,6 @@ struct ChatPanel: View {
 
   private var header: some View {
     HStack(spacing: Metrics.xs) {
-      Text("聊天").font(Typo.label)
       Spacer()
       Button { showHistory.toggle() } label: {
         Image(systemName: "clock.arrow.circlepath")

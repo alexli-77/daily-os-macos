@@ -43,9 +43,9 @@ public extension Palette {
   /// white cards and text stay legible on top.
   static let chatCanvas = LinearGradient(
     gradient: Gradient(colors: [
-      Color(light: Color(hex: 0xEDF0EC), dark: Color(hex: 0x1E2320)),
-      Color(light: Color(hex: 0xE3E9E3), dark: Color(hex: 0x191D1A)),
-      Color(light: Color(hex: 0xD3DDD5), dark: Color(hex: 0x141815)),
+      Color(light: Color(hex: 0xFBFCFB), dark: Color(hex: 0x202522)),
+      Color(light: Color(hex: 0xEAEFEB), dark: Color(hex: 0x191E1A)),
+      Color(light: Color(hex: 0xD2DCD4), dark: Color(hex: 0x121613)),
     ]),
     startPoint: .top,
     endPoint: .bottom
