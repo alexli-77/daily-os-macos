@@ -33,11 +33,6 @@ struct MacRootView: View {
         SectionView(section: state.section)
       }
       .frame(minWidth: 560, minHeight: 420)
-      // The chat entry is drawn by each screen's own header (ScreenScaffold),
-      // not the window toolbar — macOS 26 wraps toolbar items in a Liquid-Glass
-      // container whose white rounded background `.buttonStyle(.plain)` won't
-      // drop. Here it sits in the header row, aligned with 往日 / 执行情况.
-      .environment(\.chatEntryAction) { state.chatPanelOpen.toggle() }
     }
     .background(Palette.chatCanvas)
     .toastOverlay()
@@ -51,6 +46,27 @@ struct MacRootView: View {
           .padding(.trailing, Metrics.sm)
           .transition(.move(edge: .top).combined(with: .opacity))
           .zIndex(1)
+      }
+    }
+    // A floating button in the top-right corner, on the topmost layer — not a
+    // window-toolbar item. macOS 26 wraps toolbar items in a Liquid-Glass
+    // container that paints a white rounded square behind the mark, which
+    // `.buttonStyle(.plain)` can't drop; a plain overlay has no such chrome.
+    // Hidden while the panel is open, which hangs from the same corner.
+    .overlay(alignment: .topTrailing) {
+      if !state.chatPanelOpen {
+        Button {
+          state.chatPanelOpen.toggle()
+        } label: {
+          ChatBotMark().frame(width: 32, height: 32)
+        }
+        .buttonStyle(.plain)
+        .padding(.top, Metrics.sm)
+        .padding(.trailing, Metrics.md)
+        .transition(.opacity)
+        .zIndex(2)
+        .help("聊天（⌘⇧C）")
+        .accessibilityLabel("聊天")
       }
     }
     .animation(.spring(response: 0.32, dampingFraction: 0.86), value: state.chatPanelOpen)

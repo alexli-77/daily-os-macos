@@ -102,13 +102,6 @@ public struct PanelDivider: View {
 /// pages, which is the single most common way a native app starts to feel
 /// assembled rather than designed.
 public struct ScreenScaffold<Content: View, Toolbar: View>: View {
-  // Injected by the Mac shell. The chat entry used to live in the window
-  // toolbar, where macOS 26 draws every item inside a Liquid-Glass container —
-  // a white rounded square behind the mark that `.buttonStyle(.plain)` can't
-  // remove. Rendering it here, in the screen's own header row, drops it next to
-  // the page's other actions (往日 / 执行情况), aligned and with no glass.
-  @Environment(\.chatEntryAction) private var chatEntryAction
-
   private let title: String
   private let subtitle: String?
   private let content: Content
@@ -136,19 +129,6 @@ public struct ScreenScaffold<Content: View, Toolbar: View>: View {
             .fixedSize(horizontal: false, vertical: true)
           Spacer(minLength: Metrics.sm)
           toolbar
-          if let chatEntryAction {
-            Button(action: chatEntryAction) {
-              ChatBotMark().frame(width: 30, height: 30)
-            }
-            .buttonStyle(.plain)
-            // The row aligns on the title's first text baseline; a bare mark has
-            // no baseline, so it defaults to its bottom edge and floats above the
-            // pill buttons (往日 / 执行情况). Put its centre on the baseline so it
-            // lines up with them.
-            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] }
-            .help("聊天（⌘⇧C）")
-            .accessibilityLabel("聊天")
-          }
         }
         .padding(.bottom, Metrics.xxs)
         content
