@@ -9,7 +9,6 @@ import SwiftUI
 /// same in light and dark.
 public struct ChatBotMark: View {
   private let paper = Color(hex: 0xF6F7F4)
-  private static let bubbleGradient = Gradient(colors: [Color(hex: 0x3C9D80), Color(hex: 0x256E58)])
 
   public init() {}
 
@@ -17,7 +16,7 @@ public struct ChatBotMark: View {
     GeometryReader { geo in
       let side = min(geo.size.width, geo.size.height)
       ChatBubbleShape(tail: side * 0.18)
-        .fill(LinearGradient(gradient: Self.bubbleGradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+        .fill(Palette.chatAccent)
         .overlay {
           // The seven dots sit in the bubble body (above the tail), centred.
           DailyOSMark(style: .solid, tint: paper)
@@ -31,6 +30,14 @@ public struct ChatBotMark: View {
 }
 
 public extension Palette {
+  /// The chat's moss-green accent — the bot mark bubble and the send button.
+  /// A mid moss gradient, matching the "执行情况" bar-chart icon's green family.
+  static let chatAccent = LinearGradient(
+    gradient: Gradient(colors: [Color(hex: 0x3C9D80), Color(hex: 0x256E58)]),
+    startPoint: .topLeading,
+    endPoint: .bottomTrailing
+  )
+
   /// The chat window's soft green canvas (LEO-346): pale mint in light mode,
   /// deep green in dark. The app icon's green family, kept pale enough that
   /// white cards and text stay legible on top.

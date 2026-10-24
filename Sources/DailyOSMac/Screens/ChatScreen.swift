@@ -331,20 +331,32 @@ private struct Composer: View {
         // talk (and the empty state teaches how), so the row is dropped there.
         CommandPalette()
       }
+      // One white pill holding the field and a green circular send button,
+      // matching the design (LEO-346) rather than a text button.
       HStack(alignment: .bottom, spacing: Metrics.xs) {
         TextField(placeholder, text: $state.composerText, axis: .vertical)
           .textFieldStyle(.plain)
           .font(Typo.body)
           .lineLimit(1...6)
-          .padding(Metrics.xs)
-          .background(Palette.surface)
-          .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
-          .overlay(RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous).strokeBorder(Palette.line, lineWidth: 0.5))
+          .padding(.vertical, 6)
           .onSubmit { state.send() }
-        Button("发送") { state.send() }
-          .buttonStyle(MossButtonStyle())
-          .disabled(state.composerText.trimmingCharacters(in: .whitespaces).isEmpty)
+        Button { state.send() } label: {
+          Image(systemName: "arrow.up")
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(Color(white: 0.97))
+            .frame(width: 30, height: 30)
+            .background(Circle().fill(Palette.chatAccent))
+        }
+        .buttonStyle(.plain)
+        .opacity(state.composerText.trimmingCharacters(in: .whitespaces).isEmpty ? 0.45 : 1)
+        .disabled(state.composerText.trimmingCharacters(in: .whitespaces).isEmpty)
       }
+      .padding(.leading, Metrics.md)
+      .padding(.trailing, 6)
+      .padding(.vertical, 6)
+      .background(Palette.surface)
+      .clipShape(Capsule(style: .continuous))
+      .overlay(Capsule(style: .continuous).strokeBorder(Palette.line, lineWidth: 0.5))
       .padding(Metrics.sm)
     }
   }
