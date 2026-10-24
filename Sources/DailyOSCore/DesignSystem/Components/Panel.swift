@@ -136,7 +136,7 @@ public struct ScreenScaffold<Content: View, Toolbar: View>: View {
       .padding(Metrics.screenPadding)
       .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .background(Palette.paper)
+    .background(Palette.chatCanvas)
   }
 }
 

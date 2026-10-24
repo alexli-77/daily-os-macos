@@ -39,7 +39,7 @@ struct PastDaysSheet: View {
       }
     }
     .frame(minWidth: 780, idealWidth: 860, minHeight: 540, idealHeight: 640)
-    .background(Palette.chatCanvas)
+    .background(Palette.paper)
     // nil: the service picks the most recent day before today with a plan.
     .task { await load(initialDate) }
   }
@@ -78,7 +78,7 @@ struct PastDaysSheet: View {
       }
       .padding(Metrics.xs)
     }
-    .background(Palette.chatCanvas)
+    .background(Palette.paper)
   }
 
   // MARK: Detail

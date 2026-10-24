@@ -54,17 +54,7 @@ struct MacRootView: View {
         Button {
           state.chatPanelOpen.toggle()
         } label: {
-          HStack(spacing: 6) {
-            ChatBotMark().frame(width: 22, height: 22)
-            Text("问问小柒")
-              .font(.system(size: 12, weight: .medium))
-              .foregroundStyle(Palette.mint800)
-          }
-          .padding(.leading, 6)
-          .padding(.trailing, 11)
-          .padding(.vertical, 5)
-          .background(Palette.mint200, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-          .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+          ChatBotMark().frame(width: 20, height: 20)
         }
         .buttonStyle(.borderless)
         .help("聊天（⌘⇧C）")

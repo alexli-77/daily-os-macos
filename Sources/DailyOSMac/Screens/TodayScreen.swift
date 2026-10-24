@@ -1549,7 +1549,7 @@ private extension View {
     let column = CGFloat(placement?.column ?? 0)
     return frame(width: max(lane / count - (count > 1 ? 2 : 0), 24), height: max(Timeline.y(end, from: start) - 2, 12), alignment: .top)
       // Opaque under the tint, so the hour rules do not run through blocks.
-      .background(Palette.chatCanvas)
+      .background(Palette.page)
       .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
       .offset(x: Timeline.gutter + column * lane / count, y: Timeline.y(start, from: origin) + 1)
   }
@@ -1676,7 +1676,7 @@ private struct NowMarker: View {
         .monospacedDigit()
         .foregroundStyle(Palette.mint600)
         .frame(width: Timeline.gutter - Metrics.xxs, alignment: .leading)
-        .background(Palette.chatCanvas)
+        .background(Palette.page)
       Rectangle().fill(Palette.mint400).frame(height: 2)
     }
     .frame(height: Timeline.labelHeight)
