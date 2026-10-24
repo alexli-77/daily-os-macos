@@ -58,6 +58,24 @@ public extension Palette {
   )
 }
 
+/// The chat panel toggle, handed down from the Mac shell so each screen's
+/// header can draw the assistant entry itself (see `ScreenScaffold`). Nil off
+/// the Mac shell, so other hosts simply show no entry.
+public struct ChatEntryActionKey: EnvironmentKey {
+  // `nonisolated(unsafe)`: the value is a constant nil and is only ever read on
+  // the main actor during view updates, so there is no shared mutable state to
+  // race. Keeping the plain (non-`@Sendable`) closure type lets the Mac shell
+  // inject a closure that captures its main-actor `AppState`.
+  public nonisolated(unsafe) static let defaultValue: (() -> Void)? = nil
+}
+
+public extension EnvironmentValues {
+  var chatEntryAction: (() -> Void)? {
+    get { self[ChatEntryActionKey.self] }
+    set { self[ChatEntryActionKey.self] = newValue }
+  }
+}
+
 /// A rounded speech bubble with a short tail at the bottom-left.
 public struct ChatBubbleShape: Shape {
   public var tail: CGFloat
