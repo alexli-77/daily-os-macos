@@ -264,7 +264,7 @@ private struct CountdownEditor: View {
     }
     .padding(Metrics.lg)
     .frame(width: 420)
-    .background(Palette.appCanvas)
+    .background(Palette.chatCanvas)
     .confirmationDialog("删掉「\(draft.title)」？", isPresented: $confirmingDelete) {
       Button("删除", role: .destructive) { onDelete?() }
       Button("算了", role: .cancel) {}

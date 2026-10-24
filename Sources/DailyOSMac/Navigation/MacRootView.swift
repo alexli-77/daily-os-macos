@@ -34,7 +34,7 @@ struct MacRootView: View {
       }
       .frame(minWidth: 560, minHeight: 420)
     }
-    .background(Palette.appCanvas)
+    .background(Palette.chatCanvas)
     .toastOverlay()
     // The chat panel drops from the top on the right, over the detail column —
     // same conversation as the Chat section, reachable from anywhere without
@@ -54,15 +54,19 @@ struct MacRootView: View {
         Button {
           state.chatPanelOpen.toggle()
         } label: {
-          HStack(spacing: 5) {
-            ChatBotMark().frame(width: 16, height: 16)
-            Text("问问小柒").font(Typo.label).foregroundStyle(Palette.mint800)
+          HStack(spacing: 6) {
+            ChatBotMark().frame(width: 22, height: 22)
+            Text("问问小柒")
+              .font(.system(size: 12, weight: .medium))
+              .foregroundStyle(Palette.mint800)
           }
-          .padding(.horizontal, 10)
+          .padding(.leading, 6)
+          .padding(.trailing, 11)
           .padding(.vertical, 5)
-          .background(Palette.mint200, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+          .background(Palette.mint200, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+          .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .help("聊天（⌘⇧C）")
       }
     }
@@ -108,7 +112,7 @@ private struct Sidebar: View {
     // After the inset, so paper covers the footer strip too. Applied inside the
     // scroll view instead, the footer would keep sitting on the split view's
     // own translucent sidebar material.
-    .background(Palette.appCanvas)
+    .background(Palette.chatCanvas)
     .navigationTitle("Daily OS")
   }
 

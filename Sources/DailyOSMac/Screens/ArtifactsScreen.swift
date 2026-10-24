@@ -28,7 +28,7 @@ struct ArtifactsScreen: View {
       }
       .frame(maxWidth: .infinity)
     }
-    .background(Palette.appCanvas)
+    .background(Palette.chatCanvas)
   }
 
   private var emptyState: some View {

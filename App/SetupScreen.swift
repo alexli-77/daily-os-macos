@@ -78,7 +78,7 @@ struct SetupScreen: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .padding(Metrics.xl)
-    .background(Palette.appCanvas)
+    .background(Palette.chatCanvas)
   }
 
   private var markMotion: DailyOSMark.Motion {
