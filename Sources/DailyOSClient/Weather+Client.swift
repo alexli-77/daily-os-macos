@@ -38,7 +38,11 @@ public actor WeatherStore {
       didReadCache = true
       cached = Self.readCache()
     }
-    if !force, let cached, cached.isFresh() { return cached }
+    // A fresh reading for another place is not fresh: after moving (蒙特利尔 →
+    // 东京) the strip kept the old city for the rest of the slot.
+    if !force, let cached, cached.isFresh(), Self.useDeviceLocation || cached.place == Self.standingPlace(markDefault: false).name {
+      return cached
+    }
 
     let place = await resolvePlace()
     do {
@@ -54,7 +58,7 @@ public actor WeatherStore {
   // MARK: - Where to ask about
 
   /// A coordinate and what to call it on screen.
-  private struct Place {
+  struct Place {
     let latitude: Double
     let longitude: Double
     let name: String
@@ -69,7 +73,7 @@ public actor WeatherStore {
   /// yours, is the one dishonest state this feature could have.
   private func resolvePlace() async -> Place {
     // The strip is decoration and must not nag. By default it shows the standing
-    // place (configured city, else 蒙特利尔) and never raises a location prompt —
+    // place (configured city, else the timezone's city) and never raises a location prompt —
     // which also means a rebuilt, ad-hoc-signed app, that macOS treats as new and
     // would otherwise re-ask on every install, stays quiet. Device location is
     // opt-in: `defaults write <bundleid> weather.useDeviceLocation -bool true`.
@@ -84,8 +88,15 @@ public actor WeatherStore {
     UserDefaults.standard.bool(forKey: "weather.useDeviceLocation")
   }
 
-  /// The standing place: the configured city, else 蒙特利尔. Used whenever device
-  /// location is off (the default) or unavailable.
+  /// The standing place: the configured city, else the city of this Mac's
+  /// timezone, else 蒙特利尔. Used whenever device location is off (the
+  /// default) or unavailable.
+  ///
+  /// The timezone step is 2026-10-26: the fallback used to be 蒙特利尔 outright,
+  /// so after a move to Tokyo — clock, service and plans all on Asia/Tokyo —
+  /// the top of Today still said 蒙特利尔 and read as "the app thinks you are in
+  /// Canada". The zone is the one thing about where you are that is already
+  /// known without asking.
   ///
   /// `markDefault` appends "（默认）" only when this is a *fallback* after a device
   /// fix was attempted and failed — so "not where you are" is still said in that
@@ -100,14 +111,43 @@ public actor WeatherStore {
   ///     defaults write com.example.dailyos.mac weather.place.longitude 116.4074
   private static func standingPlace(markDefault: Bool) -> Place {
     let defaults = UserDefaults.standard
-    let name = defaults.string(forKey: "weather.place.name") ?? "蒙特利尔"
+    let zone = zonePlace(TimeZone.current.identifier) ?? montreal
+    let configured = defaults.string(forKey: "weather.place.name")
     let latitude = defaults.object(forKey: "weather.place.latitude") as? Double
     let longitude = defaults.object(forKey: "weather.place.longitude") as? Double
-    return Place(
-      latitude: latitude ?? 45.5019,
-      longitude: longitude ?? -73.5674,
-      name: markDefault ? "\(name)（默认）" : name
-    )
+    // A configured name without coordinates would pair one city's name with
+    // another's weather; only a full override wins over the zone.
+    let place = if let configured, let latitude, let longitude {
+      Place(latitude: latitude, longitude: longitude, name: configured)
+    } else {
+      zone
+    }
+    return Place(latitude: place.latitude, longitude: place.longitude, name: markDefault ? "\(place.name)（默认）" : place.name)
+  }
+
+  private static let montreal = Place(latitude: 45.5019, longitude: -73.5674, name: "蒙特利尔")
+
+  /// The city a timezone is named after, for the zones this app's people live
+  /// in and the big ones around them. Nil for anything else, which keeps the
+  /// old default rather than guessing.
+  static func zonePlace(_ identifier: String) -> Place? {
+    switch identifier {
+    case "Asia/Tokyo": Place(latitude: 35.6762, longitude: 139.6503, name: "东京")
+    case "Asia/Shanghai", "Asia/Chongqing", "Asia/Harbin": Place(latitude: 31.2304, longitude: 121.4737, name: "上海")
+    case "Asia/Hong_Kong": Place(latitude: 22.3193, longitude: 114.1694, name: "香港")
+    case "Asia/Taipei": Place(latitude: 25.0330, longitude: 121.5654, name: "台北")
+    case "Asia/Seoul": Place(latitude: 37.5665, longitude: 126.9780, name: "首尔")
+    case "Asia/Singapore": Place(latitude: 1.3521, longitude: 103.8198, name: "新加坡")
+    case "America/Toronto", "America/Montreal": montreal
+    case "America/New_York": Place(latitude: 40.7128, longitude: -74.0060, name: "纽约")
+    case "America/Vancouver": Place(latitude: 49.2827, longitude: -123.1207, name: "温哥华")
+    case "America/Los_Angeles": Place(latitude: 34.0522, longitude: -118.2437, name: "洛杉矶")
+    case "Europe/London": Place(latitude: 51.5072, longitude: -0.1276, name: "伦敦")
+    case "Europe/Paris": Place(latitude: 48.8566, longitude: 2.3522, name: "巴黎")
+    case "Europe/Berlin": Place(latitude: 52.5200, longitude: 13.4050, name: "柏林")
+    case "Australia/Sydney": Place(latitude: -33.8688, longitude: 151.2093, name: "悉尼")
+    default: nil
+    }
   }
 
   /// One location fix, or nil.

@@ -82,9 +82,48 @@ extension DailyOSClient {
   private static func state(for event: String?) -> TodoState {
     switch event {
     case "complete": .done
+    // Was missing: a teammate's 做了一部分 read as untouched.
+    case "partial": .partial
     case "missed": .missed
     case "defer": .deferred
     default: .open
+    }
+  }
+
+  /// Teammates' lists for one day — the 日 view of a teammate, stepping back
+  /// through their last two weeks. From the service's sync cache, never the
+  /// network. A teammate with nothing for that day comes back with
+  /// `hasPlan == false`.
+  public func teamDay(date: String) async throws -> [TeamTodayEntry] {
+    struct Response: Decodable {
+      struct Member: Decodable {
+        let userId: String
+        let displayName: String
+        let label: String
+        let plan: TeamTodayResponse.Member.Plan?
+        let dates: [String]?
+      }
+      let date: String
+      let members: [Member]
+    }
+    let response: Response = try await get("/api/team/day?date=\(date)")
+    return response.members.map { member in
+      let feedback = member.plan?.payload.feedback ?? [:]
+      let items = (member.plan?.payload.todos ?? [])
+        .sorted { $0.rank < $1.rank }
+        .map { todo in
+          TodoItem(id: todo.candidateId, text: todo.text, kind: .priority, state: Self.state(for: feedback[todo.candidateId]), estimatedMinutes: todo.minutes)
+        }
+      return TeamTodayEntry(
+        id: member.userId,
+        displayName: member.label.isEmpty ? member.displayName : member.label,
+        items: items,
+        staleDate: nil,
+        hasPlan: member.plan != nil,
+        updatedAt: member.plan?.updatedAt.flatMap(TodoWireDate.timestamp),
+        date: response.date,
+        dates: member.dates ?? []
+      )
     }
   }
 }

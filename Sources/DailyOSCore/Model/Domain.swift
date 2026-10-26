@@ -157,14 +157,23 @@ public struct TeamTodayEntry: Sendable, Equatable, Identifiable {
   public var hasPlan: Bool
   /// When their machine last pushed this plan.
   public var updatedAt: Date?
+  /// The day the list is for, when it was asked for by date (`/api/team/day`).
+  public var date: String?
+  /// Every day this teammate has a list for here, newest first — two weeks.
+  public var dates: [String]
 
-  public init(id: String, displayName: String, items: [TodoItem], staleDate: String?, hasPlan: Bool, updatedAt: Date?) {
+  public init(
+    id: String, displayName: String, items: [TodoItem], staleDate: String?, hasPlan: Bool, updatedAt: Date?,
+    date: String? = nil, dates: [String] = []
+  ) {
     self.id = id
     self.displayName = displayName
     self.items = items
     self.staleDate = staleDate
     self.hasPlan = hasPlan
     self.updatedAt = updatedAt
+    self.date = date
+    self.dates = dates
   }
 }
 

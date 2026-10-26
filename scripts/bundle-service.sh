@@ -28,6 +28,22 @@ CACHE="$(cd "$(dirname "$0")/.." && pwd)/.build/node-cache"
 
 [ -d "$SERVICE_REPO" ] || { echo "找不到服务仓库：$SERVICE_REPO"; exit 1; }
 
+# 服务仓库落后 origin/main，打出来的 App 就会要服务做它不会的事。2026-10-24 那次
+# 就是这样：默认的服务目录停在 12 个提交之前，往日编辑没进包，App 反过来叫人
+# 「更新 Daily OS 后再试」——而那正是刚更新完的版本。除非明说，否则拒绝。
+if git -C "$SERVICE_REPO" rev-parse --git-dir >/dev/null 2>&1 \
+  && git -C "$SERVICE_REPO" fetch -q origin main 2>/dev/null \
+  && ! git -C "$SERVICE_REPO" merge-base --is-ancestor origin/main HEAD; then
+  BEHIND=$(git -C "$SERVICE_REPO" rev-list --count HEAD..origin/main)
+  if [ "${DAILY_OS_ALLOW_STALE_SERVICE:-}" != "1" ]; then
+    echo "  ✗ 服务仓库落后 origin/main $BEHIND 个提交：$SERVICE_REPO"
+    echo "    先在那里 git pull，或用 DAILY_OS_SERVICE_REPO 指向最新的服务代码。"
+    echo "    确实要打旧服务：DAILY_OS_ALLOW_STALE_SERVICE=1"
+    exit 1
+  fi
+  echo "  ! 服务仓库落后 origin/main $BEHIND 个提交（DAILY_OS_ALLOW_STALE_SERVICE=1）"
+fi
+
 RES="$APP/Contents/Resources"
 PAYLOAD="$RES/service"
 rm -rf "$PAYLOAD"

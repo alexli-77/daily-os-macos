@@ -95,10 +95,22 @@ struct DailyOSApp: App {
           await state?.loadPendingWrapups()
         }
       }
-      // Waking from sleep is exactly when an evening review was missed: the
-      // date may have moved on too, so everything is read again, 回收 included.
+      // Waking from sleep is exactly when an evening was missed: the date may
+      // have moved on too, so everything is read again, 清理 included.
       .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
         Task { await state?.reload() }
+      }
+      // Midnight with the window open: yesterday is now a past day, and if it
+      // was left uncleaned it is asked about before today, like at launch.
+      .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: RunLoop.main)) { _ in
+        Task { await state?.reload() }
+      }
+      // The 21:00 reminder, clicked: today, in 日.
+      .onReceive(NotificationCenter.default.publisher(for: CleanupReminder.openTodayNotification)) { _ in
+        guard let state else { return }
+        state.section = .today
+        state.dayViewRequests += 1
+        Task { await state.showDay(nil) }
       }
     }
     .defaultSize(width: 1_080, height: 720)
@@ -137,6 +149,8 @@ struct DailyOSApp: App {
     // Independent of the service — a new build is worth knowing about even when
     // the local service is down. Fire-and-forget; it only ever sets a flag.
     Task { await state?.checkForUpdate() }
+    // Independent of the service too: the system delivers it, at 21:00.
+    Task { await CleanupReminder.install() }
     if connection.state.isConnected {
       await state?.reload()
       // Started and stopped here, in the one function that decides whether

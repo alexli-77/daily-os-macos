@@ -36,12 +36,13 @@ struct MacRootView: View {
     }
     .background(Palette.chatCanvas)
     .toastOverlay()
-    // 回收 before today: a past day that ended without its review is asked
-    // about first, and the sheet cannot be dismissed without a choice. The
-    // binding ignores writes — the day leaves the list only when it is closed
-    // out or skipped. See `WrapupSheet`.
-    .sheet(item: Binding(get: { state.pendingWrapups.first }, set: { _ in })) { day in
-      WrapupSheet(day: day).environment(state)
+    // 清理 before today: an earlier day with To-do nobody decided on is asked
+    // about first, and the prompt cannot be dismissed without a choice. It
+    // steps aside while that day is open in the 日 view, where the cleaning
+    // happens. The binding ignores writes — the day leaves the list only when
+    // it is cleaned or put down. See `CleanupViews.swift`.
+    .sheet(item: Binding(get: { state.cleanupPrompt }, set: { _ in })) { day in
+      CleanupPrompt(day: day).environment(state)
     }
     // The chat panel drops from the top on the right, over the detail column —
     // same conversation as the Chat section, reachable from anywhere without

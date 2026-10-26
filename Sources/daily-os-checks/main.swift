@@ -903,20 +903,17 @@ check(DayLabel.shift("2026-10-01", by: -1) == "2026-09-30" && DayLabel.shift("20
 check(DayLabel.shift("2026-03-08", by: 1) == "2026-03-09", "跨夏令时也是一天一天地走")
 check(DayLabel.title(for: "2026-10-22", today: "2026-10-23") == "2026年10月22日 周四 · 昨天", "日视图标题像飞书：日期、星期、昨天")
 check(DayLabel.title(for: "2026-10-12", today: "2026-10-23") == "2026年10月12日 周一", "再往前只写日期和星期")
-// 回收：漏了复盘的那天先问；没勾的每条选一个。
+// 清理：那天还有没处理的 To-do，就先问那天；部分、未做、推走都算处理过，固定日程不用处理。
 let wrapDay = WrapupDay(date: "2026-10-19", today: "2026-10-23", rows: [
   .init(id: "linear:A-1", rank: 1, text: "做完的", state: .done),
   .init(id: "linear:A-2", rank: 2, text: "没勾的", state: .open),
   .init(id: "weekly:3:ab12cd34", rank: 3, text: "做了一半", state: .partial),
   .init(id: "rhythm:block:b1", rank: 4, text: "作品集", state: .open, isFixed: true),
   .init(id: "todo_inbox:x", rank: 5, text: "未做的", state: .missed),
+  .init(id: "todo_inbox:y", rank: 6, text: "推走的", state: .deferred),
 ])
-check(wrapDay.unsettled.map(\.id) == ["linear:A-2", "weekly:3:ab12cd34", "rhythm:block:b1"], "回收只问没勾的和做了一半的")
-check(WrapupChoice.options(for: wrapDay.rows[1]) == [.done, .missed, .moveToToday], "没勾的：完成 / 未做 / 挪到今天")
-check(WrapupChoice.options(for: wrapDay.rows[2]) == [.done, .keep, .moveToToday], "做了一半的不该有「未做」")
-check(!WrapupChoice.options(for: wrapDay.rows[3]).contains(.moveToToday), "固定日程今天也有，不挪")
-check(WrapupChoice.done.event == "complete" && WrapupChoice.missed.event == "missed" && WrapupChoice.keep.event == nil && WrapupChoice.moveToToday.event == nil,
-      "完成和未做记账，就做到这什么都不记，挪到今天走自己的路")
+check(wrapDay.open.map(\.id) == ["linear:A-2"], "只有没勾的算没清理：部分 / 未做 / 推走都是处理过的，固定日程不算")
+check(WrapupDay.needsCleanup(id: "rhythm:habit:h1", state: .open) == false, "没标 isFixed 的作息行，按 id 也认得出")
 check(StateMenuBar.label(.state(.deferred)) == "推到明天", "顺延改名：推到明天")
 check(StateMenuBar.label(.moveToToday) == "挪到今天", "往日的行能挪到今天")
 
@@ -990,6 +987,79 @@ await pastStore.stepDay(by: 1)
 check(!pastStore.isViewingPast, "今天以后不往前走")
 _ = await pastStore.sheetFeedback(date: nil, candidateID: "today-row", rank: 1, event: "complete")
 check(pastStore.sent.count == 5, "今天的勾不走往日那条路")
+
+// 清理的流程：弹窗 → 前往清理 → 那天的日视图里逐条处理 → 清理完成 → 下一天 → 今天。
+@MainActor final class CleanupStore: AppState {
+  var resolved: [(String, String)] = []
+  override func loadDayHistory(date: String?) async -> Result<DayHistory, DayHistoryError> {
+    .success(DayHistory(
+      date: date ?? "2026-10-21", dates: [], today: "2026-10-26", hasPlan: true,
+      items: [sheetItem("a", 30), sheetItem("b", 60, .done), sheetItem("rhythm:block:b1", 60)], editable: true
+    ))
+  }
+  override func editPastRow(
+    date: String, candidateID: String, rank: Int, event: String,
+    text: String? = nil, note: String? = nil, minutes: Int? = nil, start: String? = nil, color: String? = nil, mit: Bool? = nil
+  ) async -> ActionOutcome { .ok(nil) }
+  override func resolveWrapup(date: String, action: String) async -> ActionOutcome {
+    resolved.append((date, action))
+    pendingWrapups.removeAll { $0.date == date }
+    return .ok("\(date) 清理完了")
+  }
+}
+let cleanup = CleanupStore()
+cleanup.pendingWrapups = [
+  WrapupDay(date: "2026-10-21", today: "2026-10-26", rows: [.init(id: "a", rank: 1, text: "没勾的", state: .open)]),
+  WrapupDay(date: "2026-10-24", today: "2026-10-26", rows: [.init(id: "a", rank: 1, text: "没勾的", state: .open)]),
+]
+check(cleanup.cleanupPrompt?.date == "2026-10-21", "有好几天没清理，先问最早的那一天")
+cleanup.section = .okr
+check(cleanup.cleanupPrompt != nil, "去别的页也先问")
+let requestsBefore = cleanup.dayViewRequests
+await cleanup.startCleanup(cleanup.pendingWrapups[0])
+check(cleanup.section == .today && cleanup.viewedDate == "2026-10-21" && cleanup.dayViewRequests == requestsBefore + 1, "前往清理：跳到那天的日视图")
+check(cleanup.cleanupPrompt == nil && cleanup.cleanupDay?.date == "2026-10-21", "在那天清理时弹窗让开，通告单上出清理横幅")
+check(cleanup.cleanupOpenRows.map(\.id) == ["a"], "横幅数的是没处理的行，不算做完的和固定日程")
+_ = await cleanup.sheetFeedback(date: "2026-10-21", candidateID: "a", rank: 1, event: "missed")
+check(cleanup.cleanupOpenRows.isEmpty, "勾一条，横幅的数马上少一条")
+await cleanup.showDay(nil)
+check(cleanup.cleanupPrompt?.date == "2026-10-21", "没清理完就回今天，弹窗再出来")
+await cleanup.startCleanup(cleanup.pendingWrapups[0])
+_ = await cleanup.finishCleanup(cleanup.pendingWrapups[0], action: "done")
+check(cleanup.resolved.last?.0 == "2026-10-21" && cleanup.viewedDate == "2026-10-24", "清理完成：接着跳到下一天")
+let last = await cleanup.finishCleanup(cleanup.pendingWrapups[0], action: "done")
+check(!cleanup.isViewingPast && cleanup.pendingWrapups.isEmpty && cleanup.cleanupPrompt == nil, "最后一天清完，进入今天")
+if case .ok(let text) = last { check(text?.contains("都清理完了") == true, "最后一天说「都清理完了」") } else { check(false, "最后一天清理完成应该成功") }
+
+// 看队友的一天：看谁的选了队友，日视图就是 TA 那天的清单，‹ › 一天天往回翻。
+@MainActor final class TeammateStore: AppState {
+  var asked: [String] = []
+  override func loadTeamDay(date: String) async -> Result<[TeamTodayEntry], DayHistoryError> {
+    asked.append(date)
+    let hasPlan = date != "2026-10-01"
+    return .success([TeamTodayEntry(
+      id: "mate", displayName: "大汪汪", items: hasPlan ? [sheetItem("x", 30, .partial)] : [], staleDate: nil, hasPlan: hasPlan,
+      updatedAt: nil, date: date, dates: ["2026-10-25", "2026-10-24"]
+    )])
+  }
+}
+let mateStore = TeammateStore()
+mateStore.members = [
+  TeamMember(id: mateStore.account.id, displayName: "我", avatarSeed: "me", isSelf: true, lastSyncedAt: nil),
+  TeamMember(id: "mate", displayName: "大汪汪", avatarSeed: "mate", isSelf: false, lastSyncedAt: nil),
+]
+mateStore.viewingMemberID = "mate"
+await mateStore.showTeammateDay(nil)
+check(mateStore.teammateDate == nil && mateStore.asked.last == DayLabel.localToday() && mateStore.teammateDay?.items.first?.state == .partial,
+      "选了队友，先看 TA 的今天")
+await mateStore.stepTeammateDay(by: -1)
+check(mateStore.teammateDate == DayLabel.shift(DayLabel.localToday(), by: -1) && mateStore.teammateDay?.date == mateStore.teammateDate, "‹ 看 TA 的前一天")
+await mateStore.showTeammateDay("2026-10-01")
+check(mateStore.teammateDay?.hasPlan == false && mateStore.teammateDay?.dates.first == "2026-10-25", "TA 那天没有计划就说没有，还告诉你最近哪天有")
+mateStore.pendingWrapups = [WrapupDay(date: "2026-10-24", today: "2026-10-26", rows: [.init(id: "a", rank: 1, text: "没勾的", state: .open)])]
+check(mateStore.cleanupPrompt == nil, "看队友的时候不弹自己的清理")
+mateStore.viewingMemberID = mateStore.account.id
+check(mateStore.cleanupPrompt?.date == "2026-10-24", "回到自己的今天，弹窗再出来")
 
 // MARK: - 倒数日
 //
@@ -1352,7 +1422,7 @@ check(UpdateInfo.resolve(localCommit: "abc123", localBuiltAt: localAt, manifestV
       "url 解析不了就不提示")
 
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态, 手打时间, 计划外与收尾, 更新检查, 往日可改, 日视图看往日, 时间列表定位, 回收")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态, 手打时间, 计划外与收尾, 更新检查, 往日可改, 日视图看往日, 时间列表定位, 清理, 看队友的一天")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")
