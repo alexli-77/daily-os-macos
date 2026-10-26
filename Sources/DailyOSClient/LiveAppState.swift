@@ -609,6 +609,23 @@ public final class LiveAppState: AppState {
     }
   }
 
+  public override func loadTeamDay(date: String) async -> Result<[TeamTodayEntry], DayHistoryError> {
+    guard let client, connection.state.isConnected else { return .failure(DayHistoryError("没有连接到服务。")) }
+    do {
+      return .success(try await client.teamDay(date: date))
+    } catch {
+      // A service from before 2026-10-26 has no /api/team/day.
+      let notFound: Bool = switch error as? ClientError {
+      case .http(status: 404, _): true
+      case .service(let message): message == "Not found"
+      default: false
+      }
+      if notFound { return .failure(DayHistoryError("现在连着的服务还不能看队友往日，更新 Daily OS 后再试。")) }
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      return .failure(DayHistoryError(reason))
+    }
+  }
+
   /// Quiet on failure, and never clears what is there: a service from before
   /// 回收 answers 404, and that must mean "nothing to ask", not an error banner.
   public override func loadPendingWrapups() async {

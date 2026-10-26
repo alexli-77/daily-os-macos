@@ -567,26 +567,123 @@ open class AppState {
   /// 排期 calendar) reads it again.
   public var pastEditsRevision = 0
 
-  // MARK: 回收
+  // MARK: 清理
 
-  /// Past days that ended without their evening review, oldest first. The app
+  /// Past days that still have To-do nobody decided on, oldest first. The app
   /// asks about the first before it shows today. Empty against a service that
-  /// does not know about 回收.
+  /// does not know about 清理.
   public var pendingWrapups: [WrapupDay] = []
 
-  /// Read which past days still need closing out. The base store has none.
+  /// Read which past days still need cleaning up. The base store has none.
   open func loadPendingWrapups() async {}
 
-  /// Close a past day: `done` (回收完成; the service runs that day's review
-  /// late) or `skip` (leave it as it is, on purpose). Either way it is not
-  /// asked about again.
+  /// Close a past day: `done` (清理完成 — refused while a row is open; the
+  /// service runs that day's review late if it never ran) or `skip` (这天不清了:
+  /// leave it as it is, on purpose). Either way it is not asked about again.
   open func resolveWrapup(date: String, action: String) async -> ActionOutcome {
     .unsupported("这一版没有连接到服务。")
+  }
+
+  /// Bumped to ask the 今天 screen for its 日 view: 前往清理 opens a day there,
+  /// and the screen's 日 / 双周 choice is its own.
+  public var dayViewRequests = 0
+
+  /// The pending day the 日 view is showing, while it is your own.
+  public var cleanupDay: WrapupDay? {
+    guard let date = viewedDate, isViewingSelf else { return nil }
+    return pendingWrapups.first { $0.date == date }
+  }
+
+  /// The rows of the shown day still waiting for a decision, live as they are
+  /// ticked — the service's list is as of when it was read.
+  public var cleanupOpenRows: [TodoItem] {
+    guard cleanupDay != nil else { return [] }
+    return (viewedDay?.items ?? []).filter { WrapupDay.needsCleanup(id: $0.id, state: $0.state) }
+  }
+
+  /// What the window asks about before anything else: the oldest pending day.
+  /// Not while you are on a past day of your own in the 日 view — that is
+  /// where the cleaning happens, and looking back a day or two for context
+  /// should not be interrupted — nor while you are looking at a teammate's
+  /// day, which is theirs to clean. Going back to your today, or anywhere
+  /// else, asks again: today comes after the days before it are cleaned.
+  public var cleanupPrompt: WrapupDay? {
+    guard let first = pendingWrapups.first else { return nil }
+    if section == .today, isViewingPast || !isViewingSelf { return nil }
+    return first
+  }
+
+  /// 前往清理: the day, in the 日 view, as yourself.
+  public func startCleanup(_ day: WrapupDay) async {
+    section = .today
+    if !isViewingSelf { viewingMemberID = account.id }
+    dayViewRequests += 1
+    await showDay(day.date)
+  }
+
+  /// 清理完成 or 这天不清了 for the shown day, then on to the next pending day,
+  /// or today when there is none. Returns what to say.
+  public func finishCleanup(_ day: WrapupDay, action: String) async -> ActionOutcome {
+    let outcome = await resolveWrapup(date: day.date, action: action)
+    guard case .ok(let text) = outcome else { return outcome }
+    pendingWrapups.removeAll { $0.date == day.date }
+    if let next = pendingWrapups.first {
+      await showDay(next.date)
+      let label = DayLabel.text(for: next.date, today: next.today)
+      return .ok([text, "接着清理\(label)"].compactMap { $0 }.joined(separator: "；"))
+    }
+    await showDay(nil)
+    return .ok([text, "都清理完了，这是今天"].compactMap { $0 }.joined(separator: "；"))
   }
 
   /// 挪到今天: an unfinished row of a past day onto today's sheet.
   open func moveRowToToday(date: String, candidateID: String, rank: Int) async -> ActionOutcome {
     .unsupported("这一版没有连接到服务。")
+  }
+
+  // MARK: 日 view: a teammate's day
+
+  /// The teammate's day the 日 view shows while 看谁的 is someone else — the
+  /// way 飞书 / Google Calendar show a colleague's calendar beside your own:
+  /// read-only, and ‹ › steps through their days. Nil date is their today.
+  public private(set) var teammateDate: String?
+  /// Their list for that day, once read.
+  public private(set) var teammateDay: TeamTodayEntry?
+  public private(set) var teammateDayError: String?
+
+  /// Every teammate's list for `date`. The base store has none.
+  open func loadTeamDay(date: String) async -> Result<[TeamTodayEntry], DayHistoryError> {
+    .failure(DayHistoryError("这一版没有连接到服务。"))
+  }
+
+  /// Show the viewed teammate's `date` (nil, today or later = their today).
+  public func showTeammateDay(_ date: String?) async {
+    guard !isViewingSelf else {
+      teammateDate = nil
+      teammateDay = nil
+      teammateDayError = nil
+      return
+    }
+    let today = DayLabel.localToday()
+    let shown = date.flatMap { $0 < today ? $0 : nil }
+    let member = viewingMemberID
+    if shown != teammateDate || teammateDay?.id != member { teammateDay = nil }
+    teammateDate = shown
+    teammateDayError = nil
+    let result = await loadTeamDay(date: shown ?? today)
+    guard teammateDate == shown, viewingMemberID == member else { return }
+    switch result {
+    case .success(let entries):
+      teammateDay = entries.first { $0.id == member }
+        ?? TeamTodayEntry(id: member, displayName: viewingMember?.displayName ?? "", items: [], staleDate: nil, hasPlan: false, updatedAt: nil, date: shown ?? today)
+    case .failure(let error):
+      teammateDayError = error.message
+    }
+  }
+
+  public func stepTeammateDay(by days: Int) async {
+    guard let target = DayLabel.shift(teammateDate ?? DayLabel.localToday(), by: days) else { return }
+    await showTeammateDay(target)
   }
 
   // MARK: 日 view: which day

@@ -58,6 +58,10 @@ struct TodayScreen: View {
             }
             CycleSections(cycle: cycle)
           }
+        } else if !state.isViewingSelf {
+          // A teammate's day is their list only; the time rail and 团队今天
+          // beside it are yours.
+          mainColumn
         } else if sideBySide {
           HStack(alignment: .top, spacing: Metrics.md) {
             mainColumn.frame(maxWidth: .infinity, alignment: .top)
@@ -80,8 +84,9 @@ struct TodayScreen: View {
         .labelsHidden()
         .fixedSize()
         CycleSwitcher(isCreating: $isCreatingCycle)
+        WhosePicker()
         WeatherStrip()
-        if contentWidth >= Self.railBreakpoint, view == .day {
+        if contentWidth >= Self.railBreakpoint, view == .day, state.isViewingSelf {
           // Icon reflects the current layout: a right panel when the rail is
           // beside the plan, a bottom strip when it is stacked under it.
           Button {
@@ -95,7 +100,7 @@ struct TodayScreen: View {
           .help(railStacked ? "侧栏放回右边" : "侧栏收到下面")
         }
         if view == .day { dayNavigation }
-        if view == .day && !state.isViewingPast {
+        if view == .day && !state.isViewingPast && state.isViewingSelf {
         Button {
           withAnimation(.snappy(duration: 0.2)) { showsExecution.toggle() }
         } label: {
@@ -109,6 +114,15 @@ struct TodayScreen: View {
       }
     }
     .onReceive(clock) { now = $0 }
+    // 前往清理 opens a day here, in 日 — whatever this screen was showing.
+    .onChange(of: state.dayViewRequests) { view = .day }
+    // 看谁的 → a teammate: their today first, like opening a colleague's calendar.
+    .onChange(of: state.viewingMemberID) { Task { await state.showTeammateDay(nil) } }
+    // Their list moved (the minute poll, 更新): read the shown day again.
+    .onChange(of: state.teamToday) {
+      guard !state.isViewingSelf else { return }
+      Task { await state.showTeammateDay(state.teammateDate) }
+    }
     .sheet(isPresented: $isCreatingCycle) { NewCycleSheet() }
     .onAppear {
       // The page shows this cycle unless another was picked.
@@ -121,7 +135,9 @@ struct TodayScreen: View {
   /// so this column stays "one screen of today's plan".
   @ViewBuilder private var mainColumn: some View {
     VStack(alignment: .leading, spacing: Metrics.md) {
-      if state.isViewingPast {
+      if !state.isViewingSelf {
+        TeammateDayPanel()
+      } else if state.isViewingPast {
         pastDayColumn
       } else {
         if showsExecution { ExecutionPanel(schedule: schedule) }
@@ -150,20 +166,23 @@ struct TodayScreen: View {
   /// 今天 ‹ › — 飞书's and Google Calendar's day stepping. A past day opens
   /// here, in the 日 view, not in a window of its own.
   private var dayNavigation: some View {
-    HStack(spacing: 2) {
-      Button("今天") { Task { await state.showDay(nil) } }
+    // The same three buttons step a teammate's days while 看谁的 is them.
+    let mine = state.isViewingSelf
+    let onPast = mine ? state.isViewingPast : state.teammateDate != nil
+    return HStack(spacing: 2) {
+      Button("今天") { Task { mine ? await state.showDay(nil) : await state.showTeammateDay(nil) } }
         .buttonStyle(MossButtonStyle(prominent: false))
-        .disabled(!state.isViewingPast)
+        .disabled(!onPast)
         .help("回到今天")
-      Button { Task { await state.stepDay(by: -1) } } label: { Image(systemName: "chevron.left") }
+      Button { Task { mine ? await state.stepDay(by: -1) : await state.stepTeammateDay(by: -1) } } label: { Image(systemName: "chevron.left") }
         .buttonStyle(MossButtonStyle(prominent: false))
         .keyboardShortcut("[", modifiers: .command)
         .accessibilityLabel("前一天")
         .help("前一天（⌘[）")
-      Button { Task { await state.stepDay(by: 1) } } label: { Image(systemName: "chevron.right") }
+      Button { Task { mine ? await state.stepDay(by: 1) : await state.stepTeammateDay(by: 1) } } label: { Image(systemName: "chevron.right") }
         .buttonStyle(MossButtonStyle(prominent: false))
         .keyboardShortcut("]", modifiers: .command)
-        .disabled(!state.isViewingPast)
+        .disabled(!onPast)
         .accessibilityLabel("后一天")
         .help("后一天（⌘]）")
     }
@@ -236,11 +255,21 @@ struct TodayScreen: View {
 
   /// 今天, or the day being looked at: 昨天 / 前天 / 10月12日 周一.
   private var screenTitle: String {
+    if view == .day, !state.isViewingSelf {
+      let name = state.viewingMember?.displayName ?? "队友"
+      guard let date = state.teammateDate else { return "\(name) · 今天" }
+      return "\(name) · \(DayLabel.text(for: date, today: Self.dayFormatter.string(from: now)))"
+    }
     guard view == .day, let date = state.viewedDate else { return "今天" }
     return DayLabel.text(for: date, today: state.viewedDay?.today ?? Self.dayFormatter.string(from: now))
   }
 
   private var subtitle: String {
+    if view == .day, !state.isViewingSelf {
+      let date = state.teammateDate ?? Self.dayFormatter.string(from: now)
+      let title = DayLabel.title(for: date, today: Self.dayFormatter.string(from: now))
+      return "\(title.components(separatedBy: " · ").first ?? title) · 只读，TA 的完成情况由 TA 自己勾"
+    }
     if view == .day, let date = state.viewedDate {
       let title = DayLabel.title(for: date, today: state.viewedDay?.today ?? Self.dayFormatter.string(from: now))
       let base = title.components(separatedBy: " · ").first ?? title
@@ -323,6 +352,7 @@ private struct CallSheetPanel: View {
           // The day's progress right under the subtitle, above the banners and
           // the timeline, where it is read first (LEO-336).
           SheetFooter(schedule: schedule, isPast: date != nil)
+          if date != nil, let day = state.cleanupDay { CleanupBanner(day: day) }
           if date == nil, !schedule.lateRows.isEmpty {
             OverdueBanner(rows: schedule.lateRows, pushAll: pushLateToNow)
           }
@@ -2442,12 +2472,22 @@ private struct TeamTodayPanel: View {
 }
 
 private struct TeamTodayMember: View {
+  @Environment(AppState.self) private var state
   let entry: TeamTodayEntry
 
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.xs) {
       HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
-        Text(entry.displayName).inkStyle(Typo.heading)
+        // Their name opens their days, the way a colleague's name opens their
+        // calendar in 飞书: a full 日 view, ‹ › through two weeks.
+        Button { state.viewingMemberID = entry.id } label: {
+          HStack(spacing: 4) {
+            Text(entry.displayName).inkStyle(Typo.heading)
+            Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.ink3)
+          }
+        }
+        .buttonStyle(.plain)
+        .help("看 \(entry.displayName) 的每一天")
         if let stale = entry.staleDate {
           // Same distinction the plan panel draws for your own list: a plan
           // from an earlier day looks exactly like today's, and the only way
@@ -2510,6 +2550,8 @@ private struct TeamTodayRow: View {
         Pill("已完成", tone: .accent)
       } else if item.state == .partial {
         Pill("部分", tone: .accent)
+      } else if item.state == .missed {
+        Pill("未做", tone: .warn)
       } else if item.state == .deferred {
         Pill("推到明天", tone: .neutral)
       }
@@ -2518,6 +2560,132 @@ private struct TeamTodayRow: View {
       }
     }
     .padding(.vertical, Metrics.xxs)
+  }
+}
+
+/// A teammate's day, in the 日 view, while 看谁的 is them (2026-10-26:
+/// "两个人应该是可以相互看的"). Their list as their machine last pushed it, with
+/// the state each row was left in — read-only, like a colleague's calendar
+/// in 飞书 or Google Calendar. ‹ › in the toolbar steps through their days;
+/// two weeks are kept.
+private struct TeammateDayPanel: View {
+  @Environment(AppState.self) private var state
+  @State private var isSyncing = false
+
+  private var name: String { state.viewingMember?.displayName ?? "队友" }
+  private var dayText: String {
+    guard let date = state.teammateDate else { return "今天" }
+    return DayLabel.text(for: date, today: DayLabel.localToday())
+  }
+
+  var body: some View {
+    Panel("\(name)\(dayText)的通告单", subtitle: subtitle, badge: "只读", badgeTone: .neutral) {
+      VStack(alignment: .leading, spacing: Metrics.sm) {
+        if let error = state.teammateDayError {
+          EmptyState(icon: "exclamationmark.triangle", title: "读不到 TA 这一天", message: error, actionTitle: "重试") {
+            Task { await state.showTeammateDay(state.teammateDate) }
+          }
+        } else if let day = state.teammateDay {
+          if !day.hasPlan {
+            EmptyState(
+              icon: "tray",
+              title: state.teammateDate == nil ? "TA 今天的计划还没同步过来" : "TA 这天没有计划",
+              message: state.teammateDate == nil
+                ? "TA 那边早上生成计划、Daily OS 开着，一分钟内就会出现在这里。"
+                : "也可能是两周以前的——只留最近两周。"
+            )
+            if let latest = day.dates.first {
+              Button("看 TA 最近的一天（\(DayLabel.text(for: latest, today: DayLabel.localToday()))）") {
+                Task { await state.showTeammateDay(latest) }
+              }
+              .buttonStyle(QuietButtonStyle())
+            }
+          } else if day.items.isEmpty {
+            Text("这份计划没有待办条目。").mutedStyle()
+          } else {
+            Text(counts(day.items)).font(Typo.caption).foregroundStyle(Palette.ink2)
+            VStack(spacing: 2) {
+              ForEach(Array(day.items.enumerated()), id: \.element.id) { index, item in
+                TeamTodayRow(item: item, rank: index + 1)
+              }
+            }
+          }
+        } else {
+          ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 120)
+        }
+      }
+    } actions: {
+      Button(isSyncing ? "更新中…" : "更新", action: syncNow)
+        .buttonStyle(QuietButtonStyle())
+        .disabled(isSyncing)
+        .help("现在就拉一次 TA 的计划。")
+    }
+    .task { if state.teammateDay == nil { await state.showTeammateDay(state.teammateDate) } }
+  }
+
+  private var subtitle: String? {
+    guard let updatedAt = state.teammateDay?.updatedAt else { return nil }
+    return "TA 的机器 \(Fmt.stamp(updatedAt)) 推送"
+  }
+
+  private func counts(_ items: [TodoItem]) -> String {
+    let count = { (target: TodoState) in items.filter { $0.state == target }.count }
+    var parts = ["\(count(.done))/\(items.count) 完成"]
+    if count(.partial) > 0 { parts.append("\(count(.partial)) 部分") }
+    if count(.missed) > 0 { parts.append("\(count(.missed)) 未做") }
+    if count(.deferred) > 0 { parts.append("\(count(.deferred)) 推走") }
+    let open = count(.open)
+    if open > 0 { parts.append(state.teammateDate == nil ? "\(open) 条还没勾" : "\(open) 条没清理") }
+    return parts.joined(separator: " · ")
+  }
+
+  private func syncNow() {
+    guard !isSyncing else { return }
+    isSyncing = true
+    Task {
+      let outcome = await state.syncTeamNow()
+      await state.showTeammateDay(state.teammateDate)
+      isSyncing = false
+      if case .failed(let why) = outcome { state.toast = why }
+    }
+  }
+}
+
+/// 看谁的 — me, or a teammate. Was only inside the 周期 menu, where nobody
+/// looked for it; this is the 飞书 "订阅同事日历" switch, in the toolbar.
+private struct WhosePicker: View {
+  @Environment(AppState.self) private var state
+
+  var body: some View {
+    if state.members.contains(where: { !$0.isSelf }) {
+      Menu {
+        ForEach(state.members) { member in
+          Button {
+            state.viewingMemberID = member.id
+          } label: {
+            let title = member.isSelf ? "我" : member.displayName
+            if member.id == state.viewingMemberID { Label(title, systemImage: "checkmark") } else { Text(title) }
+          }
+        }
+      } label: {
+        HStack(spacing: Metrics.xxs) {
+          Image(systemName: "person.2")
+          Text(state.isViewingSelf ? "我" : (state.viewingMember?.displayName ?? "队友"))
+          Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+        }
+        .font(Typo.label)
+        .foregroundStyle(Palette.ink)
+        .padding(.horizontal, Metrics.sm)
+        .padding(.vertical, 5)
+        .background(state.isViewingSelf ? Palette.surfaceSunken : Palette.mint50, in: Capsule())
+        .contentShape(Capsule())
+      }
+      .menuStyle(.borderlessButton)
+      .menuIndicator(.hidden)
+      .tint(Palette.ink)
+      .fixedSize()
+      .help("看谁的 To-do：选队友就是只读地看 TA 的每一天")
+    }
   }
 }
 

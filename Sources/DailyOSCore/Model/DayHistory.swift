@@ -222,18 +222,22 @@ public enum DayLabel {
   }
 }
 
-// MARK: - 回收
+// MARK: - 清理
 
-/// A past day that ended without its evening review, waiting to be closed out
-/// (回收) or skipped. The app asks about it before it shows today: a day whose
-/// close never ran must not slip by unnoticed.
+/// A past day that still has To-do nobody decided on, waiting to be cleaned up
+/// or put down. The app asks about the oldest before it shows today.
+///
+/// 2026-10-26: what makes a day pending is its rows, not whether the evening
+/// review ran. The service decides (`GET /api/day/wrapups`); `needsCleanup`
+/// is the same rule, so the 日 view can count down the rows left as they are
+/// ticked without asking the service after every one.
 public struct WrapupDay: Sendable, Equatable, Identifiable {
   public struct Row: Sendable, Equatable, Identifiable {
     public let id: String
     public let rank: Int
     public let text: String
     public let state: TodoState
-    /// A 固定日程: today has its own, so it is never moved to today.
+    /// A 固定日程: the day's frame, not a to-do — never needs a decision.
     public let isFixed: Bool
 
     public init(id: String, rank: Int, text: String, state: TodoState, isFixed: Bool = false) {
@@ -257,37 +261,13 @@ public struct WrapupDay: Sendable, Equatable, Identifiable {
     self.rows = rows
   }
 
-  /// What still needs a decision: rows nobody ticked, and rows left half done.
-  public var unsettled: [Row] { rows.filter { $0.state == .open || $0.state == .partial } }
-}
+  /// The rows still waiting for a decision.
+  public var open: [Row] { rows.filter { Self.needsCleanup(id: $0.id, state: $0.state, isFixed: $0.isFixed) } }
 
-/// One decision in 回收, and what it sends.
-public enum WrapupChoice: String, Sendable, Hashable, CaseIterable {
-  case done, missed, keep, moveToToday
-
-  public var label: String {
-    switch self {
-    case .done: "完成"
-    case .missed: "未做"
-    case .keep: "就做到这"
-    case .moveToToday: "挪到今天"
-    }
-  }
-
-  /// The choices a row offers. A row half done is not "未做"; a 固定日程 is
-  /// not moved — today has its own.
-  public static func options(for row: WrapupDay.Row) -> [WrapupChoice] {
-    let first: [WrapupChoice] = row.state == .partial ? [.done, .keep] : [.done, .missed]
-    return row.isFixed ? first : first + [.moveToToday]
-  }
-
-  /// The ledger event for the choice, or nil when nothing is recorded (就做到这
-  /// leaves the row as it was; 挪到今天 has its own endpoint).
-  public var event: String? {
-    switch self {
-    case .done: "complete"
-    case .missed: "missed"
-    case .keep, .moveToToday: nil
-    }
+  /// A row the day cannot be cleaned with: nothing picked yet (完成, 部分, 未做,
+  /// 推到明天 or 挪到今天 all count), and not a 固定日程. Mirrors the service's
+  /// `rowNeedsCleanup`.
+  public static func needsCleanup(id: String, state: TodoState, isFixed: Bool = false) -> Bool {
+    state == .open && !isFixed && !id.hasPrefix("rhythm:")
   }
 }
