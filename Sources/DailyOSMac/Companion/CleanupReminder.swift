@@ -28,10 +28,17 @@ public enum CleanupReminder {
   /// replaces the request instead of adding a second one.
   @MainActor
   public static func install() async {
-    let center = UNUserNotificationCenter.current()
-    center.delegate = delegate
-    let granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
-    guard granted else { return }
+    UNUserNotificationCenter.current().delegate = delegate
+    // Callback APIs, each call reaching for the center itself: the async
+    // overloads hand the (non-Sendable) center across actors, which strict
+    // concurrency rejects.
+    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
+      guard granted else { return }
+      UNUserNotificationCenter.current().add(eveningRequest()) { _ in }
+    }
+  }
+
+  private static func eveningRequest() -> UNNotificationRequest {
     let content = UNMutableNotificationContent()
     content.title = "该清理今天的 To-do 了"
     content.body = "每条标成 完成 / 部分 / 未做 / 推到明天。清完了，周报才算得准。"
@@ -39,18 +46,20 @@ public enum CleanupReminder {
     var when = DateComponents()
     when.hour = hour
     when.minute = minute
-    let request = UNNotificationRequest(
+    return UNNotificationRequest(
       identifier: identifier,
       content: content,
       trigger: UNCalendarNotificationTrigger(dateMatching: when, repeats: true)
     )
-    try? await center.add(request)
   }
 
   /// Whether the reminder is scheduled — for 设置 to say so, and for checks.
   public static func isScheduled() async -> Bool {
-    let pending = await UNUserNotificationCenter.current().pendingNotificationRequests()
-    return pending.contains { $0.identifier == identifier }
+    await withCheckedContinuation { continuation in
+      UNUserNotificationCenter.current().getPendingNotificationRequests { pending in
+        continuation.resume(returning: pending.contains { $0.identifier == identifier })
+      }
+    }
   }
 
   private final class Delegate: NSObject, UNUserNotificationCenterDelegate {
