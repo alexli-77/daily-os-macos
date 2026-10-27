@@ -532,6 +532,29 @@ open class AppState {
     .unsupported("这一版没有连接到服务。")
   }
 
+  // MARK: - 日记 (LEO-350)
+  //
+  // On-demand, like `loadDayHistory` — the journal is not part of the global
+  // reload, it is read when its screen opens. Private throughout: a live store
+  // is the only thing that ever touches the entries, over its own endpoints.
+
+  /// Days that have an entry, newest first, each with a one-line preview.
+  open func loadJournalList() async -> [JournalSummary] { [] }
+
+  /// The entry for a day; `nil` date means the service's today. Returns an entry
+  /// with empty `content` when the day has none, and `nil` only when there is no
+  /// service to ask — so the screen can learn today's date from the result.
+  open func loadJournalEntry(date: String?) async -> JournalEntry? { nil }
+
+  /// Save a day's journal. Empty content clears the day.
+  open func saveJournalEntry(date: String, content: String) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  open func deleteJournalEntry(date: String) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
   /// Correct one plan row's time estimate.
   ///
   /// Separate from `planFeedback` even though it travels on the same endpoint,

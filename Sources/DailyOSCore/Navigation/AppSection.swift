@@ -17,6 +17,7 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
   case routine
   case okr
   case countdown
+  case journal
   case runs
   case artifacts
   case schedules
@@ -31,6 +32,7 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
     case .routine: "作息"
     case .okr: "OKR"
     case .countdown: "倒数日"
+    case .journal: "日记"
     case .runs: "运行"
     case .artifacts: "产物"
     case .schedules: "排程"
@@ -45,6 +47,7 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
     case .routine: "calendar.day.timeline.left"
     case .okr: "target"
     case .countdown: "hourglass"
+    case .journal: "book.closed"
     case .runs: "waveform.path.ecg"
     case .artifacts: "shippingbox"
     case .schedules: "clock.arrow.circlepath"
@@ -70,14 +73,14 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
     case .runs: "5"
     case .artifacts: "6"
     case .schedules: "7"
-    case .cycles, .settings: nil
+    case .cycles, .journal, .settings: nil
     }
   }
 
   /// The sidebar groups. Work you do, then work the machine did, then config.
   /// 周期 is part of 今天 now (its 双周 view: 排期, then 要务 · OKR · 复盘);
   /// the case stays so old links and saved selections still land somewhere.
-  public static let workGroup: [AppSection] = [.today, .routine, .okr, .countdown]
+  public static let workGroup: [AppSection] = [.today, .routine, .okr, .countdown, .journal]
   public static let systemGroup: [AppSection] = [.runs, .artifacts, .schedules]
 
   /// The iOS tabs. Everything in `systemGroup` plus settings lives behind
