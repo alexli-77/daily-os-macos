@@ -1,20 +1,19 @@
 import SwiftUI
 import AppKit
 
-/// A plain-text editor drawn on lined notebook paper (LEO-351).
+/// A plain-text editor on a sheet of paper (LEO-351).
 ///
-/// SwiftUI's `TextEditor` cannot set a line height, so ruled lines drawn behind
-/// it would never meet the text. This wraps an `NSTextView` with a fixed line
-/// height and paints the rules — and a left margin line — at that same rhythm, so
-/// the writing sits on the lines. Paper, rule, margin and ink colours and the
-/// font all come from the caller, so it follows the design system and the user's
-/// font choice.
-struct LinedPaperTextView: NSViewRepresentable {
+/// SwiftUI's `TextEditor` cannot set a line height, which this needs for a
+/// comfortable, even rhythm — and which an earlier ruled version needed to try
+/// (and failed) to line the text up with drawn rules. The rules are gone now; a
+/// single left margin line stays, since a vertical line has no baseline to miss.
+/// Paper, margin and ink colours and the font come from the caller.
+struct PaperTextView: NSViewRepresentable {
   @Binding var text: String
   var font: NSFont
+  /// The fixed line height for the body — generous, so the writing breathes.
   var lineHeight: CGFloat
   var paper: NSColor
-  var rule: NSColor
   var margin: NSColor
   var ink: NSColor
   var leftInset: CGFloat
@@ -24,7 +23,7 @@ struct LinedPaperTextView: NSViewRepresentable {
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
   func makeNSView(context: Context) -> NSScrollView {
-    let textView = RuledTextView()
+    let textView = MarginTextView()
     textView.delegate = context.coordinator
     textView.drawsBackground = false
     textView.isRichText = false
@@ -46,20 +45,16 @@ struct LinedPaperTextView: NSViewRepresentable {
   }
 
   func updateNSView(_ scroll: NSScrollView, context: Context) {
-    guard let textView = scroll.documentView as? RuledTextView else { return }
+    guard let textView = scroll.documentView as? MarginTextView else { return }
     scroll.backgroundColor = paper
     if textView.string != text { textView.string = text }
     apply(to: textView)
     textView.needsDisplay = true
   }
 
-  /// Push the drawing colours, the line rhythm and the typography onto the view.
-  private func apply(to textView: RuledTextView) {
-    textView.ruleColor = rule
+  private func apply(to textView: MarginTextView) {
     textView.marginColor = margin
     textView.marginX = leftInset
-    textView.lineStep = lineHeight
-    textView.topInset = topInset
     textView.font = font
     textView.textColor = ink
     textView.insertionPointColor = ink
@@ -74,8 +69,8 @@ struct LinedPaperTextView: NSViewRepresentable {
   }
 
   final class Coordinator: NSObject, NSTextViewDelegate {
-    let parent: LinedPaperTextView
-    init(_ parent: LinedPaperTextView) { self.parent = parent }
+    let parent: PaperTextView
+    init(_ parent: PaperTextView) { self.parent = parent }
     func textDidChange(_ notification: Notification) {
       guard let textView = notification.object as? NSTextView else { return }
       parent.text = textView.string
@@ -84,31 +79,13 @@ struct LinedPaperTextView: NSViewRepresentable {
   }
 }
 
-/// The text view that paints the paper, the rules and the margin behind its text.
-/// Text views are flipped, so y grows downward and the first rule sits one line
-/// below the top inset.
-final class RuledTextView: NSTextView {
-  var ruleColor: NSColor = .separatorColor
+/// Paints a single left margin line behind the text.
+final class MarginTextView: NSTextView {
   var marginColor: NSColor = .clear
   var marginX: CGFloat = 0
-  var lineStep: CGFloat = 30
-  var topInset: CGFloat = 10
 
   override func draw(_ dirtyRect: NSRect) {
-    guard lineStep > 0 else { super.draw(dirtyRect); return }
-    ruleColor.setStroke()
-    // A few points under each line's baseline, so the writing sits on the rule
-    // rather than floating above it.
-    var y = topInset + lineStep - 6
-    while y < bounds.height {
-      let path = NSBezierPath()
-      path.move(to: NSPoint(x: marginX, y: y))
-      path.line(to: NSPoint(x: bounds.width, y: y))
-      path.lineWidth = 1
-      path.stroke()
-      y += lineStep
-    }
-    if marginX > 12 {
+    if marginX > 14 {
       marginColor.setStroke()
       let line = NSBezierPath()
       line.move(to: NSPoint(x: marginX - 14, y: 0))

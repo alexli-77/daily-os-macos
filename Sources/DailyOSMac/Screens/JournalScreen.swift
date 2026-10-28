@@ -32,14 +32,21 @@ struct JournalScreen: View {
         paper.frame(maxWidth: .infinity)
       }
     } toolbar: {
-      Menu {
-        Picker("字体", selection: $fontRaw) {
-          ForEach(JournalFont.allCases) { Text($0.label).tag($0.rawValue) }
+      Menu("字体") {
+        ForEach(JournalFont.allCases) { option in
+          Button {
+            fontRaw = option.rawValue
+          } label: {
+            if option.rawValue == fontRaw {
+              Label(option.label, systemImage: "checkmark")
+            } else {
+              Text(option.label)
+            }
+          }
         }
-      } label: {
-        Image(systemName: "textformat")
       }
-      .menuIndicator(.hidden)
+      .menuStyle(.button)
+      .buttonStyle(MossButtonStyle(prominent: false))
       .fixedSize()
       .help("日记字体")
 
@@ -108,12 +115,11 @@ struct JournalScreen: View {
         .padding(.leading, 54)
         .padding(.trailing, Metrics.md)
       Rectangle().fill(Palette.line).frame(height: Metrics.hairline)
-      LinedPaperTextView(
+      PaperTextView(
         text: $content,
         font: fontChoice.nsFont(size: 16),
         lineHeight: 28,
         paper: NSColor(Palette.paper),
-        rule: NSColor(Palette.rule),
         margin: Self.marginColor,
         ink: NSColor(Palette.ink),
         leftInset: 54,
