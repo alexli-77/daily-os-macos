@@ -424,8 +424,13 @@ public final class LiveAppState: AppState {
 
   public override func saveJournalEntry(date: String, content: String) async -> ActionOutcome {
     guard let client else { return .failed("没有连接到服务。") }
+    // The moment's weather + local time ride along; the service freezes them onto
+    // the day the first time it is written, so a past page keeps its own weather.
+    let snapshot = weather.map {
+      JournalWeather(code: $0.code, temp: $0.temperatureC, high: $0.high, low: $0.low, isDay: $0.isDay, place: $0.place)
+    }
     do {
-      _ = try await client.saveJournal(date: date, content: content)
+      _ = try await client.saveJournal(date: date, content: content, weather: snapshot, writtenAt: Date())
       return .ok("已保存")
     } catch {
       let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
