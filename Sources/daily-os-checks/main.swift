@@ -1362,7 +1362,7 @@ let routineMode = RoutineMode(id: "m", label: "作品集日", blocks: [
 check(routineMode.minutesByCategory().map(\.key) == ["portfolio", "habit", "rest"], "类别按时长从多到少")
 check(routineMode.minutesByCategory().first { $0.key == "habit" }?.minutes == 150, "同类的几块加在一起")
 check(routineMode.blocks.last?.minutes == 60, "到 24:00 结束的块是 60 分钟，不是负数")
-check(AppSection.workGroup == [.today, .routine, .okr, .countdown], "周期并进今天，作息紧跟其后")
+check(AppSection.workGroup == [.today, .routine, .okr, .countdown, .journal], "周期并进今天，作息紧跟其后，日记在末尾")
 check(AppSection.routine.shortcut == "2" && AppSection.schedules.shortcut == "7" && AppSection.cycles.shortcut == nil, "快捷键跟着侧栏顺序走")
 
 // MARK: - 排期的每一步

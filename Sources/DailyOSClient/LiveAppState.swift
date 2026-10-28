@@ -410,6 +410,42 @@ public final class LiveAppState: AppState {
     }
   }
 
+  // MARK: 日记 (LEO-350)
+
+  public override func loadJournalList() async -> [JournalSummary] {
+    guard let client else { return [] }
+    return (try? await client.journalList()) ?? []
+  }
+
+  public override func loadJournalEntry(date: String?) async -> JournalEntry? {
+    guard let client else { return nil }
+    return try? await client.journalEntry(date: date)
+  }
+
+  public override func saveJournalEntry(date: String, content: String) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      _ = try await client.saveJournal(date: date, content: content)
+      return .ok("已保存")
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      lastActionError = reason
+      return .failed(reason)
+    }
+  }
+
+  public override func deleteJournalEntry(date: String) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      try await client.deleteJournal(date: date)
+      return .ok("已删除")
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      lastActionError = reason
+      return .failed(reason)
+    }
+  }
+
   public override func toggleCountdownPin(_ id: Countdown.ID) async -> ActionOutcome {
     guard let item = countdowns.first(where: { $0.id == id }) else {
       return .failed("这条倒数日已经不在了。")
