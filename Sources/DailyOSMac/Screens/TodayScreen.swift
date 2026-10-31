@@ -196,6 +196,9 @@ struct TodayScreen: View {
       DayTimePanel(schedule: schedule, blocks: state.isViewingPast ? [] : state.planMealBlocks, title: state.isViewingPast ? "这天的时间" : "今天的时间")
       // Teammates' lists are today's; next to a past day they would read as that day's.
       if !state.isViewingPast { TeamTodayPanel() }
+      // 今日 AI 播报 — a shared daily brief pulled live off the radar's public
+      // files. Today only, for the same reason the team list is.
+      if !state.isViewingPast { BroadcastCard() }
     }
   }
 
