@@ -28,11 +28,13 @@ public struct Countdown: Identifiable, Sendable, Hashable {
   public enum Recurrence: String, Sendable, CaseIterable {
     case none
     case yearly
+    case monthly
 
     public var label: String {
       switch self {
       case .none: "只有一次"
       case .yearly: "每年"
+      case .monthly: "每月"
       }
     }
   }
@@ -52,6 +54,11 @@ public struct Countdown: Identifiable, Sendable, Hashable {
   public var daysLeft: Int
   /// Which anniversary `occurrence` is. Only a yearly entry has one.
   public var ordinal: Int?
+  /// Recurring only: the series stops after this date (`YYYY-MM-DD`). Nil = forever.
+  public var endDate: String?
+  /// Recurring only: surface on the morning card only within this many days of
+  /// the occurrence (a monthly cutoff is always inside the 30-day default).
+  public var leadDays: Int?
 
   public init(
     id: String,
@@ -63,7 +70,9 @@ public struct Countdown: Identifiable, Sendable, Hashable {
     note: String? = nil,
     occurrence: String,
     daysLeft: Int,
-    ordinal: Int? = nil
+    ordinal: Int? = nil,
+    endDate: String? = nil,
+    leadDays: Int? = nil
   ) {
     self.id = id
     self.title = title
@@ -75,6 +84,8 @@ public struct Countdown: Identifiable, Sendable, Hashable {
     self.occurrence = occurrence
     self.daysLeft = daysLeft
     self.ordinal = ordinal
+    self.endDate = endDate
+    self.leadDays = leadDays
   }
 
   public var isPast: Bool { daysLeft < 0 }
@@ -164,6 +175,10 @@ public struct CountdownDraft: Sendable, Equatable, Identifiable {
   public var recurrence: Countdown.Recurrence
   public var pinned: Bool
   public var note: String
+  /// `YYYY-MM-DD`, or "" for no end. Only meaningful when recurring.
+  public var endDate: String
+  /// 0 = use the default window; >0 = only show in the last N days. Recurring only.
+  public var leadDays: Int
 
   public init(
     id: String? = nil,
@@ -172,7 +187,9 @@ public struct CountdownDraft: Sendable, Equatable, Identifiable {
     direction: Countdown.Direction = .until,
     recurrence: Countdown.Recurrence = .none,
     pinned: Bool = false,
-    note: String = ""
+    note: String = "",
+    endDate: String = "",
+    leadDays: Int = 0
   ) {
     self.id = id
     self.title = title
@@ -181,6 +198,8 @@ public struct CountdownDraft: Sendable, Equatable, Identifiable {
     self.recurrence = recurrence
     self.pinned = pinned
     self.note = note
+    self.endDate = endDate
+    self.leadDays = leadDays
   }
 
   public init(editing item: Countdown) {
@@ -191,7 +210,9 @@ public struct CountdownDraft: Sendable, Equatable, Identifiable {
       direction: item.direction,
       recurrence: item.recurrence,
       pinned: item.pinned,
-      note: item.note ?? ""
+      note: item.note ?? "",
+      endDate: item.endDate ?? "",
+      leadDays: item.leadDays ?? 0
     )
   }
 

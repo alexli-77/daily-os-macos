@@ -116,7 +116,7 @@ private struct CountdownRow: View {
       VStack(alignment: .leading, spacing: Metrics.xxs) {
         HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
           Text(item.title).inkStyle(Typo.bodyStrong)
-          if item.recurrence == .yearly { Pill("每年") }
+          if item.recurrence != .none { Pill(item.recurrence.label) }
           if let ordinal = item.ordinalLabel { Pill(ordinal, tone: .accent) }
         }
         Text(CountdownDate.heading(item.occurrence)).mutedStyle()
@@ -218,6 +218,35 @@ private struct CountdownEditor: View {
     )
   }
 
+  /// Whether a recurring series has an end date at all; turning it on seeds a
+  /// date a year out, turning it off clears it.
+  private var endDateEnabled: Binding<Bool> {
+    Binding(
+      get: { !draft.endDate.isEmpty },
+      set: { on in
+        if on {
+          // One year on from the anchor, kept in the YYYY-MM-DD domain so it does
+          // not pick up a timezone off-by-one from a round-trip through Date.
+          let parts = draft.date.split(separator: "-")
+          if parts.count == 3, let year = Int(parts[0]) {
+            draft.endDate = "\(year + 1)-\(parts[1])-\(parts[2])"
+          } else {
+            draft.endDate = draft.date
+          }
+        } else {
+          draft.endDate = ""
+        }
+      }
+    )
+  }
+
+  private var pickedEndDate: Binding<Date> {
+    Binding(
+      get: { CountdownDate.date(from: draft.endDate) ?? .now },
+      set: { draft.endDate = CountdownDate.day(from: $0) }
+    )
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.md) {
       Text(onDelete == nil ? "记一个日子" : "改一下").inkStyle(Typo.heading)
@@ -235,10 +264,22 @@ private struct CountdownEditor: View {
         }
         .pickerStyle(.radioGroup)
 
-        Toggle("每年重复", isOn: Binding(
-          get: { draft.recurrence == .yearly },
-          set: { draft.recurrence = $0 ? .yearly : .none }
-        ))
+        Picker("重复", selection: $draft.recurrence) {
+          ForEach(Countdown.Recurrence.allCases, id: \.self) { Text($0.label).tag($0) }
+        }
+        .pickerStyle(.radioGroup)
+
+        // Recurring extras: how early to surface it, and when the series stops.
+        if draft.recurrence != .none {
+          Stepper(value: $draft.leadDays, in: 0...30) {
+            Text(draft.leadDays == 0 ? "提前提醒：默认（临近 30 天内）" : "提前 \(draft.leadDays) 天才上卡片")
+          }
+          Toggle("设一个截止日（之后自动停）", isOn: endDateEnabled)
+          if !draft.endDate.isEmpty {
+            DatePicker("截止日", selection: pickedEndDate, displayedComponents: .date)
+              .datePickerStyle(.field)
+          }
+        }
 
         Toggle("置顶（出现在早上的卡片里）", isOn: $draft.pinned)
 
@@ -277,6 +318,10 @@ private struct CountdownEditor: View {
   /// "从这天算起" is the one pair whose result is not obvious from the labels.
   private var hint: String {
     switch (draft.direction, draft.recurrence) {
+    case (_, .monthly):
+      "每月重复，自动滚到下个月同一天。"
+        + (draft.leadDays == 0 ? "临近才上卡片。" : "只在截止前 \(draft.leadDays) 天上卡片。")
+        + (draft.endDate.isEmpty ? "" : "到 \(draft.endDate) 后自动停。")
     case (_, .yearly):
       "每年重复。显示离下一次还有几天，以及第几年。"
     case (.until, .none):
