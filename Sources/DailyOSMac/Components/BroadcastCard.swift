@@ -89,12 +89,11 @@ struct BroadcastCard: View {
     } label: {
       HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
         Text("\(item.index)")
-          .font(Typo.caption)
+          .font(Typo.body)
           .foregroundStyle(Palette.inkMuted)
-          .frame(width: 16, alignment: .trailing)
+          .frame(width: 18, alignment: .trailing)
         Text(item.text)
-          .font(Typo.caption)
-          .foregroundStyle(Palette.ink2)
+          .inkStyle(Typo.body)
           .multilineTextAlignment(.leading)
           .fixedSize(horizontal: false, vertical: true)
         Spacer(minLength: 0)
