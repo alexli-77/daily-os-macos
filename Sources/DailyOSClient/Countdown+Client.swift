@@ -22,9 +22,11 @@ struct CountdownDTO: Decodable {
   let occurrence: String
   let daysLeft: Int
   let ordinal: Int?
+  let endDate: String?
+  let leadDays: Int?
 
   enum CodingKeys: String, CodingKey {
-    case id, title, date, direction, pinned, note, occurrence, ordinal
+    case id, title, date, direction, pinned, note, occurrence, ordinal, endDate, leadDays
     case recurrence = "repeat"
     case daysLeft
   }
@@ -53,6 +55,10 @@ struct CountdownSaveRequest: Encodable {
   let pinned: Bool
   let note: String
   let tz: String
+  /// "" clears the end date; a date sets it. Recurring entries only.
+  let endDate: String
+  /// 0 clears the lead window; >0 sets it. Recurring entries only.
+  let leadDays: Int
 }
 
 private struct CountdownDeleteRequest: Encodable {
@@ -89,7 +95,10 @@ extension DailyOSClient {
         repeat: draft.recurrence.rawValue,
         pinned: draft.pinned,
         note: draft.note.trimmingCharacters(in: .whitespacesAndNewlines),
-        tz: deviceTimeZone
+        tz: deviceTimeZone,
+        // Only meaningful when recurring; the service ignores them for a one-off.
+        endDate: draft.recurrence == .none ? "" : draft.endDate,
+        leadDays: draft.recurrence == .none ? 0 : draft.leadDays
       )
     )
     return Self.list(response)
@@ -126,7 +135,9 @@ extension DailyOSClient {
       note: dto.note?.isEmpty == false ? dto.note : nil,
       occurrence: dto.occurrence,
       daysLeft: dto.daysLeft,
-      ordinal: dto.ordinal
+      ordinal: dto.ordinal,
+      endDate: dto.endDate?.isEmpty == false ? dto.endDate : nil,
+      leadDays: dto.leadDays
     )
   }
 }
