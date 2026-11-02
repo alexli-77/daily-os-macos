@@ -79,7 +79,7 @@ struct SettingsScreen: View {
 
   private var owner: some View {
     HStack(spacing: 0) {
-      ListColumn(width: Metrics.listMin) { SectionList(store: store) }
+      SectionList(store: store)
       ScreenScaffold(store.section.title, subtitle: store.section.summary) {
         content
         if let banner = store.banner { BannerRow(banner: banner) }
@@ -131,16 +131,13 @@ private struct SectionList: View {
   let store: SettingsStore
 
   var body: some View {
-    ScrollView {
-      LazyVStack(alignment: .leading, spacing: Metrics.xxs) {
-        SectionLabel("配置")
-        ForEach(SettingsSection.configGroup) { row(for: $0) }
-        SectionLabel("文档")
-        ForEach(SettingsSection.documentGroup) { row(for: $0) }
-        SectionLabel("系统")
-        ForEach(SettingsSection.systemGroup) { row(for: $0) }
-      }
-      .padding(Metrics.xs)
+    ListColumn("设置") {
+      SectionLabel("配置")
+      ForEach(SettingsSection.configGroup) { row(for: $0) }
+      SectionLabel("文档")
+      ForEach(SettingsSection.documentGroup) { row(for: $0) }
+      SectionLabel("系统")
+      ForEach(SettingsSection.systemGroup) { row(for: $0) }
     }
   }
 
