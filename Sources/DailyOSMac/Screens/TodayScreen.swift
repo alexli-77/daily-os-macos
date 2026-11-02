@@ -415,12 +415,8 @@ private struct CallSheetPanel: View {
             .frame(width: lane, height: Timeline.y(range.upperBound, from: origin))
             .offset(x: Timeline.gutter)
             .onTapGesture(coordinateSpace: .local) { point in
-              // Adding to a day that is over writes into that day's plan file,
-              // which is not built yet; say so rather than doing nothing.
-              guard date == nil else {
-                state.toast = "过去的日子还不能新加一条，已有的都可以改"
-                return
-              }
+              // A day that is over takes new rows too (2026-11-02): what got
+              // done there is written down there.
               let minute = origin + Int(point.y / Timeline.pointsPerMinute)
               addPoint = CGPoint(x: Timeline.gutter + point.x, y: point.y)
               addAt = min(23 * 60 + 30, max(origin, minute / 30 * 30))
@@ -437,7 +433,7 @@ private struct CallSheetPanel: View {
                 isPresented: Binding(get: { self.addAt != nil }, set: { if !$0 { self.addAt = nil } }),
                 arrowEdge: addPoint.x > (lane + Timeline.gutter) / 2 ? .leading : .trailing
               ) {
-                QuickAdd(start: addAt) { self.addAt = nil }
+                QuickAdd(start: addAt, date: date) { self.addAt = nil }
                   .environment(state)
               }
           }
@@ -1491,6 +1487,8 @@ private struct TopicField: View {
 private struct QuickAdd: View {
   @Environment(AppState.self) private var state
   let start: Int
+  /// The past day being added to; nil for today.
+  let date: String?
   let onClose: () -> Void
 
   @State private var title = ""
@@ -1521,7 +1519,7 @@ private struct QuickAdd: View {
         }
       }
       // Only for something that is not already a 要务.
-      if itemKey == nil, state.currentCycle != nil {
+      if itemKey == nil, date == nil, state.currentCycle != nil {
         Toggle(isOn: $promote) {
           Text("算进本期要务").font(Typo.caption).foregroundStyle(Palette.ink3)
         }
@@ -1546,7 +1544,8 @@ private struct QuickAdd: View {
       focused = true
     }
     .task {
-      guard let cycle = state.currentCycle, case .success(let loaded) = await state.loadCycleSchedule(cycleID: cycle.id) else { return }
+      // A past day's add is a record of that day, not a 要务 session.
+      guard date == nil, let cycle = state.currentCycle, case .success(let loaded) = await state.loadCycleSchedule(cycleID: cycle.id) else { return }
       items = loaded.items
     }
   }
@@ -1559,7 +1558,7 @@ private struct QuickAdd: View {
     let end = max(from + 5, min(24 * 60, endMinute ?? from + 60))
     let request = AdhocRequest(
       title: text, itemKey: itemKey, start: DaySchedule.clock(from), end: end == 24 * 60 ? "24:00" : DaySchedule.clock(end),
-      extra: false, displaced: [], promote: itemKey == nil && promote
+      extra: false, displaced: [], promote: date == nil && itemKey == nil && promote, date: date
     )
     Task {
       let (outcome, undo, suggest) = await state.addAdhoc(request)

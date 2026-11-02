@@ -47,7 +47,9 @@ private struct StateAgentModeResponse: Decodable {
 }
 
 private struct SessionBody: Encodable { let session: String }
-private struct SendBody: Encodable { let session: String; let text: String }
+/// `date`: the day open in the app when it is not today, so 「加一条」 without
+/// a date lands on the day the user is looking at.
+private struct SendBody: Encodable { let session: String; let text: String; let date: String? }
 
 extension DailyOSClient {
   public func chatThreads() async throws -> [ChatThread] {
@@ -91,7 +93,7 @@ extension DailyOSClient {
   /// A turn that edits files runs for a minute or more, so this has no request
   /// timeout of its own beyond the service's; the service sends a heartbeat
   /// every 15 seconds while it works.
-  public func sendChat(session: String, text: String) async throws -> AsyncThrowingStream<ChatStreamEvent, Error> {
+  public func sendChat(session: String, text: String, viewing date: String? = nil) async throws -> AsyncThrowingStream<ChatStreamEvent, Error> {
     let endpoint = try currentEndpoint()
     guard let url = Self.url(base: endpoint.url, path: "/api/chat/send") else {
       throw ClientError.http(status: 0, path: "/api/chat/send")
@@ -101,7 +103,7 @@ extension DailyOSClient {
     request.setValue("Bearer \(endpoint.token)", forHTTPHeaderField: "Authorization")
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.timeoutInterval = 900
-    request.httpBody = try JSONEncoder().encode(SendBody(session: session, text: text))
+    request.httpBody = try JSONEncoder().encode(SendBody(session: session, text: text, date: date))
     invalidate()
     return Self.chatStream(request)
   }

@@ -150,19 +150,43 @@ private struct ThreadList: View {
 
 private struct Conversation: View {
   @Environment(AppState.self) private var state
+  private static let bottom = "chat-bottom"
+
+  private func scrollDown(_ proxy: ScrollViewProxy, animated: Bool = false) {
+    // After the layout pass, or the new bubble's height is not in yet.
+    DispatchQueue.main.async {
+      if animated {
+        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+      } else {
+        proxy.scrollTo(Self.bottom, anchor: .bottom)
+      }
+    }
+  }
 
   var body: some View {
     VStack(spacing: 0) {
-      ScrollView {
-        LazyVStack(alignment: .leading, spacing: Metrics.md) {
-          if let thread = state.selectedThread, !thread.messages.isEmpty {
-            ForEach(thread.messages) { MessageBubble(message: $0) }
-          } else {
-            EmptyChatState()
+      // Opens on the latest message, and follows the reply as it streams
+      // (2026-11-02: it opened on the first one, and a long thread had to be
+      // dragged down every time). Not lazy: a lazy stack does not know where
+      // its bottom is until it has been scrolled there.
+      ScrollViewReader { proxy in
+        ScrollView {
+          VStack(alignment: .leading, spacing: Metrics.md) {
+            if let thread = state.selectedThread, !thread.messages.isEmpty {
+              ForEach(thread.messages) { MessageBubble(message: $0) }
+            } else {
+              EmptyChatState()
+            }
+            Color.clear.frame(height: 1).id(Self.bottom)
           }
+          .padding(Metrics.screenPadding)
+          .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(Metrics.screenPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .defaultScrollAnchor(.bottom)
+        .onAppear { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+        .onChange(of: state.selectedThreadID) { scrollDown(proxy) }
+        .onChange(of: state.selectedThread?.messages.count) { scrollDown(proxy, animated: true) }
+        .onChange(of: state.selectedThread?.messages.last?.text) { scrollDown(proxy) }
       }
       Composer()
     }
@@ -339,16 +363,26 @@ private struct Composer: View {
           .lineLimit(1...6)
           .padding(.vertical, 6)
           .onSubmit { state.send() }
+        // Empty: a grey circle with a dark arrow. It was the green circle at
+        // 45% with a white arrow, which on the pale canvas left no arrow to
+        // see (2026-11-02).
+        let empty = state.composerText.trimmingCharacters(in: .whitespaces).isEmpty
         Button { state.send() } label: {
           Image(systemName: "arrow.up")
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(Color(white: 0.97))
+            .font(.system(size: 15, weight: .bold))
+            .foregroundStyle(empty ? Palette.ink3 : Color.white)
             .frame(width: 30, height: 30)
-            .background(Circle().fill(Palette.chatAccent))
+            .background {
+              if empty {
+                Circle().fill(Palette.ink3.opacity(0.16))
+              } else {
+                Circle().fill(Palette.chatAccent)
+              }
+            }
         }
         .buttonStyle(.plain)
-        .opacity(state.composerText.trimmingCharacters(in: .whitespaces).isEmpty ? 0.45 : 1)
-        .disabled(state.composerText.trimmingCharacters(in: .whitespaces).isEmpty)
+        .disabled(empty)
+        .help(empty ? "先写点什么" : "发送（⏎）")
       }
       .padding(.leading, Metrics.md)
       .padding(.trailing, 6)

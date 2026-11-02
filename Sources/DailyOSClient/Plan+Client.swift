@@ -238,13 +238,15 @@ extension DailyOSClient {
       let extra: Bool
       let displaced: [Displaced]
       let promote: Bool
+      let date: String?
     }
     struct Suggest: Decodable { let cycleId: String; let text: String; let days: Int; let minutes: Int? }
     struct Response: Decodable { let text: String?; let undo: AdhocUndo?; let suggestPromote: Suggest? }
     let response: Response = try await post("/api/today/adhoc", body: Body(
       title: request.title, itemKey: request.itemKey, start: request.start, end: request.end, extra: request.extra,
       displaced: request.displaced.map { Displaced(candidateId: $0.candidateID, rank: $0.rank, action: $0.action.rawValue) },
-      promote: request.promote
+      promote: request.promote,
+      date: request.date
     ))
     let suggest = response.suggestPromote.map { PromoteSuggestion(cycleID: $0.cycleId, text: $0.text, days: $0.days, minutes: $0.minutes) }
     return (response.text, response.undo, suggest)

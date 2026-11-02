@@ -30,8 +30,11 @@ public struct AdhocRequest: Sendable, Equatable {
   public let displaced: [Displaced]
   /// 算进本期要务: file it under this cycle's 要务 first.
   public let promote: Bool
+  /// A day that is over, when it goes there instead of today. The service
+  /// writes it as that day's own row (a 作息 block), not as open work.
+  public let date: String?
 
-  public init(title: String, itemKey: String?, start: String, end: String, extra: Bool, displaced: [Displaced], promote: Bool = false) {
+  public init(title: String, itemKey: String?, start: String, end: String, extra: Bool, displaced: [Displaced], promote: Bool = false, date: String? = nil) {
     self.title = title
     self.itemKey = itemKey
     self.start = start
@@ -39,6 +42,7 @@ public struct AdhocRequest: Sendable, Equatable {
     self.extra = extra
     self.displaced = displaced
     self.promote = promote
+    self.date = date
   }
 }
 
@@ -64,7 +68,10 @@ public struct AdhocUndo: Codable, Sendable, Equatable {
     public let rank: Int
   }
 
-  public let captureId: String
+  /// Today's add: the capture. A past day's add has none — it is `blockId` on `date`.
+  public let captureId: String?
+  public let date: String?
+  public let blockId: String?
   public let clearId: String?
   public let sessionId: String?
   public let displaced: [Displaced]

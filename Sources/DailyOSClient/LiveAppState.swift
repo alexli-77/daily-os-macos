@@ -519,6 +519,7 @@ public final class LiveAppState: AppState {
     do {
       let result = try await client.addAdhoc(request)
       await reload()
+      if let date = request.date, viewedDate == date { await showDay(date) }
       return (.ok(result.text), result.undo, result.suggest)
     } catch {
       return (.failed((error as? ClientError)?.errorDescription ?? error.localizedDescription), nil, nil)
@@ -564,7 +565,8 @@ public final class LiveAppState: AppState {
     do {
       try await client.undoAdhoc(undo)
       await reload()
-      return .ok("已撤销临时安排")
+      if let date = undo.date, viewedDate == date { await showDay(date) }
+      return .ok(undo.date == nil ? "已撤销临时安排" : "已撤销")
     } catch {
       return .failed((error as? ClientError)?.errorDescription ?? error.localizedDescription)
     }
@@ -1103,7 +1105,7 @@ public final class LiveAppState: AppState {
       var answer = ""
       var failure: String?
       do {
-        for try await event in try await client.sendChat(session: threadID, text: text) {
+        for try await event in try await client.sendChat(session: threadID, text: text, viewing: isViewingSelf ? viewedDate : nil) {
           switch event {
           case .status(let message): updateReply(threadID, replyID, text: message, streaming: true)
           case .reply(let content):
