@@ -82,6 +82,12 @@ open class AppState {
   /// False when no `daily_plan` has ever run, which wants a different empty
   /// state from "ran and produced nothing".
   public var hasPlan = true
+  /// Set while a new 双周 is due and unset (see `NewCycleNotice`).
+  public var newCycle: NewCycleNotice?
+  /// The day 新双周 was answered, so it asks once a day, not on every reload.
+  public var newCycleAnsweredOn: String? = UserDefaults.standard.string(forKey: "newCycleAnsweredOn") {
+    didSet { UserDefaults.standard.set(newCycleAnsweredOn, forKey: "newCycleAnsweredOn") }
+  }
 
   /// The work day the Today timeline lays items out across, from
   /// `user.rhythm.working_hours.start` (minutes from midnight). `nil` falls back
@@ -634,6 +640,27 @@ open class AppState {
     guard let first = pendingWrapups.first else { return nil }
     if section == .today, isViewingPast || !isViewingSelf { return nil }
     return first
+  }
+
+  /// 新的双周开始了 — asked after 清理 (yesterday is closed out first), on
+  /// today, once a day. 2026-11-02: the user wants it set in weekly before a
+  /// daily plan is made from it.
+  public var newCyclePrompt: NewCycleNotice? {
+    guard let notice = newCycle, cleanupPrompt == nil, newCycleAnsweredOn != notice.today else { return nil }
+    guard section == .today, !isViewingPast, isViewingSelf else { return nil }
+    return notice
+  }
+
+  /// 去定新双周: the ended 双周's page, where 结束本期 writes the next one.
+  public func goSetNewCycle(_ notice: NewCycleNotice) {
+    newCycleAnsweredOn = notice.today
+    selectedCycleID = notice.previousID
+    section = .cycles
+  }
+
+  /// 先生成今天的计划, or 稍后: asked again tomorrow.
+  public func answerNewCycle(_ notice: NewCycleNotice) {
+    newCycleAnsweredOn = notice.today
   }
 
   /// 前往清理: the day, in the 日 view, as yourself.

@@ -164,3 +164,73 @@ struct CleanupBanner: View {
     }
   }
 }
+
+/// What the window asks before today, in order.
+enum RootPrompt: Identifiable {
+  case cleanup(WrapupDay)
+  case newCycle(NewCycleNotice)
+
+  @MainActor init?(_ state: AppState) {
+    if let day = state.cleanupPrompt { self = .cleanup(day) }
+    else if let notice = state.newCyclePrompt { self = .newCycle(notice) }
+    else { return nil }
+  }
+
+  var id: String {
+    switch self {
+    case .cleanup(let day): "cleanup:\(day.id)"
+    case .newCycle(let notice): "cycle:\(notice.id)"
+    }
+  }
+}
+
+/// 新的双周开始了 (2026-11-02). The 8:00 plan waits for it: a plan made before
+/// the 双周 is set has no 要务 and fills the day from Linear and the 作息.
+/// Suggests weekly first; generating today's plan anyway is one click.
+struct NewCyclePrompt: View {
+  @Environment(AppState.self) private var state
+  let notice: NewCycleNotice
+
+  @State private var isStarting = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Metrics.md) {
+      VStack(alignment: .leading, spacing: Metrics.xxs) {
+        Text("新的双周开始了").font(Typo.heading).foregroundStyle(Palette.ink)
+        Text("上一期 \(notice.previous) 已经结束，这一期的要务还没定。建议先去周期页做双周复盘、定下这期要务，再生成今天的计划——不然今天的计划只能从 Linear 和作息里凑。")
+          .font(Typo.body).foregroundStyle(Palette.ink2)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      HStack {
+        Button("稍后") { state.answerNewCycle(notice) }
+          .buttonStyle(QuietButtonStyle(tone: .neutral))
+          .keyboardShortcut(.cancelAction)
+        Button(isStarting ? "生成中…" : "直接生成今天的计划", action: generate)
+          .buttonStyle(QuietButtonStyle(tone: .neutral))
+          .disabled(isStarting)
+          .help(state.hasPlan ? "今天已经有一份计划，这会重新生成。" : "用模型额度，飞书也会收到一条。")
+        Spacer()
+        Button("去定新双周") { state.goSetNewCycle(notice) }
+          .buttonStyle(MossButtonStyle(prominent: true))
+          .keyboardShortcut(.defaultAction)
+      }
+    }
+    .padding(Metrics.lg)
+    .frame(width: 460)
+    .background(Palette.paper)
+    .interactiveDismissDisabled(true)
+  }
+
+  private func generate() {
+    isStarting = true
+    Task {
+      let outcome = await state.generatePlan()
+      isStarting = false
+      state.answerNewCycle(notice)
+      switch outcome {
+      case .ok(let message): state.toast = message ?? "已让 daily_plan 跑起来了"
+      case .failed(let why), .unsupported(let why): state.toast = why
+      }
+    }
+  }
+}

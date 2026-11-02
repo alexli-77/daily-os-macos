@@ -271,3 +271,22 @@ public struct WrapupDay: Sendable, Equatable, Identifiable {
     state == .open && !isFixed && !id.hasPrefix("rhythm:")
   }
 }
+
+/// A new 双周 has started and nobody has set it: the last one ended, nothing
+/// covers today. The service says so with today's plan (`newCycle`), and holds
+/// the 8:00 plan until then.
+public struct NewCycleNotice: Sendable, Equatable, Identifiable {
+  /// The 双周 that ended — its 结束本期 writes the next one's 要务.
+  public let previousID: String
+  /// Its label, "10.19-11.1".
+  public let previous: String
+  public let today: String
+
+  public var id: String { "\(previousID)@\(today)" }
+
+  public init(previousID: String, previous: String, today: String) {
+    self.previousID = previousID
+    self.previous = previous
+    self.today = today
+  }
+}

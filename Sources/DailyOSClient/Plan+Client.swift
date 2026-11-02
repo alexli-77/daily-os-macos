@@ -66,6 +66,9 @@ struct TodayPlanResponse: Decodable {
   struct LastRun: Decodable { let status: String; let startedAt: String; let error: String? }
   let lastRun: LastRun?
   let today: String
+  /// A new 双周 is due and unset: the one that ended.
+  struct NewCycle: Decodable { let previousId: String; let previous: String }
+  let newCycle: NewCycle?
 }
 
 /// What Today needs to draw its plan column.
@@ -81,6 +84,7 @@ public struct TodayPlan: Sendable, Equatable {
   public let staleCaptures: [StaleCapture]
   /// Set when today's latest daily_plan run failed.
   public let lastRunFailure: PlanRunFailure?
+  public var newCycle: NewCycleNotice?
 
   public init(
     items: [TodoItem],
@@ -106,13 +110,16 @@ extension DailyOSClient {
       guard run.status == "failed", let startedAt = TodoWireDate.timestamp(run.startedAt) else { return nil }
       return PlanRunFailure(startedAt: startedAt, reason: Self.runFailureReason(run.error))
     }
+    let newCycle = response.newCycle.map { NewCycleNotice(previousID: $0.previousId, previous: $0.previous, today: response.today) }
     guard let plan = response.plan else {
-      return TodayPlan(items: [], staleDate: nil, hasPlan: false, lastRunFailure: failure)
+      var empty = TodayPlan(items: [], staleDate: nil, hasPlan: false, lastRunFailure: failure)
+      empty.newCycle = newCycle
+      return empty
     }
 
     let items = Self.planItems(response.todos, feedback: response.feedback, notes: response.notes, carriedFrom: response.carriedFrom)
 
-    return TodayPlan(
+    var today = TodayPlan(
       items: items,
       staleDate: plan.stale ? plan.date : nil,
       hasPlan: true,
@@ -120,6 +127,8 @@ extension DailyOSClient {
       staleCaptures: (response.staleCaptures ?? []).map { StaleCapture(id: $0.id, text: $0.text, days: $0.days) },
       lastRunFailure: failure
     )
+    today.newCycle = newCycle
+    return today
   }
 
   /// A day's plan rows as the call sheet draws them. One mapping for today and

@@ -21,14 +21,13 @@ struct ChatScreen: View {
 
 /// The chat as a right-side panel that drops from the top (⌘⇧C or the toolbar
 /// bubble). Narrow by design — so the thread list is a popover off the header
-/// rather than a permanent second column, and the conversation gets the whole
+/// rather than a permanent second column (since 2026-11-02 not offered at all), and the conversation gets the whole
 /// width. Same store as the `.chat` section: it is the one conversation, not a
 /// copy. Lives here, not in its own file, because it reuses the private
 /// `Conversation` / `ThreadList` above.
 struct ChatPanel: View {
   @Binding var isOpen: Bool
   @Environment(AppState.self) private var state
-  @State private var showHistory = false
 
   var body: some View {
     VStack(spacing: 0) {
@@ -53,15 +52,8 @@ struct ChatPanel: View {
   private var header: some View {
     HStack(spacing: Metrics.xs) {
       Spacer()
-      Button { showHistory.toggle() } label: {
-        Image(systemName: "clock.arrow.circlepath")
-      }
-      .help("历史对话")
-      .popover(isPresented: $showHistory, arrowEdge: .bottom) {
-        ThreadList()
-          .frame(width: 260, height: 380)
-          .environment(state)
-      }
+      // No 历史对话 here (2026-11-02, the user: not needed). The panel is one
+      // running conversation; 新对话 starts over.
       Button { state.newThread() } label: {
         Image(systemName: "square.and.pencil")
       }

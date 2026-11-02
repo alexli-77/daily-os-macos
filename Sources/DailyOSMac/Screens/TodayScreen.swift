@@ -347,7 +347,9 @@ private struct CallSheetPanel: View {
             title: isRunning ? "计划正在生成" : "今天还没有计划",
             message: isRunning
               ? "一两分钟后出现在这里，飞书也会收到一条。"
-              : "早上 8 点会自动生成。现在生成会用模型额度，飞书也会收到一条。",
+              : state.newCycle != nil
+                ? "新的双周还没定，早上就没有自动生成。先去周期页定这期要务；要直接生成也行。"
+                : "早上 8 点会自动生成。现在生成会用模型额度，飞书也会收到一条。",
             actionTitle: isRunning ? nil : "生成计划",
             action: isRunning ? nil : (generate as () -> Void)
           )

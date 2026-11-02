@@ -222,6 +222,7 @@ public final class LiveAppState: AppState {
       self.staleCaptures = plan.staleCaptures
       self.planRunFailure = plan.lastRunFailure
       self.hasPlan = plan.hasPlan
+      self.newCycle = plan.newCycle
       // Rhythm rides in the plan chunk: it shapes the same timeline and a failure
       // to read it is the same "today didn't load" story, not its own banner.
       let rhythm = try await client.dayRhythm()

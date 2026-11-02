@@ -1421,6 +1421,21 @@ check(UpdateInfo.resolve(localCommit: "abc123", localBuiltAt: nil, manifestVersi
 check(UpdateInfo.resolve(localCommit: "abc123", localBuiltAt: localAt, manifestVersion: "0.1.20", manifestCommit: "def456", manifestURL: "not a url ::://", manifestDate: newerAt) == nil,
       "url 解析不了就不提示")
 
+// 新的双周开始了：清理之后问，一天只问一次，去定新双周打开上一期。
+let cycleStore = AppState()
+cycleStore.pendingWrapups = [WrapupDay(date: "2026-11-01", today: "2026-11-02", rows: [.init(id: "a", rank: 1, text: "没勾的", state: .open)])]
+cycleStore.newCycleAnsweredOn = nil
+cycleStore.newCycle = NewCycleNotice(previousID: "2026-10-19_10.19-11.1", previous: "10.19-11.1", today: "2026-11-02")
+check(cycleStore.newCyclePrompt == nil, "先清理昨天，再问新双周")
+cycleStore.pendingWrapups = []
+check(cycleStore.newCyclePrompt?.previous == "10.19-11.1", "清理完问新双周")
+cycleStore.goSetNewCycle(cycleStore.newCycle!)
+check(cycleStore.section == .cycles && cycleStore.selectedCycleID == "2026-10-19_10.19-11.1", "去定新双周打开上一期")
+cycleStore.section = .today
+check(cycleStore.newCyclePrompt == nil, "答过了今天不再问")
+cycleStore.newCycleAnsweredOn = nil
+UserDefaults.standard.removeObject(forKey: "newCycleAnsweredOn")
+
 // 往日新加一条：服务回的撤销没有 captureId，只有那天和那一块。
 let pastUndo = try? JSONDecoder().decode(AdhocUndo.self, from: Data(#"{"date":"2026-10-31","blockId":"add-1a2b3c4d","displaced":[]}"#.utf8))
 check(pastUndo?.blockId == "add-1a2b3c4d" && pastUndo?.date == "2026-10-31" && pastUndo?.captureId == nil, "往日新加一条的撤销能读")
@@ -1428,7 +1443,7 @@ let todayUndo = try? JSONDecoder().decode(AdhocUndo.self, from: Data(#"{"capture
 check(todayUndo?.captureId == "c1" && todayUndo?.date == nil, "今天的撤销照旧")
 
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态, 手打时间, 计划外与收尾, 更新检查, 往日可改, 日视图看往日, 时间列表定位, 清理, 看队友的一天, 往日新加")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态, 手打时间, 计划外与收尾, 更新检查, 往日可改, 日视图看往日, 时间列表定位, 清理, 看队友的一天, 往日新加, 新双周")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")
