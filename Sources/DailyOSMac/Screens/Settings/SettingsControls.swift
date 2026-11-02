@@ -12,21 +12,47 @@ import DailyOSCore
 /// panel whatever the control is.
 
 /// One line of text.
+///
+/// `secret` masks the value behind a `SecureField` and offers an eye to reveal
+/// it — for the open ids, chat ids and app ids that are an account's handle, not
+/// a password, but are exactly the thing nobody wants sitting legible in a
+/// screenshot. The field stays editable: the eye flips to a plain `TextField` so
+/// a pasted id can be checked. Default off; a field is only hidden where its call
+/// site asks for it.
 struct SettingText: View {
   let label: String
   @Binding var text: String
   var placeholder = ""
   var hint = ""
   var mono = false
+  var secret = false
   var width: CGFloat = 320
+
+  @State private var revealed = false
 
   var body: some View {
     KeyValueRow(label) {
       VStack(alignment: .leading, spacing: Metrics.xxs) {
-        TextField(placeholder, text: $text)
+        HStack(spacing: Metrics.xs) {
+          Group {
+            if secret && !revealed {
+              SecureField(placeholder, text: $text)
+            } else {
+              TextField(placeholder, text: $text)
+            }
+          }
           .textFieldStyle(.roundedBorder)
           .font(mono ? Typo.monoBody : Typo.body)
           .frame(maxWidth: width)
+          if secret {
+            Button { revealed.toggle() } label: {
+              Image(systemName: revealed ? "eye.slash" : "eye")
+            }
+            .buttonStyle(QuietButtonStyle())
+            .help(revealed ? "隐藏" : "显示")
+            .accessibilityLabel(revealed ? "隐藏" : "显示")
+          }
+        }
         if !hint.isEmpty { HintText(hint) }
       }
     }

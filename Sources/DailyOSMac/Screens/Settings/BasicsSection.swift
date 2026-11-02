@@ -26,8 +26,12 @@ private struct ProfilePanel: View {
   var body: some View {
     @Bindable var store = store
     Panel("个人") {
+      // Divider-separated rows, so 个人 reads as one profile card the way 身份
+      // below it already does — the rows line up down a hairline instead of
+      // floating in a stack.
       VStack(alignment: .leading, spacing: Metrics.xs) {
         SettingText(label: "显示名", text: $store.draft.displayName, placeholder: "Leon")
+        PanelDivider()
         SettingText(
           label: "时区",
           text: $store.draft.timezone,
@@ -35,6 +39,7 @@ private struct ProfilePanel: View {
           hint: "IANA 时区名。排程时间都按它算，设成 UTC 早报会半夜到。",
           mono: true
         )
+        PanelDivider()
         SettingText(
           label: "语言",
           text: $store.draft.language,
