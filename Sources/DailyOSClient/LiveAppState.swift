@@ -222,6 +222,7 @@ public final class LiveAppState: AppState {
       self.staleCaptures = plan.staleCaptures
       self.planRunFailure = plan.lastRunFailure
       self.hasPlan = plan.hasPlan
+      self.newCycle = plan.newCycle
       // Rhythm rides in the plan chunk: it shapes the same timeline and a failure
       // to read it is the same "today didn't load" story, not its own banner.
       let rhythm = try await client.dayRhythm()
@@ -518,7 +519,10 @@ public final class LiveAppState: AppState {
     guard let client else { return (.failed("没有连接到服务。"), nil, nil) }
     do {
       let result = try await client.addAdhoc(request)
+      // Asked before anything else on the screen: it is about this add.
+      adhocImpact = result.impact
       await reload()
+      if let date = request.date, viewedDate == date { await showDay(date) }
       return (.ok(result.text), result.undo, result.suggest)
     } catch {
       return (.failed((error as? ClientError)?.errorDescription ?? error.localizedDescription), nil, nil)
@@ -559,12 +563,24 @@ public final class LiveAppState: AppState {
     return try? await client.closeCycleStatus(cycleID: cycleID)
   }
 
+  public override func deferSqueezed(_ impact: AdhocImpact) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      let message = try await client.deferSqueezed(itemKeys: impact.squeezed.map(\.itemKey))
+      await reload()
+      return .ok(message)
+    } catch {
+      return .failed((error as? ClientError)?.errorDescription ?? error.localizedDescription)
+    }
+  }
+
   public override func undoAdhoc(_ undo: AdhocUndo) async -> ActionOutcome {
     guard let client else { return .failed("没有连接到服务。") }
     do {
       try await client.undoAdhoc(undo)
       await reload()
-      return .ok("已撤销临时安排")
+      if let date = undo.date, viewedDate == date { await showDay(date) }
+      return .ok(undo.date == nil ? "已撤销临时安排" : "已撤销")
     } catch {
       return .failed((error as? ClientError)?.errorDescription ?? error.localizedDescription)
     }
@@ -986,6 +1002,18 @@ public final class LiveAppState: AppState {
   /// refresh nobody asked for must not paint an error over the screen somebody
   /// is working on, and it has a next attempt a minute away. The 更新 button
   /// stays the loud path, and it is the one that reports.
+  /// The cycle files again, without the full reload. They change outside the
+  /// app — a restore, the chat, another window — and the page only read them at
+  /// launch (2026-11-02: a restored 复盘 still showed as the empty template).
+  public func refreshCyclesQuietly() async {
+    guard let client else { return }
+    if let result = try? await client.cycles() {
+      cycles = result.mine
+      partnerCycles = result.teammates
+      cyclesPlanningInFlight = result.planningInFlight
+    }
+  }
+
   public func refreshTeamQuietly() async {
     guard let client, connection.state.isConnected else { return }
     guard !isLoading, !isRefreshingTeam else { return }
@@ -1103,7 +1131,7 @@ public final class LiveAppState: AppState {
       var answer = ""
       var failure: String?
       do {
-        for try await event in try await client.sendChat(session: threadID, text: text) {
+        for try await event in try await client.sendChat(session: threadID, text: text, viewing: isViewingSelf ? viewedDate : nil) {
           switch event {
           case .status(let message): updateReply(threadID, replyID, text: message, streaming: true)
           case .reply(let content):

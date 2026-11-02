@@ -164,3 +164,156 @@ struct CleanupBanner: View {
     }
   }
 }
+
+/// What the window asks before today, in order.
+enum RootPrompt: Identifiable {
+  case cleanup(WrapupDay)
+  case newCycle(NewCycleNotice)
+  case impact(AdhocImpact)
+
+  @MainActor init?(_ state: AppState) {
+    // The answer to what was just added comes first.
+    if let impact = state.adhocImpact { self = .impact(impact) }
+    else if let day = state.cleanupPrompt { self = .cleanup(day) }
+    else if let notice = state.newCyclePrompt { self = .newCycle(notice) }
+    else { return nil }
+  }
+
+  var id: String {
+    switch self {
+    case .cleanup(let day): "cleanup:\(day.id)"
+    case .newCycle(let notice): "cycle:\(notice.id)"
+    case .impact(let impact): "impact:\(impact.id)"
+    }
+  }
+}
+
+/// 挤占提醒 (2026-11-02, the user: "新增任务……会影响到本期 weekly 任务的完成，应该
+/// 给一个提醒机制，或者重新帮我去编排"). After an add that took work time and left
+/// today's 要务 without room: which ones, and three answers.
+struct AdhocImpactPrompt: View {
+  @Environment(AppState.self) private var state
+  let impact: AdhocImpact
+
+  @State private var isWorking = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Metrics.md) {
+      VStack(alignment: .leading, spacing: Metrics.xxs) {
+        Text("这条会挤掉今天的要务").font(Typo.heading).foregroundStyle(Palette.ink)
+        Text(impact.text).font(Typo.body).foregroundStyle(Palette.ink2)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      VStack(alignment: .leading, spacing: 4) {
+        ForEach(impact.squeezed, id: \.itemKey) { entry in
+          HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Circle().strokeBorder(Palette.warn, lineWidth: 1).frame(width: 8, height: 8)
+            Text(entry.label).font(Typo.body).foregroundStyle(Palette.ink).lineLimit(1)
+            Spacer(minLength: Metrics.sm)
+            Text(DaySchedule.duration(entry.minutes)).font(Typo.caption).foregroundStyle(Palette.ink3)
+          }
+        }
+      }
+      HStack {
+        Button("我自己安排") { state.adhocImpact = nil }
+          .buttonStyle(QuietButtonStyle(tone: .neutral))
+          .keyboardShortcut(.cancelAction)
+          .disabled(isWorking)
+        if impact.cycleID != nil {
+          Button("重新编排本期", action: replan)
+            .buttonStyle(QuietButtonStyle(tone: .neutral))
+            .disabled(isWorking)
+            .help("从现在起把这一期剩下的要务重新排进剩下的日子，一两分钟。")
+        }
+        Spacer()
+        Button(isWorking ? "处理中…" : "顺到明天", action: defer_)
+          .buttonStyle(MossButtonStyle(prominent: true))
+          .keyboardShortcut(.defaultAction)
+          .disabled(isWorking)
+      }
+    }
+    .padding(Metrics.lg)
+    .frame(width: 460)
+    .background(Palette.paper)
+    .interactiveDismissDisabled(true)
+  }
+
+  private func defer_() {
+    isWorking = true
+    Task {
+      let outcome = await state.deferSqueezed(impact)
+      isWorking = false
+      state.adhocImpact = nil
+      switch outcome {
+      case .ok(let message): state.toast = message ?? "挪到明天了"
+      case .failed(let why), .unsupported(let why): state.toast = why
+      }
+    }
+  }
+
+  private func replan() {
+    guard let cycleID = impact.cycleID else { return }
+    isWorking = true
+    Task {
+      let outcome = await state.generateCycleSchedule(cycleID: cycleID)
+      isWorking = false
+      state.adhocImpact = nil
+      switch outcome {
+      case .ok(let message): state.toast = message ?? "开始重新编排，一两分钟后出来"
+      case .failed(let why), .unsupported(let why): state.toast = why
+      }
+    }
+  }
+}
+
+/// 新的双周开始了 (2026-11-02). The 8:00 plan waits for it: a plan made before
+/// the 双周 is set has no 要务 and fills the day from Linear and the 作息.
+/// Suggests the review first (去复盘 → that 双周's 复盘 → 结束本期 → today's
+/// plan); generating today's plan anyway is one click.
+struct NewCyclePrompt: View {
+  @Environment(AppState.self) private var state
+  let notice: NewCycleNotice
+
+  @State private var isStarting = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Metrics.md) {
+      VStack(alignment: .leading, spacing: Metrics.xxs) {
+        Text("新的双周开始了").font(Typo.heading).foregroundStyle(Palette.ink)
+        Text("上一期 \(notice.previous) 已经结束，这一期的要务还没定。建议先复盘上一期，再生成新双周的要务，最后生成今天的计划——不然今天的计划只能从 Linear 和作息里凑。")
+          .font(Typo.body).foregroundStyle(Palette.ink2)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      HStack {
+        Button("稍后") { state.answerNewCycle(notice) }
+          .buttonStyle(QuietButtonStyle(tone: .neutral))
+          .keyboardShortcut(.cancelAction)
+        Button(isStarting ? "生成中…" : "直接生成今天的计划", action: generate)
+          .buttonStyle(QuietButtonStyle(tone: .neutral))
+          .disabled(isStarting)
+          .help(state.hasPlan ? "今天已经有一份计划，这会重新生成。" : "用模型额度，飞书也会收到一条。")
+        Spacer()
+        Button("去复盘") { state.goSetNewCycle(notice) }
+          .buttonStyle(MossButtonStyle(prominent: true))
+          .keyboardShortcut(.defaultAction)
+      }
+    }
+    .padding(Metrics.lg)
+    .frame(width: 460)
+    .background(Palette.paper)
+    .interactiveDismissDisabled(true)
+  }
+
+  private func generate() {
+    isStarting = true
+    Task {
+      let outcome = await state.generatePlan()
+      isStarting = false
+      state.answerNewCycle(notice)
+      switch outcome {
+      case .ok(let message): state.toast = message ?? "已让 daily_plan 跑起来了"
+      case .failed(let why), .unsupported(let why): state.toast = why
+      }
+    }
+  }
+}

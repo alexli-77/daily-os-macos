@@ -66,6 +66,9 @@ struct TodayPlanResponse: Decodable {
   struct LastRun: Decodable { let status: String; let startedAt: String; let error: String? }
   let lastRun: LastRun?
   let today: String
+  /// A new 双周 is due and unset: the one that ended.
+  struct NewCycle: Decodable { let previousId: String; let previous: String }
+  let newCycle: NewCycle?
 }
 
 /// What Today needs to draw its plan column.
@@ -81,6 +84,7 @@ public struct TodayPlan: Sendable, Equatable {
   public let staleCaptures: [StaleCapture]
   /// Set when today's latest daily_plan run failed.
   public let lastRunFailure: PlanRunFailure?
+  public var newCycle: NewCycleNotice?
 
   public init(
     items: [TodoItem],
@@ -106,13 +110,16 @@ extension DailyOSClient {
       guard run.status == "failed", let startedAt = TodoWireDate.timestamp(run.startedAt) else { return nil }
       return PlanRunFailure(startedAt: startedAt, reason: Self.runFailureReason(run.error))
     }
+    let newCycle = response.newCycle.map { NewCycleNotice(previousID: $0.previousId, previous: $0.previous, today: response.today) }
     guard let plan = response.plan else {
-      return TodayPlan(items: [], staleDate: nil, hasPlan: false, lastRunFailure: failure)
+      var empty = TodayPlan(items: [], staleDate: nil, hasPlan: false, lastRunFailure: failure)
+      empty.newCycle = newCycle
+      return empty
     }
 
     let items = Self.planItems(response.todos, feedback: response.feedback, notes: response.notes, carriedFrom: response.carriedFrom)
 
-    return TodayPlan(
+    var today = TodayPlan(
       items: items,
       staleDate: plan.stale ? plan.date : nil,
       hasPlan: true,
@@ -120,6 +127,8 @@ extension DailyOSClient {
       staleCaptures: (response.staleCaptures ?? []).map { StaleCapture(id: $0.id, text: $0.text, days: $0.days) },
       lastRunFailure: failure
     )
+    today.newCycle = newCycle
+    return today
   }
 
   /// A day's plan rows as the call sheet draws them. One mapping for today and
@@ -228,7 +237,7 @@ extension DailyOSClient {
   }
 
   /// 临时安排. Returns the service's summary and how to undo it.
-  public func addAdhoc(_ request: AdhocRequest) async throws -> (text: String?, undo: AdhocUndo?, suggest: PromoteSuggestion?) {
+  public func addAdhoc(_ request: AdhocRequest) async throws -> (text: String?, undo: AdhocUndo?, suggest: PromoteSuggestion?, impact: AdhocImpact?) {
     struct Displaced: Encodable { let candidateId: String; let rank: Int; let action: String }
     struct Body: Encodable {
       let title: String
@@ -238,16 +247,31 @@ extension DailyOSClient {
       let extra: Bool
       let displaced: [Displaced]
       let promote: Bool
+      let date: String?
     }
     struct Suggest: Decodable { let cycleId: String; let text: String; let days: Int; let minutes: Int? }
-    struct Response: Decodable { let text: String?; let undo: AdhocUndo?; let suggestPromote: Suggest? }
+    struct Squeezed: Decodable { let itemKey: String; let label: String; let minutes: Int }
+    struct Impact: Decodable { let text: String; let shortfall: Int; let squeezed: [Squeezed]; let cycleId: String? }
+    struct Response: Decodable { let text: String?; let undo: AdhocUndo?; let suggestPromote: Suggest?; let impact: Impact? }
     let response: Response = try await post("/api/today/adhoc", body: Body(
       title: request.title, itemKey: request.itemKey, start: request.start, end: request.end, extra: request.extra,
       displaced: request.displaced.map { Displaced(candidateId: $0.candidateID, rank: $0.rank, action: $0.action.rawValue) },
-      promote: request.promote
+      promote: request.promote,
+      date: request.date
     ))
     let suggest = response.suggestPromote.map { PromoteSuggestion(cycleID: $0.cycleId, text: $0.text, days: $0.days, minutes: $0.minutes) }
-    return (response.text, response.undo, suggest)
+    let impact = response.impact.map {
+      AdhocImpact(text: $0.text, shortfall: $0.shortfall, squeezed: $0.squeezed.map { .init(itemKey: $0.itemKey, label: $0.label, minutes: $0.minutes) }, cycleID: $0.cycleId)
+    }
+    return (response.text, response.undo, suggest, impact)
+  }
+
+  /// 顺到明天 for the 要务 a 临时安排 crowded out of today.
+  public func deferSqueezed(itemKeys: [String]) async throws -> String? {
+    struct Body: Encodable { let itemKeys: [String] }
+    struct Response: Decodable { let text: String? }
+    let response: Response = try await post("/api/cycles/schedule/defer", body: Body(itemKeys: itemKeys))
+    return response.text
   }
 
   public func undoAdhoc(_ undo: AdhocUndo) async throws {

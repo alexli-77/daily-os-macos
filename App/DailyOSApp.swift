@@ -91,6 +91,7 @@ struct DailyOSApp: App {
       .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
         Task {
           await state?.refreshTeamQuietly()
+          await state?.refreshCyclesQuietly()
           // A day may have ended unclosed while the app sat in the background.
           await state?.loadPendingWrapups()
         }

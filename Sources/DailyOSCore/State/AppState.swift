@@ -82,6 +82,12 @@ open class AppState {
   /// False when no `daily_plan` has ever run, which wants a different empty
   /// state from "ran and produced nothing".
   public var hasPlan = true
+  /// Set while a new 双周 is due and unset (see `NewCycleNotice`).
+  public var newCycle: NewCycleNotice?
+  /// The day 新双周 was answered, so it asks once a day, not on every reload.
+  public var newCycleAnsweredOn: String? = UserDefaults.standard.string(forKey: "newCycleAnsweredOn") {
+    didSet { UserDefaults.standard.set(newCycleAnsweredOn, forKey: "newCycleAnsweredOn") }
+  }
 
   /// The work day the Today timeline lays items out across, from
   /// `user.rhythm.working_hours.start` (minutes from midnight). `nil` falls back
@@ -367,6 +373,16 @@ open class AppState {
     toast = "已记到收件箱"
   }
 
+  /// Text typed into a cycle section and not saved yet, by `draftKey`. On disk:
+  /// a restart, a reload or another button saving the same section must not
+  /// lose it (2026-11-02: an hour's 复盘, unsaved, was gone after 填进复盘
+  /// saved the section and the app was restarted).
+  public var sectionDrafts: [String: String] = (UserDefaults.standard.dictionary(forKey: "cycleSectionDrafts") as? [String: String]) ?? [:] {
+    didSet { UserDefaults.standard.set(sectionDrafts, forKey: "cycleSectionDrafts") }
+  }
+
+  public static func draftKey(cycleID: Cycle.ID, kind: CycleSectionKind) -> String { "\(cycleID)/\(kind.rawValue)" }
+
   open func updateSection(cycleID: Cycle.ID, kind: CycleSectionKind, body: String) {
     guard isViewingSelf,
           let cycleIndex = cycles.firstIndex(where: { $0.id == cycleID }),
@@ -636,6 +652,38 @@ open class AppState {
     return first
   }
 
+  /// 新的双周开始了 — asked after 清理 (yesterday is closed out first), on
+  /// today, once a day. 2026-11-02: the user wants it set in weekly before a
+  /// daily plan is made from it.
+  public var newCyclePrompt: NewCycleNotice? {
+    guard let notice = newCycle, cleanupPrompt == nil, newCycleAnsweredOn != notice.today else { return nil }
+    guard section == .today, !isViewingPast, isViewingSelf else { return nil }
+    return notice
+  }
+
+  /// Bumped to ask the 今天 screen for its 双周 view, like `dayViewRequests`.
+  public var cycleViewRequests = 0
+  /// The ended 双周 being reviewed for the new one: its 复盘 opens, comes into
+  /// view, and says what comes next. Cleared when 结束本期 finishes.
+  public var reviewingCycleID: Cycle.ID?
+
+  /// 去复盘 (2026-11-02, the user, refined): review first, then the new 双周's
+  /// 要务, then today. So: the ended 双周 in the 双周 view, open at its 复盘;
+  /// 结束本期 under it writes the next one; then today's plan is offered.
+  public func goSetNewCycle(_ notice: NewCycleNotice) {
+    newCycleAnsweredOn = notice.today
+    selectedCycleID = notice.previousID
+    reviewingCycleID = notice.previousID
+    section = .today
+    if !isViewingSelf { viewingMemberID = account.id }
+    cycleViewRequests += 1
+  }
+
+  /// 先生成今天的计划, or 稍后: asked again tomorrow.
+  public func answerNewCycle(_ notice: NewCycleNotice) {
+    newCycleAnsweredOn = notice.today
+  }
+
   /// 前往清理: the day, in the 日 view, as yourself.
   public func startCleanup(_ day: WrapupDay) async {
     section = .today
@@ -850,6 +898,14 @@ open class AppState {
 
   /// 加进要务: file `text` under a cycle's 要务.
   open func promote(cycleID: Cycle.ID, text: String) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  /// Set by an add that crowds out today's 要务; the window asks about it.
+  public var adhocImpact: AdhocImpact?
+
+  /// 顺到明天 for the 要务 an add crowded out.
+  open func deferSqueezed(_ impact: AdhocImpact) async -> ActionOutcome {
     .unsupported("这一版没有连接到服务。")
   }
 

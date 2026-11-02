@@ -30,8 +30,11 @@ public struct AdhocRequest: Sendable, Equatable {
   public let displaced: [Displaced]
   /// 算进本期要务: file it under this cycle's 要务 first.
   public let promote: Bool
+  /// A day that is over, when it goes there instead of today. The service
+  /// writes it as that day's own row (a 作息 block), not as open work.
+  public let date: String?
 
-  public init(title: String, itemKey: String?, start: String, end: String, extra: Bool, displaced: [Displaced], promote: Bool = false) {
+  public init(title: String, itemKey: String?, start: String, end: String, extra: Bool, displaced: [Displaced], promote: Bool = false, date: String? = nil) {
     self.title = title
     self.itemKey = itemKey
     self.start = start
@@ -39,6 +42,7 @@ public struct AdhocRequest: Sendable, Equatable {
     self.extra = extra
     self.displaced = displaced
     self.promote = promote
+    self.date = date
   }
 }
 
@@ -64,7 +68,10 @@ public struct AdhocUndo: Codable, Sendable, Equatable {
     public let rank: Int
   }
 
-  public let captureId: String
+  /// Today's add: the capture. A past day's add has none — it is `blockId` on `date`.
+  public let captureId: String?
+  public let date: String?
+  public let blockId: String?
   public let clearId: String?
   public let sessionId: String?
   public let displaced: [Displaced]
@@ -118,6 +125,21 @@ public struct CloseCycleStatus: Sendable, Equatable {
 extension RetroText {
   /// The line the retro template asks this of.
   public static let unplannedLabel = "计划外吃掉时间的事："
+
+  /// Whether the 复盘 says something of the user's own: what is left once the
+  /// template's headings and labels are taken out. The 总结 waits for it.
+  public static func isWritten(_ retro: String?) -> Bool {
+    guard let retro else { return false }
+    let labels = ["情绪：", "精力：", "外部压力：", unplannedLabel]
+    let headings = ["😄状态", "👍🏻做的好", "💪🏻待改进", "状态", "做的好", "待改进"]
+    let own = retro.components(separatedBy: "\n").map { line -> String in
+      var text = line.trimmingCharacters(in: .whitespaces)
+      if headings.contains(text) { return "" }
+      for label in labels where text.hasPrefix(label) { text = String(text.dropFirst(label.count)) }
+      return text.trimmingCharacters(in: .whitespaces)
+    }
+    return own.joined().count >= 8
+  }
 }
 
 /// Filling the retro's 计划外 line from the system's count.
@@ -133,5 +155,34 @@ public enum RetroText {
     }
     let trimmed = retro.trimmingCharacters(in: .whitespacesAndNewlines)
     return trimmed.isEmpty ? unplannedLabel + summary : trimmed + "\n\n" + unplannedLabel + summary
+  }
+}
+
+/// A 临时安排 that crowds out today's 要务 (2026-11-02): what it took, what no
+/// longer fits, and the 双周 to rearrange. The service measures it with the add.
+public struct AdhocImpact: Sendable, Equatable, Identifiable {
+  public struct Squeezed: Sendable, Equatable {
+    public let itemKey: String
+    public let label: String
+    public let minutes: Int
+    public init(itemKey: String, label: String, minutes: Int) {
+      self.itemKey = itemKey
+      self.label = label
+      self.minutes = minutes
+    }
+  }
+
+  public let text: String
+  public let shortfall: Int
+  public let squeezed: [Squeezed]
+  public let cycleID: String?
+
+  public var id: String { text }
+
+  public init(text: String, shortfall: Int, squeezed: [Squeezed], cycleID: String?) {
+    self.text = text
+    self.shortfall = shortfall
+    self.squeezed = squeezed
+    self.cycleID = cycleID
   }
 }

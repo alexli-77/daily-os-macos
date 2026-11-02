@@ -158,6 +158,8 @@ struct CyclePlanningDTO: Decodable {
 struct GenerateCycleReviewRequest: Encodable {
   let id: String
   let save: Bool
+  /// 生成总结 pressed on purpose: a 总结 already there is replaced.
+  let replace: Bool
 }
 
 struct GenerateCycleReviewResponse: Decodable {
@@ -434,7 +436,7 @@ extension DailyOSClient {
   /// see the caller, which says so rather than reporting a failure.
   @discardableResult
   public func generateCycleReview(cycleID: String) async throws -> Int {
-    let request = GenerateCycleReviewRequest(id: cycleID, save: true)
+    let request = GenerateCycleReviewRequest(id: cycleID, save: true, replace: true)
     let response: GenerateCycleReviewResponse = try await post(
       "/api/cycles/review",
       body: request,

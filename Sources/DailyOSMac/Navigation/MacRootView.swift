@@ -41,8 +41,14 @@ struct MacRootView: View {
     // steps aside while that day is open in the 日 view, where the cleaning
     // happens. The binding ignores writes — the day leaves the list only when
     // it is cleaned or put down. See `CleanupViews.swift`.
-    .sheet(item: Binding(get: { state.cleanupPrompt }, set: { _ in })) { day in
-      CleanupPrompt(day: day).environment(state)
+    // Then 新的双周开始了, once a day (`NewCyclePrompt`). One sheet for both:
+    // two `.sheet`s on one view fight over which is shown.
+    .sheet(item: Binding(get: { RootPrompt(state) }, set: { _ in })) { prompt in
+      switch prompt {
+      case .cleanup(let day): CleanupPrompt(day: day).environment(state)
+      case .newCycle(let notice): NewCyclePrompt(notice: notice).environment(state)
+      case .impact(let impact): AdhocImpactPrompt(impact: impact).environment(state)
+      }
     }
     // The chat panel drops from the top on the right, over the detail column —
     // same conversation as the Chat section, reachable from anywhere without
