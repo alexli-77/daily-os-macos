@@ -259,7 +259,7 @@ private struct CycleTrend: View {
         if let latest = plotted.last {
           Text(latest.completion.percentText)
             .font(Typo.tabularCaption.weight(.medium))
-            .foregroundStyle(Palette.moss)
+            .foregroundStyle(Palette.mint600)
         }
       }
 
@@ -823,7 +823,7 @@ private struct AlignedPriorities: View {
       let isOpen = expandedIDs.contains(objective.id)
       VStack(alignment: .leading, spacing: Metrics.xxs) {
         HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
-          Text(objective.id).font(Typo.mono).foregroundStyle(Palette.moss)
+          Text(objective.id).font(Typo.mono).foregroundStyle(Palette.mint600)
           Text(objective.title).inkStyle(Typo.heading)
         }
         // Text only — no bars, no percentages, no health pills. This column says
@@ -1378,6 +1378,7 @@ struct CycleSections: View {
   @State private var opensReview: Bool?
 
   var body: some View {
+    ScrollViewReader { proxy in
     VStack(alignment: .leading, spacing: Metrics.md) {
       if let problem = cycle.frontmatterError {
         BrokenFrontmatterBanner(cycle: cycle, problem: problem)
@@ -1386,7 +1387,8 @@ struct CycleSections: View {
         Panel { CycleTrend().padding(-Metrics.sm) }
       }
       section(.priorities)
-      if opensReview ?? isClosing {
+      if opensReview ?? (isClosing || isReviewing) {
+        if isReviewing { ReviewStepsBanner().id(Self.reviewAnchor) }
         UnplannedPanel(cycle: cycle, editable: editable)
         section(.retro)
         if editable { CloseCyclePanel(cycle: cycle) }
@@ -1411,7 +1413,18 @@ struct CycleSections: View {
       }
     }
     .onChange(of: cycle.id) { opensReview = nil }
+    .task(id: isReviewing) {
+      guard isReviewing else { return }
+      // After the panels are laid out, or there is nothing to scroll to yet.
+      try? await Task.sleep(for: .milliseconds(250))
+      withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(Self.reviewAnchor, anchor: .top) }
+    }
+    }
   }
+
+  private static let reviewAnchor = "cycle-review"
+  /// Opened from 新的双周开始了 to review this 双周 before the next one.
+  private var isReviewing: Bool { state.reviewingCycleID == cycle.id && editable }
 
   /// The last two days of the cycle, or after it.
   private var isClosing: Bool {
@@ -1427,6 +1440,25 @@ struct CycleSections: View {
     } else {
       MissingSectionPanel(cycle: cycle, kind: kind, editable: editable)
     }
+  }
+}
+
+/// The order, said where it happens: review this 双周, then 结束本期 writes the
+/// next one's 要务, then today's plan (offered when 结束本期 is done).
+private struct ReviewStepsBanner: View {
+  var body: some View {
+    HStack(alignment: .top, spacing: Metrics.sm) {
+      Image(systemName: "arrow.triangle.2.circlepath").foregroundStyle(Palette.mint600)
+      VStack(alignment: .leading, spacing: 2) {
+        Text("新的双周：先复盘这一期").font(Typo.bodyStrong).foregroundStyle(Palette.ink)
+        Text("① 写下面的复盘 → ② 点「结束本期」，写总结、起草下一期要务 → ③ 好了以后生成今天的计划。")
+          .font(Typo.caption).foregroundStyle(Palette.ink2)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(Metrics.sm)
+    .background(Palette.mint50, in: RoundedRectangle(cornerRadius: Metrics.radiusMedium, style: .continuous))
   }
 }
 
@@ -1639,6 +1671,18 @@ private struct CloseCyclePanel: View {
       await state.reloadToday()
       if let error = status.error {
         state.toast = "结束本期没做完：\(error)"
+      } else if state.reviewingCycleID == cycle.id {
+        // The last step of 新的双周: the 要务 are there, today can be planned from them.
+        state.reviewingCycleID = nil
+        let store = state
+        state.toast("下一期要务起草好了，现在生成今天的计划？", action: "生成今天的计划") {
+          Task { @MainActor in
+            switch await store.generatePlan() {
+            case .ok(let message): store.toast = message ?? "已让 daily_plan 跑起来了"
+            case .failed(let why), .unsupported(let why): store.toast = why
+            }
+          }
+        }
       } else {
         state.toast = "本期收尾好了，去看总结和下期要务" + (status.text.map { "（\($0.split(separator: "\n").count) 处写入）" } ?? "")
       }

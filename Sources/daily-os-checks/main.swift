@@ -1430,7 +1430,8 @@ check(cycleStore.newCyclePrompt == nil, "先清理昨天，再问新双周")
 cycleStore.pendingWrapups = []
 check(cycleStore.newCyclePrompt?.previous == "10.19-11.1", "清理完问新双周")
 cycleStore.goSetNewCycle(cycleStore.newCycle!)
-check(cycleStore.section == .cycles && cycleStore.selectedCycleID == "2026-10-19_10.19-11.1", "去定新双周打开上一期")
+check(cycleStore.section == .today && cycleStore.cycleViewRequests == 1 && cycleStore.selectedCycleID == "2026-10-19_10.19-11.1"
+      && cycleStore.reviewingCycleID == "2026-10-19_10.19-11.1", "去复盘打开上一期的双周视图，在复盘那里")
 cycleStore.section = .today
 check(cycleStore.newCyclePrompt == nil, "答过了今天不再问")
 cycleStore.newCycleAnsweredOn = nil

@@ -116,6 +116,8 @@ struct TodayScreen: View {
     .onReceive(clock) { now = $0 }
     // 前往清理 opens a day here, in 日 — whatever this screen was showing.
     .onChange(of: state.dayViewRequests) { view = .day }
+    // 去复盘 from 新的双周开始了: the ended 双周, at its 复盘.
+    .onChange(of: state.cycleViewRequests) { view = .cycle }
     // 看谁的 → a teammate: their today first, like opening a colleague's calendar.
     .onChange(of: state.viewingMemberID) { Task { await state.showTeammateDay(nil) } }
     // Their list moved (the minute poll, 更新): read the shown day again.

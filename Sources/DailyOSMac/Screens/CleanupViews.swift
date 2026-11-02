@@ -186,7 +186,8 @@ enum RootPrompt: Identifiable {
 
 /// 新的双周开始了 (2026-11-02). The 8:00 plan waits for it: a plan made before
 /// the 双周 is set has no 要务 and fills the day from Linear and the 作息.
-/// Suggests weekly first; generating today's plan anyway is one click.
+/// Suggests the review first (去复盘 → that 双周's 复盘 → 结束本期 → today's
+/// plan); generating today's plan anyway is one click.
 struct NewCyclePrompt: View {
   @Environment(AppState.self) private var state
   let notice: NewCycleNotice
@@ -197,7 +198,7 @@ struct NewCyclePrompt: View {
     VStack(alignment: .leading, spacing: Metrics.md) {
       VStack(alignment: .leading, spacing: Metrics.xxs) {
         Text("新的双周开始了").font(Typo.heading).foregroundStyle(Palette.ink)
-        Text("上一期 \(notice.previous) 已经结束，这一期的要务还没定。建议先去周期页做双周复盘、定下这期要务，再生成今天的计划——不然今天的计划只能从 Linear 和作息里凑。")
+        Text("上一期 \(notice.previous) 已经结束，这一期的要务还没定。建议先复盘上一期，再生成新双周的要务，最后生成今天的计划——不然今天的计划只能从 Linear 和作息里凑。")
           .font(Typo.body).foregroundStyle(Palette.ink2)
           .fixedSize(horizontal: false, vertical: true)
       }
@@ -210,7 +211,7 @@ struct NewCyclePrompt: View {
           .disabled(isStarting)
           .help(state.hasPlan ? "今天已经有一份计划，这会重新生成。" : "用模型额度，飞书也会收到一条。")
         Spacer()
-        Button("去定新双周") { state.goSetNewCycle(notice) }
+        Button("去复盘") { state.goSetNewCycle(notice) }
           .buttonStyle(MossButtonStyle(prominent: true))
           .keyboardShortcut(.defaultAction)
       }

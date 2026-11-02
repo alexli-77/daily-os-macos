@@ -651,11 +651,22 @@ open class AppState {
     return notice
   }
 
-  /// 去定新双周: the ended 双周's page, where 结束本期 writes the next one.
+  /// Bumped to ask the 今天 screen for its 双周 view, like `dayViewRequests`.
+  public var cycleViewRequests = 0
+  /// The ended 双周 being reviewed for the new one: its 复盘 opens, comes into
+  /// view, and says what comes next. Cleared when 结束本期 finishes.
+  public var reviewingCycleID: Cycle.ID?
+
+  /// 去复盘 (2026-11-02, the user, refined): review first, then the new 双周's
+  /// 要务, then today. So: the ended 双周 in the 双周 view, open at its 复盘;
+  /// 结束本期 under it writes the next one; then today's plan is offered.
   public func goSetNewCycle(_ notice: NewCycleNotice) {
     newCycleAnsweredOn = notice.today
     selectedCycleID = notice.previousID
-    section = .cycles
+    reviewingCycleID = notice.previousID
+    section = .today
+    if !isViewingSelf { viewingMemberID = account.id }
+    cycleViewRequests += 1
   }
 
   /// 先生成今天的计划, or 稍后: asked again tomorrow.
