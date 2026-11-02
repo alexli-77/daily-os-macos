@@ -373,6 +373,16 @@ open class AppState {
     toast = "已记到收件箱"
   }
 
+  /// Text typed into a cycle section and not saved yet, by `draftKey`. On disk:
+  /// a restart, a reload or another button saving the same section must not
+  /// lose it (2026-11-02: an hour's 复盘, unsaved, was gone after 填进复盘
+  /// saved the section and the app was restarted).
+  public var sectionDrafts: [String: String] = (UserDefaults.standard.dictionary(forKey: "cycleSectionDrafts") as? [String: String]) ?? [:] {
+    didSet { UserDefaults.standard.set(sectionDrafts, forKey: "cycleSectionDrafts") }
+  }
+
+  public static func draftKey(cycleID: Cycle.ID, kind: CycleSectionKind) -> String { "\(cycleID)/\(kind.rawValue)" }
+
   open func updateSection(cycleID: Cycle.ID, kind: CycleSectionKind, body: String) {
     guard isViewingSelf,
           let cycleIndex = cycles.firstIndex(where: { $0.id == cycleID }),

@@ -556,9 +556,15 @@ private struct CycleSectionPanel: View {
   let editable: Bool
 
   @State private var isEditing = false
-  /// What is in the text box, in the box's own form (plain lines for 要务).
-  @State private var draft: String?
   @State private var showsDraftComparison = false
+
+  private var draftKey: String { AppState.draftKey(cycleID: cycle.id, kind: section.kind) }
+  /// What is in the text box, in the box's own form (plain lines for 要务).
+  /// Kept in `AppState.sectionDrafts`, so it outlives this view and the app.
+  private var draft: String? {
+    get { state.sectionDrafts[draftKey] }
+    nonmutating set { state.sectionDrafts[draftKey] = newValue }
+  }
   @State private var confirmingReplan = false
 
   /// 要务 in plain lines, when the file can be carried back from them.
@@ -601,7 +607,8 @@ private struct CycleSectionPanel: View {
         } else if isEditing {
           TextEditor(text: Binding(
             get: { draft ?? editableBody },
-            set: { draft = $0 }
+            // Back to what is saved: nothing left to keep.
+            set: { draft = $0 == editableBody ? nil : $0 }
           ))
           .font(Typo.body)
           .lineSpacing(4)
@@ -624,9 +631,14 @@ private struct CycleSectionPanel: View {
           Text("更新于 \(Fmt.stamp(section.updatedAt))").mutedStyle()
           if isDirty {
             Pill("未保存", tone: .warn)
+            if !isEditing {
+              Button("继续编辑") { isEditing = true }.buttonStyle(QuietButtonStyle(tone: .accent))
+            }
           }
         }
       }
+      // A draft left from before (a restart, another window) opens where it was.
+      .onAppear { if isDirty { isEditing = true } }
     } actions: {
       if section.isTemplate {
         Pill("模板", tone: .neutral)
@@ -651,6 +663,11 @@ private struct CycleSectionPanel: View {
           .toggleStyle(.button)
 
         if isEditing {
+          if isDirty {
+            Button("放弃修改") { draft = nil }
+              .buttonStyle(QuietButtonStyle(tone: .neutral))
+              .help("回到保存过的版本")
+          }
           Button("保存") {
             state.updateSection(cycleID: cycle.id, kind: section.kind, body: savedBody)
             draft = nil
@@ -1599,6 +1616,14 @@ private struct UnplannedPanel: View {
 
   private func fillRetro(_ summary: String) {
     guard let retro = cycle.section(.retro) else { return }
+    // Into what is being written, when something is: saving the file's version
+    // here is what wiped an unsaved 复盘 (2026-11-02).
+    let key = AppState.draftKey(cycleID: cycle.id, kind: .retro)
+    if let draft = state.sectionDrafts[key] {
+      state.sectionDrafts[key] = RetroText.fillingUnplanned(draft, with: summary)
+      state.toast = "填进正在写的复盘了，记得保存"
+      return
+    }
     state.updateSection(cycleID: cycle.id, kind: .retro, body: RetroText.fillingUnplanned(retro.body, with: summary))
     state.toast = "写进复盘了"
   }
@@ -1634,7 +1659,7 @@ private struct CloseCyclePanel: View {
                ? "\(doc?.doneCount ?? 0) / \(doc?.trackedCount ?? 0) 完成"
                : "还有 \(unmarked.count) 条没标：\(unmarked.prefix(3).map(\.text).joined(separator: "、"))\(unmarked.count > 3 ? "…" : "")。在上面的要务里点圆点。")
         step(2, "写复盘", done: retroWritten,
-             detail: retroWritten ? "写好了" : "在上面的复盘里写，写完点「保存」。")
+             detail: retroWritten ? "写好了" : (state.sectionDrafts[AppState.draftKey(cycleID: cycle.id, kind: .retro)] != nil ? "写了还没保存，在上面点「保存」。" : "在上面的复盘里写，写完点「保存」。"))
         step(3, "生成总结", done: hasReview, detail: hasReview ? "已生成，在下面。复盘改过可以重新生成。" : "按你的完成度和复盘写这一期的总结，一两分钟。") {
           Button(reviewing ? "生成中…" : (hasReview ? "重新生成总结" : "生成总结"), action: generateReview)
             .buttonStyle(MossButtonStyle(prominent: !hasReview))

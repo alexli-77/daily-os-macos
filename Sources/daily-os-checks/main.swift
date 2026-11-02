@@ -1447,6 +1447,14 @@ impactStore.newCycle = NewCycleNotice(previousID: "p", previous: "10.19-11.1", t
 impactStore.adhocImpact = AdhocImpact(text: "这条占了 3h", shortfall: 120, squeezed: [.init(itemKey: "bbbbbbbb", label: "iOS store 宣传图", minutes: 90)], cycleID: "c")
 check(impactStore.adhocImpact != nil && impactStore.newCycle != nil, "挤占提醒和新双周可以同时在")
 
+// 没保存的复盘留在磁盘上，换个 AppState（重开 app）还在。
+let draftKey = AppState.draftKey(cycleID: "c-draft-check", kind: .retro)
+AppState().sectionDrafts[draftKey] = "写了一半"
+check(AppState().sectionDrafts[draftKey] == "写了一半", "没保存的复盘重开还在")
+let cleaner = AppState()
+cleaner.sectionDrafts[draftKey] = nil
+check(AppState().sectionDrafts[draftKey] == nil, "保存或放弃后清掉")
+
 // 往日新加一条：服务回的撤销没有 captureId，只有那天和那一块。
 let pastUndo = try? JSONDecoder().decode(AdhocUndo.self, from: Data(#"{"date":"2026-10-31","blockId":"add-1a2b3c4d","displaced":[]}"#.utf8))
 check(pastUndo?.blockId == "add-1a2b3c4d" && pastUndo?.date == "2026-10-31" && pastUndo?.captureId == nil, "往日新加一条的撤销能读")
@@ -1454,7 +1462,7 @@ let todayUndo = try? JSONDecoder().decode(AdhocUndo.self, from: Data(#"{"capture
 check(todayUndo?.captureId == "c1" && todayUndo?.date == nil, "今天的撤销照旧")
 
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态, 手打时间, 计划外与收尾, 更新检查, 往日可改, 日视图看往日, 时间列表定位, 清理, 看队友的一天, 往日新加, 新双周, 收尾四步, 挤占提醒")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态, 手打时间, 计划外与收尾, 更新检查, 往日可改, 日视图看往日, 时间列表定位, 清理, 看队友的一天, 往日新加, 新双周, 收尾四步, 挤占提醒, 复盘草稿")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")
