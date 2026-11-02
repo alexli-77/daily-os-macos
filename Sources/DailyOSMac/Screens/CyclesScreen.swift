@@ -557,6 +557,9 @@ private struct CycleSectionPanel: View {
 
   @State private var isEditing = false
   @State private var showsDraftComparison = false
+  /// Debounced autosave, so switching pages (or just pausing) never loses what
+  /// was typed — the draft already persists, this commits it to the file.
+  @State private var saveTask: Task<Void, Never>?
 
   private var draftKey: String { AppState.draftKey(cycleID: cycle.id, kind: section.kind) }
   /// What is in the text box, in the box's own form (plain lines for 要务).
@@ -607,8 +610,12 @@ private struct CycleSectionPanel: View {
         } else if isEditing {
           TextEditor(text: Binding(
             get: { draft ?? editableBody },
-            // Back to what is saved: nothing left to keep.
-            set: { draft = $0 == editableBody ? nil : $0 }
+            // Back to what is saved: nothing left to keep. Each edit also arms
+            // the autosave so a page switch a moment later cannot lose it.
+            set: {
+              draft = $0 == editableBody ? nil : $0
+              scheduleAutosave()
+            }
           ))
           .font(Typo.body)
           .lineSpacing(4)
@@ -639,6 +646,9 @@ private struct CycleSectionPanel: View {
       }
       // A draft left from before (a restart, another window) opens where it was.
       .onAppear { if isDirty { isEditing = true } }
+      // Leaving the page commits whatever is unsaved right now, so nothing is
+      // lost between the last keystroke and the debounce.
+      .onDisappear { flushAutosave() }
     } actions: {
       if section.isTemplate {
         Pill("模板", tone: .neutral)
@@ -678,6 +688,31 @@ private struct CycleSectionPanel: View {
         }
       }
     }
+  }
+
+  /// Save ~1.2s after the last keystroke.
+  private func scheduleAutosave() {
+    saveTask?.cancel()
+    saveTask = Task {
+      try? await Task.sleep(for: .seconds(1.2))
+      if Task.isCancelled { return }
+      autosave()
+    }
+  }
+
+  /// Commit the draft now, if there is one to commit — unless a planner run is in
+  /// flight, where the pending-draft comparison owns the section.
+  private func autosave() {
+    guard isDirty, section.pendingDraft == nil, !state.cyclesPlanningInFlight else { return }
+    state.updateSection(cycleID: cycle.id, kind: section.kind, body: savedBody)
+    // `updateSection` updates the body optimistically, so the draft now matches
+    // what is saved and can be dropped — the text box keeps showing the same text.
+    draft = nil
+  }
+
+  private func flushAutosave() {
+    saveTask?.cancel()
+    autosave()
   }
 
   private func replan() {
