@@ -26,11 +26,33 @@ struct JournalScreen: View {
   private var fontChoice: JournalFont { JournalFont(rawValue: fontRaw) ?? .system }
 
   var body: some View {
-    ScreenScaffold("日记") {
-      HStack(alignment: .top, spacing: Metrics.md) {
-        list.frame(width: 220)
-        paper.frame(maxWidth: .infinity)
-      }
+    HStack(spacing: 0) {
+      list
+      detail.frame(maxWidth: .infinity)
+    }
+    .background(Palette.paper)
+    .task {
+      guard !loaded else { return }
+      let loadedEntry = await state.loadJournalEntry(date: nil)
+      today = loadedEntry?.date ?? ""
+      selected = today
+      set(loadedEntry)
+      entries = await state.loadJournalList()
+      loaded = true
+      await state.refreshWeather()
+    }
+  }
+
+  /// Titled with the day you picked, not "日记": the list column already says
+  /// which section this is, same split as every other list–detail screen.
+  private var detailTitle: String {
+    if selected.isEmpty { return "日记" }
+    return selected == today ? "今天" : Self.shortLabel(selected, today: today)
+  }
+
+  private var detail: some View {
+    ScreenScaffold(detailTitle) {
+      paper
     } toolbar: {
       Menu("字体") {
         ForEach(JournalFont.allCases) { option in
@@ -54,39 +76,22 @@ struct JournalScreen: View {
         .buttonStyle(MossButtonStyle())
         .disabled(!loaded || today.isEmpty || selected == today)
     }
-    .task {
-      guard !loaded else { return }
-      let loadedEntry = await state.loadJournalEntry(date: nil)
-      today = loadedEntry?.date ?? ""
-      selected = today
-      set(loadedEntry)
-      entries = await state.loadJournalList()
-      loaded = true
-      await state.refreshWeather()
-    }
   }
 
   // MARK: - Left: the days
 
   private var list: some View {
-    Panel {
-      VStack(alignment: .leading, spacing: 0) {
-        ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-          if index > 0 { PanelDivider() }
-          Button { open(row.date) } label: {
-            VStack(alignment: .leading, spacing: 2) {
-              Text(row.label)
-                .font(Typo.bodyStrong)
-                .foregroundStyle(row.date == selected ? Palette.ink : Palette.ink2)
-              Text(row.preview.isEmpty ? "还没写" : row.preview)
-                .mutedStyle(Typo.caption)
-                .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, Metrics.xs)
-            .contentShape(Rectangle())
+    ListColumn("日记") {
+      ForEach(rows) { row in
+        SelectableRow(isSelected: row.date == selected) {
+          open(row.date)
+        } content: {
+          VStack(alignment: .leading, spacing: 2) {
+            Text(row.label).inkStyle(Typo.bodyStrong)
+            Text(row.preview.isEmpty ? "还没写" : row.preview)
+              .mutedStyle(Typo.caption)
+              .lineLimit(1)
           }
-          .buttonStyle(.plain)
         }
       }
     }

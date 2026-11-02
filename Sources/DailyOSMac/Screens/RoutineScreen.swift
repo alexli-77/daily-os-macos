@@ -40,7 +40,7 @@ struct RoutineScreen: View {
 
   var body: some View {
     HStack(spacing: 0) {
-      ResizableListColumn(id: "routine") { periodList }
+      periodList
       Group {
         switch phase {
         case .loading:
@@ -83,39 +83,28 @@ struct RoutineScreen: View {
   // MARK: Period list
 
   private var periodList: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      HStack {
-        Text("作息").font(Typo.heading).foregroundStyle(Palette.ink)
-        Spacer()
-        Button { addPeriod() } label: { Image(systemName: "plus") }
-          .buttonStyle(QuietButtonStyle(tone: .neutral))
-          .help("新建一个时期的作息（复制当前这个）")
-      }
-      .padding(Metrics.md)
-      ScrollView {
-        LazyVStack(alignment: .leading, spacing: 2) {
-          ForEach(routine?.periods ?? []) { period in
-            SelectableRow(isSelected: period.id == currentPeriod?.id) {
-              selectedPeriodID = period.id
-              selectedDayTypeID = nil
-              selectedModeID = nil
-            } content: {
-              VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: Metrics.xxs) {
-                  Text(period.name).font(Typo.body).foregroundStyle(Palette.ink).lineLimit(1)
-                  if let today = routine?.today, period.contains(today) {
-                    Pill("现在", tone: .accent)
-                  }
-                }
-                Text("\(Self.short(period.from)) – \(Self.short(period.to))").font(Typo.caption).foregroundStyle(Palette.ink3)
+    ListColumn("作息") {
+      ForEach(routine?.periods ?? []) { period in
+        SelectableRow(isSelected: period.id == currentPeriod?.id) {
+          selectedPeriodID = period.id
+          selectedDayTypeID = nil
+          selectedModeID = nil
+        } content: {
+          VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: Metrics.xxs) {
+              Text(period.name).font(Typo.body).foregroundStyle(Palette.ink).lineLimit(1)
+              if let today = routine?.today, period.contains(today) {
+                Pill("现在", tone: .accent)
               }
             }
+            Text("\(Self.short(period.from)) – \(Self.short(period.to))").font(Typo.caption).foregroundStyle(Palette.ink3)
           }
         }
-        .padding(Metrics.xs)
       }
+    } trailing: {
+      Button { addPeriod() } label: { Image(systemName: "plus") }
+        .help("新建一个时期的作息（复制当前这个）")
     }
-    .background(Palette.paper)
   }
 
   // MARK: Detail

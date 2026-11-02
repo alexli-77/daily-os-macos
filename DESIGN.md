@@ -261,7 +261,7 @@ xxs 4   xs 8   sm 12   md 16   lg 24   xl 32   xxl 40
 | `EmptyState` | 图标 + 标题 + 一句解释 + 一个动作 |
 | `StatTile` | 一格统计。三四格横排就是原来整个 Dashboard |
 | `TwoColumns` | Mac 并排、手机堆叠 |
-| `ListColumn` / `SelectableRow` | 屏内 list-detail 的左栏 |
+| `ListColumn` / `SelectableRow` | 屏内 list-detail 的左栏。作息 / 日记 / 运行 / 产物 / 设置**全部**用它：同一个宽度（可拖，全 App 共享一个值，默认 260）、顶部是页面名 + 至多一个操作、行只用 `SelectableRow`。右侧标题写**选中的那一项**，不重复页面名 |
 
 **空状态永远不是空白页。** 说清原因，给出解决它的那一个动作。
 
