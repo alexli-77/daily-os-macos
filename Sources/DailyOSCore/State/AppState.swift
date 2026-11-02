@@ -891,6 +891,14 @@ open class AppState {
     .unsupported("这一版没有连接到服务。")
   }
 
+  /// Set by an add that crowds out today's 要务; the window asks about it.
+  public var adhocImpact: AdhocImpact?
+
+  /// 顺到明天 for the 要务 an add crowded out.
+  open func deferSqueezed(_ impact: AdhocImpact) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
   /// 结束本期: start the end-of-cycle run for this cycle.
   open func closeCycle(cycleID: Cycle.ID) async -> ActionOutcome {
     .unsupported("这一版没有连接到服务。")

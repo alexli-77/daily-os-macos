@@ -519,6 +519,8 @@ public final class LiveAppState: AppState {
     guard let client else { return (.failed("没有连接到服务。"), nil, nil) }
     do {
       let result = try await client.addAdhoc(request)
+      // Asked before anything else on the screen: it is about this add.
+      adhocImpact = result.impact
       await reload()
       if let date = request.date, viewedDate == date { await showDay(date) }
       return (.ok(result.text), result.undo, result.suggest)
@@ -559,6 +561,17 @@ public final class LiveAppState: AppState {
   public override func closeCycleStatus(cycleID: Cycle.ID) async -> CloseCycleStatus? {
     guard let client else { return nil }
     return try? await client.closeCycleStatus(cycleID: cycleID)
+  }
+
+  public override func deferSqueezed(_ impact: AdhocImpact) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      let message = try await client.deferSqueezed(itemKeys: impact.squeezed.map(\.itemKey))
+      await reload()
+      return .ok(message)
+    } catch {
+      return .failed((error as? ClientError)?.errorDescription ?? error.localizedDescription)
+    }
   }
 
   public override func undoAdhoc(_ undo: AdhocUndo) async -> ActionOutcome {

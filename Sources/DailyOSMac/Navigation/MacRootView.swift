@@ -47,6 +47,7 @@ struct MacRootView: View {
       switch prompt {
       case .cleanup(let day): CleanupPrompt(day: day).environment(state)
       case .newCycle(let notice): NewCyclePrompt(notice: notice).environment(state)
+      case .impact(let impact): AdhocImpactPrompt(impact: impact).environment(state)
       }
     }
     // The chat panel drops from the top on the right, over the detail column —

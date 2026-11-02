@@ -1437,6 +1437,16 @@ check(cycleStore.newCyclePrompt == nil, "答过了今天不再问")
 cycleStore.newCycleAnsweredOn = nil
 UserDefaults.standard.removeObject(forKey: "newCycleAnsweredOn")
 
+// 收尾本期：复盘只是模板不算写了，写了自己的话才算。
+check(!RetroText.isWritten(nil) && !RetroText.isWritten("😄状态\n情绪：\n精力：\n外部压力：\n计划外吃掉时间的事：\n\n👍🏻做的好\n\n💪🏻待改进"), "空复盘模板不算写了")
+check(RetroText.isWritten("😄状态\n情绪：挺好\n👍🏻做的好\n1. 从 10.22 开始持续输出 Cutto 视频"), "写了自己的话才算")
+
+// 挤占提醒：刚加的这条挤掉了要务，先问它，再问清理和新双周。
+let impactStore = AppState()
+impactStore.newCycle = NewCycleNotice(previousID: "p", previous: "10.19-11.1", today: "2026-11-02")
+impactStore.adhocImpact = AdhocImpact(text: "这条占了 3h", shortfall: 120, squeezed: [.init(itemKey: "bbbbbbbb", label: "iOS store 宣传图", minutes: 90)], cycleID: "c")
+check(impactStore.adhocImpact != nil && impactStore.newCycle != nil, "挤占提醒和新双周可以同时在")
+
 // 往日新加一条：服务回的撤销没有 captureId，只有那天和那一块。
 let pastUndo = try? JSONDecoder().decode(AdhocUndo.self, from: Data(#"{"date":"2026-10-31","blockId":"add-1a2b3c4d","displaced":[]}"#.utf8))
 check(pastUndo?.blockId == "add-1a2b3c4d" && pastUndo?.date == "2026-10-31" && pastUndo?.captureId == nil, "往日新加一条的撤销能读")
@@ -1444,7 +1454,7 @@ let todayUndo = try? JSONDecoder().decode(AdhocUndo.self, from: Data(#"{"capture
 check(todayUndo?.captureId == "c1" && todayUndo?.date == nil, "今天的撤销照旧")
 
 if failures.isEmpty {
-  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态, 手打时间, 计划外与收尾, 更新检查, 往日可改, 日视图看往日, 时间列表定位, 清理, 看队友的一天, 往日新加, 新双周")
+  print("ok — 4 avatar fixtures, 400 generated seeds, formatting, locale, 要务 parser round-trip, 周期分组与完成率, 环形图角度, 进度条排序与宽度, 重要程度分档, 拖动重排, 计划指纹, 刷新节流, 后台刷新写入面, 队友周期归属, 分块读取失败, 通告单时段推算, 钉住的行, 重叠分列, 往日, 倒数日, 要务与 OKR 对齐, 计划来源列, 自己定 MIT, 双周排期, 排期周视图, KR 标签, 作息, 排期的每一步, 撤销, 回归集, 要务纯文本编辑, 未做状态, 手打时间, 计划外与收尾, 更新检查, 往日可改, 日视图看往日, 时间列表定位, 清理, 看队友的一天, 往日新加, 新双周, 收尾四步, 挤占提醒")
 } else {
   for failure in failures { print("FAIL: \(failure)") }
   print("\(failures.count) check(s) failed")

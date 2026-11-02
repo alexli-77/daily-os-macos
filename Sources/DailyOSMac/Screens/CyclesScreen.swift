@@ -508,7 +508,7 @@ private struct MissingSectionPanel: View {
     case .retro:
       "还没有复盘。复盘要你自己写，这里可以放一个空模板。规划下一期时会读三个小标题下的内容。"
     case .review:
-      "还没有总结。写完复盘后点上面的「结束本期」：写总结、起草下期要务，几分钟。"
+      "还没有总结。标完要务的完成度、写完复盘后，点上面的「生成总结」。"
     }
   }
 
@@ -518,8 +518,7 @@ private struct MissingSectionPanel: View {
     switch kind {
     case .priorities: isCurrent ? (title: "重新生成要务", busy: "生成中…（约十分钟）") : nil
     case .retro: (title: "放一个复盘模板", busy: "写入中…")
-    // 结束本期 writes it, together with the next cycle's 要务: one entry for the
-    // end of a cycle, not two that overwrite each other.
+    // 生成总结 is step ③ of 收尾本期, above, gated on the 完成度 and the 复盘.
     case .review: nil
     }
   }
@@ -1451,7 +1450,7 @@ private struct ReviewStepsBanner: View {
       Image(systemName: "arrow.triangle.2.circlepath").foregroundStyle(Palette.mint600)
       VStack(alignment: .leading, spacing: 2) {
         Text("新的双周：先复盘这一期").font(Typo.bodyStrong).foregroundStyle(Palette.ink)
-        Text("① 写下面的复盘 → ② 点「结束本期」，写总结、起草下一期要务 → ③ 好了以后生成今天的计划。")
+        Text("① 标完要务的完成度 → ② 写复盘 → ③ 生成总结 → ④ 生成下一期要务，最后生成今天的计划。")
           .font(Typo.caption).foregroundStyle(Palette.ink2)
           .fixedSize(horizontal: false, vertical: true)
       }
@@ -1605,32 +1604,53 @@ private struct UnplannedPanel: View {
   }
 }
 
-// MARK: - 结束本期
+// MARK: - 收尾本期
 
-/// The end of a cycle, in one press: the 总结 (a draft beside the old one when
-/// there is one), the next cycle's 要务 and the KR progress. It is the same
-/// run the chat's 双周复盘 was, aimed at this cycle. It takes minutes, so the
-/// panel polls until it is done.
+/// The end of a cycle, in the user's order (2026-11-02):
+///
+///   ① mark how each 要务 went → ② write the 复盘 → ③ 生成总结 → ④ 生成下一期要务.
+///
+/// Each step waits for the one before it. Until then 结束本期 did ③ and ④ in
+/// one model run — and 新建一期 did too — so a 总结 appeared before the 复盘
+/// was written, and the next cycle began without the user having looked back.
 private struct CloseCyclePanel: View {
   @Environment(AppState.self) private var state
   let cycle: Cycle
 
+  @State private var reviewing = false
   @State private var running = false
-  @State private var startedHere = false
+
+  private var doc: PrioritiesDocument? { cycle.section(.priorities)?.priorities }
+  private var unmarked: [PriorityItem] { doc?.allItems.filter { $0.status == nil } ?? [] }
+  private var marked: Bool { doc != nil && unmarked.isEmpty }
+  private var retroWritten: Bool { RetroText.isWritten(cycle.section(.retro)?.body) }
+  private var hasReview: Bool { !(cycle.section(.review)?.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
   var body: some View {
-    Panel("结束本期") {
+    Panel("收尾本期") {
       VStack(alignment: .leading, spacing: Metrics.sm) {
-        Text("写完复盘再点。会写这一期的总结、起草下一期的要务、更新 KR 进度，要几分钟。已经有总结时，新的放成草稿让你对比。")
-          .mutedStyle(Typo.body)
-          .fixedSize(horizontal: false, vertical: true)
-        HStack(spacing: Metrics.sm) {
-          Button(running ? "收尾中…" : "结束本期") { start() }
-            .buttonStyle(MossButtonStyle(prominent: true))
-            .disabled(running)
-          if running {
-            ProgressView().controlSize(.small)
-            Text("好了会自己出现，可以先去做别的。").font(Typo.caption).foregroundStyle(Palette.ink3)
+        step(1, "标完成度", done: marked,
+             detail: marked
+               ? "\(doc?.doneCount ?? 0) / \(doc?.trackedCount ?? 0) 完成"
+               : "还有 \(unmarked.count) 条没标：\(unmarked.prefix(3).map(\.text).joined(separator: "、"))\(unmarked.count > 3 ? "…" : "")。在上面的要务里点圆点。")
+        step(2, "写复盘", done: retroWritten,
+             detail: retroWritten ? "写好了" : "在上面的复盘里写，写完点「保存」。")
+        step(3, "生成总结", done: hasReview, detail: hasReview ? "已生成，在下面。复盘改过可以重新生成。" : "按你的完成度和复盘写这一期的总结，一两分钟。") {
+          Button(reviewing ? "生成中…" : (hasReview ? "重新生成总结" : "生成总结"), action: generateReview)
+            .buttonStyle(MossButtonStyle(prominent: !hasReview))
+            .disabled(reviewing || !marked || !retroWritten)
+            .help(!marked ? "先标完要务的完成度" : (!retroWritten ? "先写复盘" : ""))
+        }
+        step(4, "生成下一期要务", done: false, detail: "读这一期的总结，起草下一期的要务，几分钟。下一期的要务你改过的话，新的放成草稿让你对比。") {
+          HStack(spacing: Metrics.sm) {
+            Button(running ? "起草中…" : "生成下一期要务", action: planNext)
+              .buttonStyle(MossButtonStyle(prominent: hasReview))
+              .disabled(running || !hasReview)
+              .help(hasReview ? "" : "先生成总结")
+            if running {
+              ProgressView().controlSize(.small)
+              Text("好了会自己出现，可以先去做别的。").font(Typo.caption).foregroundStyle(Palette.ink3)
+            }
           }
         }
       }
@@ -1645,13 +1665,41 @@ private struct CloseCyclePanel: View {
     }
   }
 
-  private func start() {
+  private func step(_ number: Int, _ title: String, done: Bool, detail: String) -> some View {
+    step(number, title, done: done, detail: detail) { EmptyView() }
+  }
+
+  private func step<Action: View>(_ number: Int, _ title: String, done: Bool, detail: String, @ViewBuilder action: () -> Action) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: Metrics.sm) {
+      Image(systemName: done ? "checkmark.circle.fill" : "\(number).circle")
+        .foregroundStyle(done ? Palette.ok : Palette.ink3)
+      VStack(alignment: .leading, spacing: 4) {
+        Text(title).font(Typo.bodyStrong).foregroundStyle(Palette.ink)
+        Text(detail).font(Typo.caption).foregroundStyle(Palette.ink2)
+          .fixedSize(horizontal: false, vertical: true)
+        action()
+      }
+    }
+  }
+
+  private func generateReview() {
+    reviewing = true
+    Task {
+      let outcome = await state.generateCycleSection(cycleID: cycle.id, kind: .review)
+      reviewing = false
+      switch outcome {
+      case .ok(let message): state.toast = message ?? "总结写好了"
+      case .failed(let why), .unsupported(let why): state.toast = why
+      }
+    }
+  }
+
+  private func planNext() {
     running = true
-    startedHere = true
     Task {
       switch await state.closeCycle(cycleID: cycle.id) {
       case .ok(let message):
-        state.toast = message ?? "开始收尾了"
+        state.toast = message ?? "开始起草下一期要务"
         await watch()
       case .failed(let why), .unsupported(let why):
         running = false
@@ -1670,9 +1718,9 @@ private struct CloseCyclePanel: View {
       running = false
       await state.reloadToday()
       if let error = status.error {
-        state.toast = "结束本期没做完：\(error)"
-      } else if state.reviewingCycleID == cycle.id {
-        // The last step of 新的双周: the 要务 are there, today can be planned from them.
+        state.toast = "下一期要务没起草完：\(error)"
+      } else {
+        // The last step: the 要务 are there, today can be planned from them.
         state.reviewingCycleID = nil
         let store = state
         state.toast("下一期要务起草好了，现在生成今天的计划？", action: "生成今天的计划") {
@@ -1683,8 +1731,6 @@ private struct CloseCyclePanel: View {
             }
           }
         }
-      } else {
-        state.toast = "本期收尾好了，去看总结和下期要务" + (status.text.map { "（\($0.split(separator: "\n").count) 处写入）" } ?? "")
       }
       return
     }
