@@ -1002,6 +1002,18 @@ public final class LiveAppState: AppState {
   /// refresh nobody asked for must not paint an error over the screen somebody
   /// is working on, and it has a next attempt a minute away. The 更新 button
   /// stays the loud path, and it is the one that reports.
+  /// The cycle files again, without the full reload. They change outside the
+  /// app — a restore, the chat, another window — and the page only read them at
+  /// launch (2026-11-02: a restored 复盘 still showed as the empty template).
+  public func refreshCyclesQuietly() async {
+    guard let client else { return }
+    if let result = try? await client.cycles() {
+      cycles = result.mine
+      partnerCycles = result.teammates
+      cyclesPlanningInFlight = result.planningInFlight
+    }
+  }
+
   public func refreshTeamQuietly() async {
     guard let client, connection.state.isConnected else { return }
     guard !isLoading, !isRefreshingTeam else { return }
