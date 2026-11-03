@@ -18,8 +18,8 @@ struct DecisionSection: View {
     @Bindable var store = store
     Panel("决策规则") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
-        KeyValueRow("文件", snapshot.decisionPolicy.notesPath, mono: true)
-        KeyValueRow("记忆仓库", snapshot.decisionPolicy.repositoryPath, mono: true)
+        // Paths dropped from the body — 在访达中显示 opens them; they do not need
+        // to sit above the editor as two lines of absolute path.
         PlainTextEditor(text: $store.draft.decisionPolicyMd, height: 380)
         HintText("下次计划或复盘生效，无需重启。")
       }
@@ -42,7 +42,7 @@ struct DecisionSection: View {
 private struct ExamplePanel: View {
   var body: some View {
     Panel("示例") {
-      OutputBlock(text: ExamplePanel.sample, height: 300)
+      MarkdownPreview(text: ExamplePanel.sample, height: 300)
     }
   }
 

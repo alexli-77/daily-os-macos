@@ -70,6 +70,41 @@ private struct ConnectionPanel: View {
   }
 }
 
+/// The invite code — anyone who has it can join the team, so it is masked by
+/// default like the ids on the Feishu page, with an eye to reveal it. 复制 and
+/// 重新生成 still act on the real code whether or not it is showing.
+private struct InviteCodeRow: View {
+  let store: SettingsStore
+  let code: String
+  @State private var revealed = false
+
+  var body: some View {
+    KeyValueRow("邀请码") {
+      if code.isEmpty {
+        Text("本机缓存里没有邀请码。点「刷新」重新拉取，或重新生成。").mutedStyle()
+      } else {
+        HStack(spacing: Metrics.xs) {
+          Text(revealed ? code : String(repeating: "•", count: min(code.count, 32)))
+            .font(Typo.monoBody)
+            .foregroundStyle(Palette.ink)
+            .textSelection(.enabled)
+          Button { revealed.toggle() } label: {
+            Image(systemName: revealed ? "eye.slash" : "eye")
+          }
+          .buttonStyle(QuietButtonStyle())
+          .help(revealed ? "隐藏" : "显示")
+          .accessibilityLabel(revealed ? "隐藏" : "显示")
+          Button("复制") { store.copy(code, what: "邀请码") }
+            .buttonStyle(QuietButtonStyle())
+          Button("重新生成") { store.confirmRotateInviteCode() }
+            .buttonStyle(QuietButtonStyle(tone: .danger))
+            .disabled(store.isBusy)
+        }
+      }
+    }
+  }
+}
+
 /// Sign in, create or join, and then the roster.
 private struct MembershipPanel: View {
   let store: SettingsStore
@@ -150,23 +185,7 @@ private struct MembershipPanel: View {
       PanelDivider()
       KeyValueRow("我", snapshot.team.identityLine)
       PanelDivider()
-      KeyValueRow("邀请码") {
-        if snapshot.team.inviteCode.isEmpty {
-          Text("本机缓存里没有邀请码。点「刷新」重新拉取，或重新生成。").mutedStyle()
-        } else {
-          HStack(spacing: Metrics.xs) {
-            Text(snapshot.team.inviteCode)
-              .font(Typo.monoBody)
-              .foregroundStyle(Palette.ink)
-              .textSelection(.enabled)
-            Button("复制") { store.copy(snapshot.team.inviteCode, what: "邀请码") }
-              .buttonStyle(QuietButtonStyle())
-            Button("重新生成") { store.confirmRotateInviteCode() }
-              .buttonStyle(QuietButtonStyle(tone: .danger))
-              .disabled(store.isBusy)
-          }
-        }
-      }
+      InviteCodeRow(store: store, code: snapshot.team.inviteCode)
       PanelDivider()
       KeyValueRow("同步", snapshot.team.syncLine)
       if !snapshot.team.lastError.isEmpty {
