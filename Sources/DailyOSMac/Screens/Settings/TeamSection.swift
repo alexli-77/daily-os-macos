@@ -107,8 +107,18 @@ private struct InviteCodeRow: View {
 
 /// Sign in, create or join, and then the roster.
 private struct MembershipPanel: View {
+  @Environment(AppState.self) private var state
   let store: SettingsStore
   let snapshot: SettingsSnapshot
+
+  /// The console account's avatar seed — the one the sidebar and 身份 draw from.
+  /// The roster's own self-row used the Supabase member seed, which is a second
+  /// identity and a second face for the same person; unify "me" on the account
+  /// you are signed in as.
+  private var loginSeed: String? {
+    guard let session = state.session else { return nil }
+    return session.avatarSeed.isEmpty ? session.username : session.avatarSeed
+  }
 
   var body: some View {
     @Bindable var store = store
@@ -199,7 +209,7 @@ private struct MembershipPanel: View {
       PanelDivider()
       ForEach(snapshot.team.members) { member in
         HStack(spacing: Metrics.sm) {
-          PixelAvatar(seed: member.avatarSeed, size: 24)
+          PixelAvatar(seed: member.isSelf ? (loginSeed ?? member.avatarSeed) : member.avatarSeed, size: 24)
           Text(member.displayName).inkStyle()
           if member.isSelf { Pill("我", tone: .accent) }
           Spacer(minLength: Metrics.xs)

@@ -21,6 +21,7 @@ struct BasicsSection: View {
 /// delivers the morning briefing in the middle of the night and nothing on any
 /// screen says why.
 private struct ProfilePanel: View {
+  @Environment(AppState.self) private var state
   let store: SettingsStore
 
   /// Every IANA zone, sorted, with the saved value kept in the list even if it
@@ -59,7 +60,14 @@ private struct ProfilePanel: View {
       // below it already does — the rows line up down a hairline instead of
       // floating in a stack.
       VStack(alignment: .leading, spacing: Metrics.xs) {
-        SettingText(label: "显示名", text: $store.draft.displayName, placeholder: "Leon")
+        // 称呼 for plans and reviews — kept editable and distinct from the login
+        // account, but defaulted to the account name so an unset field no longer
+        // reads "User" next to a sidebar that says admin.
+        SettingText(
+          label: "显示名",
+          text: $store.draft.displayName,
+          placeholder: state.session?.username ?? "Leon"
+        )
         PanelDivider()
         // Timezone and language are closed sets, not free text: typing `UTC` by
         // mistake delivers the morning briefing at midnight, and a dropdown that
