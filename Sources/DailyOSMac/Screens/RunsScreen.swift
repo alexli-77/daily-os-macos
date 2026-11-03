@@ -12,7 +12,7 @@ struct RunsScreen: View {
 
   var body: some View {
     HStack(spacing: 0) {
-      ListColumn { RunList() }
+      RunList()
       Group {
         if let run = state.selectedRun {
           RunDetail(run: run)
@@ -30,16 +30,13 @@ private struct RunList: View {
   @Environment(AppState.self) private var state
 
   var body: some View {
-    ScrollView {
-      LazyVStack(alignment: .leading, spacing: Metrics.xs) {
-        if !state.activeRuns.isEmpty {
-          SectionLabel("进行中 · \(state.activeRuns.count)")
-          ForEach(state.activeRuns) { row(for: $0) }
-        }
-        SectionLabel("最近")
-        ForEach(state.recentRuns) { row(for: $0) }
+    ListColumn("运行") {
+      if !state.activeRuns.isEmpty {
+        SectionLabel("进行中 · \(state.activeRuns.count)")
+        ForEach(state.activeRuns) { row(for: $0) }
       }
-      .padding(Metrics.xs)
+      SectionLabel("最近")
+      ForEach(state.recentRuns) { row(for: $0) }
     }
   }
 

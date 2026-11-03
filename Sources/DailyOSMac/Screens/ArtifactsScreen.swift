@@ -18,7 +18,7 @@ struct ArtifactsScreen: View {
 
   var body: some View {
     HStack(spacing: 0) {
-      ListColumn { ArtifactList() }
+      ArtifactList()
       Group {
         if let artifact = state.selectedArtifact {
           ArtifactDetail(artifact: artifact, actions: actions)
@@ -44,17 +44,14 @@ private struct ArtifactList: View {
   @Environment(AppState.self) private var state
 
   var body: some View {
-    ScrollView {
-      LazyVStack(alignment: .leading, spacing: 2) {
-        ForEach(state.artifacts) { artifact in
-          SelectableRow(isSelected: artifact.id == state.selectedArtifact?.id) {
-            state.selectedArtifactID = artifact.id
-          } content: {
-            ArtifactRow(artifact: artifact)
-          }
+    ListColumn("产物") {
+      ForEach(state.artifacts) { artifact in
+        SelectableRow(isSelected: artifact.id == state.selectedArtifact?.id) {
+          state.selectedArtifactID = artifact.id
+        } content: {
+          ArtifactRow(artifact: artifact)
         }
       }
-      .padding(Metrics.xs)
     }
   }
 }
