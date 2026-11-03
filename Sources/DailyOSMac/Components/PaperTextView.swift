@@ -47,6 +47,15 @@ struct PaperTextView: NSViewRepresentable {
   func updateNSView(_ scroll: NSScrollView, context: Context) {
     guard let textView = scroll.documentView as? MarginTextView else { return }
     scroll.backgroundColor = paper
+    // Mid-composition — typing pinyin — the text view holds marked (uncommitted)
+    // text that both `string` and `textStorage` include. Re-assigning the string
+    // or re-stamping attributes over that range makes AppKit abandon the IME
+    // composition, so the half-typed pinyin vanishes while the committed text
+    // stays. Every keystroke triggers `textDidChange` → binding write → this
+    // method, so without this guard the composition is killed on each letter.
+    // Leave the view untouched until the user commits; updateNSView runs again on
+    // the committed text.
+    if textView.hasMarkedText() { return }
     if textView.string != text { textView.string = text }
     apply(to: textView)
     textView.needsDisplay = true
