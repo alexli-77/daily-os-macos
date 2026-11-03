@@ -50,16 +50,22 @@ private struct DoctorPanel: View {
         VStack(spacing: 0) {
           ForEach(Array(ordered.enumerated()), id: \.element.id) { index, check in
             if index > 0 { PanelDivider() }
-            HStack(alignment: .top, spacing: Metrics.sm) {
+            HStack(alignment: .center, spacing: Metrics.sm) {
               Pill(check.label, tone: check.tone)
                 .frame(width: 56, alignment: .leading)
-              VStack(alignment: .leading, spacing: 2) {
-                Text(check.name).font(Typo.monoBody).foregroundStyle(Palette.ink)
-                if !check.detail.isEmpty {
-                  HintText(check.detail)
-                }
+              // The name is now a plain label; the technical id, path or
+              // explanation lives in `detail` and shows on hover instead of
+              // sitting under every row as a second line of fine print.
+              Text(check.name).font(Typo.body).foregroundStyle(Palette.ink)
+              Spacer(minLength: Metrics.xs)
+              if !check.detail.isEmpty {
+                Image(systemName: "info.circle")
+                  .font(Typo.caption)
+                  .foregroundStyle(Palette.ink3)
+                  .help(check.detail)
+                  .accessibilityLabel("详情")
+                  .accessibilityValue(check.detail)
               }
-              Spacer(minLength: 0)
             }
             .frame(minHeight: Metrics.hitTarget)
             .padding(.vertical, Metrics.xxs)

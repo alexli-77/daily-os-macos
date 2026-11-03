@@ -43,7 +43,7 @@ private struct CredentialsPanel: View {
           }
         }
         PanelDivider()
-        SettingText(label: "App ID", text: $store.draft.larkAppID, placeholder: "cli_xxx", mono: true)
+        SettingText(label: "App ID", text: $store.draft.larkAppID, placeholder: "cli_xxx", mono: true, secret: true)
         SourceSecretRow(
           label: "App Secret",
           key: "LARK_APP_SECRET",
@@ -55,14 +55,16 @@ private struct CredentialsPanel: View {
           text: $store.draft.feishuChatID,
           placeholder: "oc_xxx",
           hint: "发消息、拉反馈、读群聊历史都用这个会话。留空则无处可发。",
-          mono: true
+          mono: true,
+          secret: true
         )
         SettingText(
           label: "所有者 open_id",
           text: $store.draft.ownerOpenID,
           placeholder: "ou_xxx",
           hint: "交互层用它识别你。不填会拒绝所有指令。",
-          mono: true
+          mono: true,
+          secret: true
         )
       }
     } actions: {
@@ -169,26 +171,26 @@ private struct InteractionPanel: View {
           label: "管理员 open_id",
           text: $store.draft.interactionAdmins,
           placeholder: "每行一个 ou_xxx",
-          height: 64
+          height: 36
         )
         SettingLines(
           label: "允许的用户",
           text: $store.draft.interactionUsers,
           placeholder: "每行一个 ou_xxx",
-          height: 64
+          height: 36
         )
         SettingLines(
           label: "允许的会话",
           text: $store.draft.interactionChats,
           placeholder: "每行一个 oc_xxx",
-          height: 64
+          height: 36
         )
         SettingLines(
           label: "允许的工作区",
           text: $store.draft.interactionWorkspaces,
           placeholder: "每行一个本机路径",
           hint: "所有者 open_id、允许的用户、允许的会话都为空时，交互层拒绝所有消息。",
-          height: 64
+          height: 36
         )
       }
     } actions: {
@@ -212,7 +214,8 @@ private struct DecisionOnboardingPanel: View {
           label: "群 ID",
           text: $store.draft.decisionChatID,
           placeholder: "自动创建，或手动粘贴 oc_xxx",
-          mono: true
+          mono: true,
+          secret: true
         )
         SettingToggle(
           label: "启动时自动创建",
