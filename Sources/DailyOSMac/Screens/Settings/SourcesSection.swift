@@ -44,7 +44,11 @@ private struct SourceStatusPanel: View {
         ForEach(Array(snapshot.sources.enumerated()), id: \.element.id) { index, source in
           if index > 0 { PanelDivider() }
           VStack(alignment: .leading, spacing: Metrics.xxs) {
-            HStack(alignment: .top, spacing: Metrics.sm) {
+            // Center, not top: the fix link and the status pill sit on their own
+            // line beside a two-line name+detail, and top-aligning them left the
+            // pill floating up against the first line instead of reading as the
+            // row's status.
+            HStack(alignment: .center, spacing: Metrics.sm) {
               Image(systemName: source.icon)
                 .foregroundStyle(Palette.foreground(for: source.status.tone))
                 .frame(width: 20)

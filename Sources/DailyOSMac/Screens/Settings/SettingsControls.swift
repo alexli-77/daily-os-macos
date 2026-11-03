@@ -12,21 +12,47 @@ import DailyOSCore
 /// panel whatever the control is.
 
 /// One line of text.
+///
+/// `secret` masks the value behind a `SecureField` and offers an eye to reveal
+/// it — for the open ids, chat ids and app ids that are an account's handle, not
+/// a password, but are exactly the thing nobody wants sitting legible in a
+/// screenshot. The field stays editable: the eye flips to a plain `TextField` so
+/// a pasted id can be checked. Default off; a field is only hidden where its call
+/// site asks for it.
 struct SettingText: View {
   let label: String
   @Binding var text: String
   var placeholder = ""
   var hint = ""
   var mono = false
+  var secret = false
   var width: CGFloat = 320
+
+  @State private var revealed = false
 
   var body: some View {
     KeyValueRow(label) {
       VStack(alignment: .leading, spacing: Metrics.xxs) {
-        TextField(placeholder, text: $text)
+        HStack(spacing: Metrics.xs) {
+          Group {
+            if secret && !revealed {
+              SecureField(placeholder, text: $text)
+            } else {
+              TextField(placeholder, text: $text)
+            }
+          }
           .textFieldStyle(.roundedBorder)
           .font(mono ? Typo.monoBody : Typo.body)
           .frame(maxWidth: width)
+          if secret {
+            Button { revealed.toggle() } label: {
+              Image(systemName: revealed ? "eye.slash" : "eye")
+            }
+            .buttonStyle(QuietButtonStyle())
+            .help(revealed ? "隐藏" : "显示")
+            .accessibilityLabel(revealed ? "隐藏" : "显示")
+          }
+        }
         if !hint.isEmpty { HintText(hint) }
       }
     }
@@ -181,6 +207,70 @@ struct PlainTextEditor: View {
         RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous)
           .strokeBorder(Palette.line, lineWidth: Metrics.hairline)
       )
+  }
+}
+
+/// A read-only, lightly-styled render of the example markdown.
+///
+/// The example blocks used to be an `OutputBlock` — monospaced grey, the same
+/// treatment machine output gets. But these are hand-written prose meant to show
+/// the user what a rule file looks like, and a flat grey wall is the least
+/// inviting way to show it. This renders the handful of markdown shapes that
+/// actually appear (headings, bullets, prose) in the paper palette: serif
+/// headings, a mint bullet, ink body. Not a full markdown engine — just enough
+/// to make the sample read as the document it is teaching you to write.
+struct MarkdownPreview: View {
+  let text: String
+  var height: CGFloat = 300
+
+  private var lines: [Substring] { text.split(separator: "\n", omittingEmptySubsequences: false) }
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: Metrics.xxs) {
+        ForEach(Array(lines.enumerated()), id: \.offset) { _, raw in
+          row(for: raw.trimmingCharacters(in: .whitespaces))
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(Metrics.sm)
+    }
+    .frame(height: height)
+    .background(Palette.page)
+    .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous)
+        .strokeBorder(Palette.line, lineWidth: Metrics.hairline)
+    )
+  }
+
+  @ViewBuilder
+  private func row(for line: String) -> some View {
+    if line.isEmpty {
+      Color.clear.frame(height: Metrics.xs)
+    } else if line.hasPrefix("## ") {
+      Text(line.dropFirst(3))
+        .font(Typo.heading)
+        .foregroundStyle(Palette.ink)
+        .padding(.top, Metrics.xxs)
+    } else if line.hasPrefix("# ") {
+      Text(line.dropFirst(2))
+        .font(Typo.heading)
+        .foregroundStyle(Palette.mint600)
+    } else if line.hasPrefix("- ") || line.hasPrefix("* ") {
+      HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
+        Circle().fill(Palette.fill(for: .accent)).frame(width: 5, height: 5)
+        Text(line.dropFirst(2))
+          .font(Typo.body)
+          .foregroundStyle(Palette.ink)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+    } else {
+      Text(line)
+        .font(Typo.body)
+        .foregroundStyle(Palette.ink2)
+        .fixedSize(horizontal: false, vertical: true)
+    }
   }
 }
 

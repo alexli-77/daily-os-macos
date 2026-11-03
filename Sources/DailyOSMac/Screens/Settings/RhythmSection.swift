@@ -319,8 +319,8 @@ private struct NotesPanel: View {
     @Bindable var store = store
     Panel("rhythm.md") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
-        KeyValueRow("文件", snapshot.rhythm.notesPath, mono: true)
-        KeyValueRow("记忆仓库", snapshot.rhythm.repositoryPath, mono: true)
+        // The paths are reachable through 在访达中显示; printing them here just
+        // put two long absolute paths at the top of the panel the editor lives in.
         if snapshot.rhythm.isTemplate {
           Pill("空模板，不影响计划", tone: .warn)
         }
@@ -346,7 +346,7 @@ private struct NotesPanel: View {
 private struct RhythmExamplePanel: View {
   var body: some View {
     Panel("示例") {
-      OutputBlock(text: RhythmExamplePanel.sample, height: 300)
+      MarkdownPreview(text: RhythmExamplePanel.sample, height: 300)
     }
   }
 
