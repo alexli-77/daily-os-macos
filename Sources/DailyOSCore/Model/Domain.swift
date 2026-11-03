@@ -287,6 +287,20 @@ public struct CycleSection: Sendable, Equatable, Identifiable {
   }
 }
 
+/// A cycle's 柯维诊断 and the 小实验 it hands the next cycle (2026-11-03).
+/// Written with 生成总结, or lifted from a biweekly run.
+public struct CycleHabits: Sendable, Equatable {
+  public let diagnosis: String
+  public let experiment: String
+  public let updatedAt: Date?
+
+  public init(diagnosis: String, experiment: String, updatedAt: Date?) {
+    self.diagnosis = diagnosis
+    self.experiment = experiment
+    self.updatedAt = updatedAt
+  }
+}
+
 public struct Cycle: Sendable, Equatable, Identifiable {
   public let id: String
   /// The human label the whole system uses: "8.24-9.6".
@@ -306,6 +320,8 @@ public struct Cycle: Sendable, Equatable, Identifiable {
   /// only ever fail, and the user learns the file is broken by having their
   /// typing rejected.
   public var frontmatterError: String?
+  /// Its 柯维诊断, once there is one.
+  public var habits: CycleHabits?
 
   public init(
     id: String,

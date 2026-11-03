@@ -29,6 +29,7 @@ struct DayPlanResponse: Decodable {
 
     let reconciliation: [Item]
     let note: String?
+    let habits: String?
   }
 
   let date: String
@@ -67,7 +68,8 @@ extension DailyOSClient {
             evidence: item.evidence?.isEmpty == false ? item.evidence : nil
           )
         },
-        note: review.note?.isEmpty == false ? review.note : nil
+        note: review.note?.isEmpty == false ? review.note : nil,
+        habits: review.habits?.isEmpty == false ? review.habits : nil
       )
     }
     return DayHistory(

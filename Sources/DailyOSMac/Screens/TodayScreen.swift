@@ -359,6 +359,9 @@ private struct CallSheetPanel: View {
           // The day's progress right under the subtitle, above the banners and
           // the timeline, where it is read first (LEO-336).
           SheetFooter(schedule: schedule, isPast: date != nil)
+          // 今日要事: what this morning's plan says to guard today, from the
+          // 双周's 小实验 and MIT — the first thing read (2026-11-03).
+          if date == nil, state.isViewingSelf, let focus = state.planFocus { FocusLine(text: focus) }
           if date != nil, let day = state.cleanupDay { CleanupBanner(day: day) }
           if date == nil, !schedule.lateRows.isEmpty {
             OverdueBanner(rows: schedule.lateRows, pushAll: pushLateToNow)
@@ -2751,6 +2754,25 @@ private struct EstimateChipStyle: ButtonStyle {
     .frame(width: 940, height: 720)
 }
 
+// MARK: - 今日要事
+
+private struct FocusLine: View {
+  let text: String
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: Metrics.xs) {
+      Image(systemName: "scope").foregroundStyle(Palette.mint600)
+      Text("今日要事").font(Typo.bodyStrong).foregroundStyle(Palette.ink)
+      Text(text).font(Typo.body).foregroundStyle(Palette.ink2)
+        .fixedSize(horizontal: false, vertical: true)
+      Spacer(minLength: 0)
+    }
+    .padding(.horizontal, Metrics.sm)
+    .padding(.vertical, Metrics.xs)
+    .background(Palette.mint50, in: RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
+  }
+}
+
 // MARK: - A past day's review
 
 /// That evening's `daily_review`, under a past day's call sheet: what the
@@ -2785,6 +2807,16 @@ private struct DayReviewPanel: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
             .padding(.top, Metrics.xs)
+        }
+        if let habits = review.habits {
+          VStack(alignment: .leading, spacing: 2) {
+            Text("柯维视角").font(Typo.bodyStrong).foregroundStyle(Palette.ink)
+            Text(habits).font(Typo.body).foregroundStyle(Palette.ink2)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+          .padding(Metrics.sm)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .background(Palette.mint50, in: RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
         }
       }
     }

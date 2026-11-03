@@ -1402,6 +1402,7 @@ struct CycleSections: View {
       if state.visibleCycles.count > 1 {
         Panel { CycleTrend().padding(-Metrics.sm) }
       }
+      if let handed = handedExperiment { ExperimentBanner(text: handed.text, from: handed.from) }
       section(.priorities)
       if opensReview ?? (isClosing || isReviewing) {
         if isReviewing { ReviewStepsBanner().id(Self.reviewAnchor) }
@@ -1409,6 +1410,7 @@ struct CycleSections: View {
         section(.retro)
         if editable { CloseCyclePanel(cycle: cycle) }
         section(.review)
+        HabitsPanel(cycle: cycle)
       } else {
         Button {
           withAnimation(.snappy(duration: 0.2)) { opensReview = true }
@@ -1439,6 +1441,13 @@ struct CycleSections: View {
   }
 
   private static let reviewAnchor = "cycle-review"
+
+  /// The 小实验 this cycle runs: the one the cycle before it handed over.
+  private var handedExperiment: (text: String, from: String)? {
+    let before = state.visibleCycles.filter { $0.start < cycle.start }.max { $0.start < $1.start }
+    guard let before, let text = before.habits?.experiment, !text.isEmpty else { return nil }
+    return (text, before.label)
+  }
   /// Opened from 新的双周开始了 to review this 双周 before the next one.
   private var isReviewing: Bool { state.reviewingCycleID == cycle.id && editable }
 
@@ -1455,6 +1464,85 @@ struct CycleSections: View {
       CycleSectionPanel(cycle: cycle, section: section, editable: editable)
     } else {
       MissingSectionPanel(cycle: cycle, kind: kind, editable: editable)
+    }
+  }
+}
+
+/// The 小实验 this 双周 runs, from the last 柯维诊断 (2026-11-03). The 8:00
+/// plan builds 今日要事 from it; here it sits above the 要务 it is about.
+private struct ExperimentBanner: View {
+  let text: String
+  let from: String
+
+  var body: some View {
+    HStack(alignment: .top, spacing: Metrics.sm) {
+      Image(systemName: "flask").foregroundStyle(Palette.mint600)
+      VStack(alignment: .leading, spacing: 2) {
+        Text("本期小实验").font(Typo.bodyStrong).foregroundStyle(Palette.ink)
+        Text(text).font(Typo.body).foregroundStyle(Palette.ink2)
+          .fixedSize(horizontal: false, vertical: true)
+        Text("\(from) 的柯维诊断定的，每天的计划会照着排").font(Typo.caption).foregroundStyle(Palette.ink3)
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(Metrics.sm)
+    .background(Palette.mint50, in: RoundedRectangle(cornerRadius: Metrics.radiusMedium, style: .continuous))
+  }
+}
+
+/// A cycle's 柯维诊断 (2026-11-03): Q2 share, MIT rate, what is stuck and on
+/// which habit, and the 小实验 for the next cycle. Every biweekly run wrote one
+/// and nothing showed it.
+private struct HabitsPanel: View {
+  @Environment(AppState.self) private var state
+  let cycle: Cycle
+
+  var body: some View {
+    if let habits = cycle.habits {
+      Panel("柯维诊断") {
+        VStack(alignment: .leading, spacing: Metrics.xs) {
+          ForEach(Array(habits.diagnosis.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in
+            HabitsLine(line: line)
+          }
+          if !habits.experiment.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+              Text("下一期的小实验").font(Typo.bodyStrong).foregroundStyle(Palette.ink)
+              Text(habits.experiment).font(Typo.body).foregroundStyle(Palette.ink2)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(Metrics.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.mint50, in: RoundedRectangle(cornerRadius: Metrics.radiusSmall, style: .continuous))
+          }
+          if let updated = habits.updatedAt {
+            Text("更新于 \(Fmt.stamp(updated))").mutedStyle()
+          }
+        }
+        .frame(maxWidth: Metrics.readableWidth, alignment: .leading)
+      }
+    } else if cycle.section(.review) != nil, state.isViewingSelf {
+      Text("柯维诊断会在「生成总结」之后一两分钟写好，切回 Daily OS 时出现。")
+        .font(Typo.caption).foregroundStyle(Palette.ink3)
+    }
+  }
+}
+
+/// One line of the diagnosis: headings bold, the rest with its inline markdown.
+private struct HabitsLine: View {
+  let line: String
+
+  var body: some View {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    if trimmed.isEmpty {
+      Color.clear.frame(height: 2)
+    } else if trimmed.hasPrefix("#") {
+      Text(trimmed.drop(while: { $0 == "#" }).trimmingCharacters(in: .whitespaces))
+        .font(Typo.bodyStrong).foregroundStyle(Palette.ink).padding(.top, 4)
+    } else {
+      Text((try? AttributedString(markdown: trimmed, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(trimmed))
+        .font(Typo.body).foregroundStyle(Palette.ink2)
+        .fixedSize(horizontal: false, vertical: true)
+        .textSelection(.enabled)
     }
   }
 }

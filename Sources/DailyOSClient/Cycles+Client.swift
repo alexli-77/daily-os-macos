@@ -48,6 +48,8 @@ struct CycleDTO: Decodable {
   /// Keyed by the service's own section names — `要务`, `retro`, `review` — and
   /// containing only the sections the file actually has.
   let sections: [String: CycleSectionDTO]?
+  struct Habits: Decodable { let diagnosis: String; let experiment: String?; let updatedAt: String? }
+  let habits: Habits?
 }
 
 struct CycleSectionDTO: Decodable {
@@ -269,7 +271,7 @@ extension CycleDTO {
     // UI that only ever renders this as "更新于 …".
     let updated = CycleWireDate.timestamp(updatedAt) ?? start
 
-    return Cycle(
+    var built = Cycle(
       id: id,
       label: cycle ?? id,
       mode: mode,
@@ -286,6 +288,8 @@ extension CycleDTO {
       // check-for-empty that someone will eventually forget.
       frontmatterError: frontmatterError.flatMap { $0.isEmpty ? nil : $0 }
     )
+    built.habits = habits.map { CycleHabits(diagnosis: $0.diagnosis, experiment: $0.experiment ?? "", updatedAt: CycleWireDate.timestamp($0.updatedAt)) }
+    return built
   }
 
   /// Driven by `allCases` rather than by the dictionary, so the three sections
