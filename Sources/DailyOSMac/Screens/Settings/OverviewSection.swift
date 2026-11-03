@@ -41,6 +41,7 @@ private struct DoctorPanel: View {
   let snapshot: SettingsSnapshot
   let failures: [DoctorRow]
   let warnings: [DoctorRow]
+  @State private var hoveredID: String?
 
   var body: some View {
     Panel("自检", subtitle: summary) {
@@ -50,29 +51,43 @@ private struct DoctorPanel: View {
         VStack(spacing: 0) {
           ForEach(Array(ordered.enumerated()), id: \.element.id) { index, check in
             if index > 0 { PanelDivider() }
-            HStack(alignment: .center, spacing: Metrics.sm) {
+            HStack(alignment: .top, spacing: Metrics.sm) {
               Pill(check.label, tone: check.tone)
                 .frame(width: 56, alignment: .leading)
-              // The name is now a plain label; the technical id, path or
-              // explanation lives in `detail` and shows on hover instead of
-              // sitting under every row as a second line of fine print.
-              Text(check.name).font(Typo.body).foregroundStyle(Palette.ink)
+              // Name on the first line; the technical id / path / explanation
+              // drops in right under it the instant the row is hovered. This
+              // replaces `.help()` — the system tooltip never fired here (small
+              // faint icon, and the row's blank Spacer has no tracking area), so
+              // hovering showed nothing at all. An onHover-driven inline reveal
+              // is immediate and can't silently no-op the way a tooltip does.
+              VStack(alignment: .leading, spacing: 2) {
+                Text(check.name).font(Typo.body).foregroundStyle(Palette.ink)
+                if hoveredID == check.id, !check.detail.isEmpty {
+                  Text(check.detail)
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.ink3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                }
+              }
               Spacer(minLength: Metrics.xs)
               if !check.detail.isEmpty {
-                Image(systemName: "info.circle")
+                Image(systemName: hoveredID == check.id ? "info.circle.fill" : "info.circle")
                   .font(Typo.caption)
                   .foregroundStyle(Palette.ink3)
               }
             }
             .frame(minHeight: Metrics.hitTarget)
             .padding(.vertical, Metrics.xxs)
-            // The tooltip hangs off the whole row, not the 16pt ⓘ icon. `.help`
-            // on a bare, faint, tiny Image is both an unreliable tooltip host and
-            // a hit target almost impossible to land on; the empty Spacer area
-            // has no hit region of its own, so `.contentShape` gives the row one
-            // and hovering anywhere along it shows the detail.
+            // The whole row is the hover target — `.contentShape` gives the blank
+            // Spacer a hit region so hovering anywhere along the row reveals the
+            // detail, not just the tiny icon at the end.
             .contentShape(Rectangle())
-            .help(check.detail)
+            .onHover { inside in
+              guard !check.detail.isEmpty else { return }
+              if inside { hoveredID = check.id }
+              else if hoveredID == check.id { hoveredID = nil }
+            }
             .accessibilityElement(children: .combine)
             .accessibilityHint(check.detail)
           }
