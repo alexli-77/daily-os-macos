@@ -196,11 +196,13 @@ private struct Conversation: View {
 /// taps that teach the range of what the assistant does. Tapping fills the
 /// composer rather than sending, so a data-changing example is reviewed first.
 private let chatExamplePrompts = [
+  // 2026-11-03: the user's own method skills are loaded for these — the
+  // 7 Habits and 《为什么精英都是时间控》.
+  "用柯维看看这一期：卡在哪个习惯",
+  "时段体检：今天排得对吗",
   "把午餐挪到 12:30",
   "本期要务加一条：联系导师",
-  "这一期为什么只完成了一半",
   "看书挪到口语后面",
-  "怎么关掉通知",
 ]
 
 private struct EmptyChatState: View {

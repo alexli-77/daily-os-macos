@@ -155,10 +155,14 @@ public struct DayReview: Sendable, Equatable {
 
   public let items: [Item]
   public let note: String?
+  /// 柯维视角: the day by the 7 Habits — Q2 squeezed or not, which of the four
+  /// dimensions is slipping (2026-11-03).
+  public let habits: String?
 
-  public init(items: [Item], note: String? = nil) {
+  public init(items: [Item], note: String? = nil, habits: String? = nil) {
     self.items = items
     self.note = note
+    self.habits = habits
   }
 }
 

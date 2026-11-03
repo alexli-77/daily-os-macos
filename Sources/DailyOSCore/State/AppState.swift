@@ -82,6 +82,8 @@ open class AppState {
   /// False when no `daily_plan` has ever run, which wants a different empty
   /// state from "ran and produced nothing".
   public var hasPlan = true
+  /// 今日要事 from this morning's plan (2026-11-03).
+  public var planFocus: String?
   /// Set while a new 双周 is due and unset (see `NewCycleNotice`).
   public var newCycle: NewCycleNotice?
   /// The day 新双周 was answered, so it asks once a day, not on every reload.

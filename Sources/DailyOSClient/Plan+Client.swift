@@ -18,9 +18,11 @@ struct TodayPlanResponse: Decodable {
     /// ISO-8601 timestamp of when this plan was generated. Absent on plans
     /// written before the service exposed it.
     let generatedAt: String?
+    /// 今日要事, when the plan said one (2026-11-03).
+    let focus: String?
 
     enum CodingKeys: String, CodingKey {
-      case date, workflow, stale
+      case date, workflow, stale, focus
       case generatedAt = "generated_at"
     }
   }
@@ -85,6 +87,8 @@ public struct TodayPlan: Sendable, Equatable {
   /// Set when today's latest daily_plan run failed.
   public let lastRunFailure: PlanRunFailure?
   public var newCycle: NewCycleNotice?
+  /// 今日要事: the one thing to guard today, from the 双周's 小实验 and MIT.
+  public var focus: String?
 
   public init(
     items: [TodoItem],
@@ -128,6 +132,7 @@ extension DailyOSClient {
       lastRunFailure: failure
     )
     today.newCycle = newCycle
+    today.focus = plan.focus.flatMap { $0.isEmpty ? nil : $0 }
     return today
   }
 
