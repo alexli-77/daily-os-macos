@@ -62,13 +62,19 @@ private struct DoctorPanel: View {
                 Image(systemName: "info.circle")
                   .font(Typo.caption)
                   .foregroundStyle(Palette.ink3)
-                  .help(check.detail)
-                  .accessibilityLabel("详情")
-                  .accessibilityValue(check.detail)
               }
             }
             .frame(minHeight: Metrics.hitTarget)
             .padding(.vertical, Metrics.xxs)
+            // The tooltip hangs off the whole row, not the 16pt ⓘ icon. `.help`
+            // on a bare, faint, tiny Image is both an unreliable tooltip host and
+            // a hit target almost impossible to land on; the empty Spacer area
+            // has no hit region of its own, so `.contentShape` gives the row one
+            // and hovering anywhere along it shows the detail.
+            .contentShape(Rectangle())
+            .help(check.detail)
+            .accessibilityElement(children: .combine)
+            .accessibilityHint(check.detail)
           }
         }
       }

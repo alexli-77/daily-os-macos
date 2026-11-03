@@ -71,18 +71,11 @@ struct GuideSection: View {
       )
     }
 
-    Panel("安装边界") {
+    Panel("装到另一台 Mac") {
       VStack(alignment: .leading, spacing: Metrics.xs) {
-        HintText("后台服务可在「服务」页一键安装。服务本身是 Node 仓库，要自己拉取；还没有签名的 Mac App 或 DMG。")
-        OutputBlock(
-          text: """
-            npm ci
-            npm run setup
-            npm run ui
-            npm run build
-            """,
-          height: 96
-        )
+        HintText("服务已经打包在这个 App 里——Node 运行时、服务代码、依赖、提示词全在内。把 Daily OS.app 拖进「应用程序」打开就行：第一次启动会自己建 ~/Library/Application Support/DailyOS、登记后台任务、拉起服务。不用 clone 仓库，不用 npm，不用跑任何安装脚本。")
+        HintText("还没签名、没公证。用 scp / rsync / U 盘 拷过去能直接打开；走 AirDrop、浏览器或「信息」会被系统盖上隔离属性，首次打开要到 系统设置 → 隐私与安全性 → 仍要打开。")
+        HintText("服务状态、安装 / 卸载后台任务、查看日志都在「服务」页。模型密钥、飞书凭据这些，在对应的设置页里填。")
       }
     }
   }
