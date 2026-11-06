@@ -378,7 +378,9 @@ public enum MockData {
       nextSurface: "2026-04-01",
       surfacing: true,
       x: 320,
-      y: 150
+      y: 150,
+      w: 250,
+      h: 170
     ),
     Sticky(
       id: "st_badminton",

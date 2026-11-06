@@ -19,6 +19,8 @@ struct StickyDTO: Decodable {
   let surfacing: Bool?
   let x: Double?
   let y: Double?
+  let w: Double?
+  let h: Double?
 }
 
 struct StickyListResponse: Decodable {
@@ -68,6 +70,13 @@ private struct StickyMoveRequest: Encodable {
   let tz: String
 }
 
+private struct StickyResizeRequest: Encodable {
+  let id: String
+  let w: Double
+  let h: Double
+  let tz: String
+}
+
 /// This machine's zone, read fresh on every call — fly somewhere and the next
 /// read decides "today" there, with nothing reconfigured. Same rationale as the
 /// countdown client's `deviceTimeZone`.
@@ -105,6 +114,14 @@ extension DailyOSClient {
     return response.items.map(Self.sticky)
   }
 
+  public func resizeSticky(_ id: String, w: Double, h: Double) async throws -> [Sticky] {
+    let response: StickyListResponse = try await post(
+      "/api/stickies/resize",
+      body: StickyResizeRequest(id: id, w: w, h: h, tz: deviceTimeZone)
+    )
+    return response.items.map(Self.sticky)
+  }
+
   public func surfaceSticky(_ id: String, response surfaceResponse: SurfaceResponse) async throws -> [Sticky] {
     let response: StickyListResponse = try await post(
       "/api/stickies/surface",
@@ -132,7 +149,9 @@ extension DailyOSClient {
       nextSurface: dto.nextSurface,
       surfacing: dto.surfacing ?? false,
       x: dto.x,
-      y: dto.y
+      y: dto.y,
+      w: dto.w,
+      h: dto.h
     )
   }
 }
