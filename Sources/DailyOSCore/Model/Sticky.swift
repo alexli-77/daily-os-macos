@@ -4,10 +4,13 @@ import Foundation
 ///
 /// A small jotting with no deadline — a todo, an idea — that you want to be
 /// reminded of now and then without being nagged. Instead of alerting on a date,
-/// each note resurfaces on its own schedule: the service decides which notes
-/// "float up" today and sends `surfacing` already resolved, the same division of
-/// labour the countdown uses for its day counts. What this type owns is how a
-/// note reads and which board it belongs to, both of which are presentation.
+/// each note resurfaces on its own schedule: the service sends `surfacing`
+/// already resolved, the same division of labour the countdown uses for its day
+/// counts.
+///
+/// The notes live on a free canvas (LEO-356): position is the user's, carried in
+/// `x,y`, not the schedule's. `surfacing` no longer moves a note — it only flips
+/// its badge (💤 asleep → 🔔 awake) and shows the response row in place.
 public struct Sticky: Identifiable, Sendable, Hashable {
   /// The paper colour. Purely visual — it never affects which notes surface,
   /// only how fast one is to find on the wall.
@@ -38,9 +41,14 @@ public struct Sticky: Identifiable, Sendable, Hashable {
   public var box: Int
   /// `YYYY-MM-DD` in the user's zone — the day this note next floats up.
   public var nextSurface: String
-  /// Resolved by the service: true when `nextSurface` has arrived and the note
-  /// is at the top of the wall today.
+  /// Resolved by the service: true when `nextSurface` has arrived. Drives the
+  /// note's badge and response row, not its position.
   public var surfacing: Bool
+  /// Canvas position (top-left of the tile, in points), or nil for a note the
+  /// user has not placed yet — written before the canvas, or just created and
+  /// not yet dragged. The board lays those out and persists on first drag.
+  public var x: Double?
+  public var y: Double?
 
   public init(
     id: String,
@@ -48,7 +56,9 @@ public struct Sticky: Identifiable, Sendable, Hashable {
     color: Color = .yellow,
     box: Int = 0,
     nextSurface: String,
-    surfacing: Bool = false
+    surfacing: Bool = false,
+    x: Double? = nil,
+    y: Double? = nil
   ) {
     self.id = id
     self.text = text
@@ -56,6 +66,19 @@ public struct Sticky: Identifiable, Sendable, Hashable {
     self.box = box
     self.nextSurface = nextSurface
     self.surfacing = surfacing
+    self.x = x
+    self.y = y
+  }
+}
+
+/// A canvas position in points. A plain pair so the state layer can pass one
+/// without importing CoreGraphics; the UI bridges it to `CGPoint`.
+public struct StickyPoint: Sendable, Equatable {
+  public var x: Double
+  public var y: Double
+  public init(x: Double, y: Double) {
+    self.x = x
+    self.y = y
   }
 }
 
@@ -89,14 +112,4 @@ public struct StickyDraft: Sendable, Equatable, Identifiable {
   }
 
   public var isValid: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-}
-
-extension Sticky {
-  /// Split the wall into what is awake today and what is still sleeping. Order
-  /// inside each band is left as the service gave it — it already sorted by how
-  /// overdue / how soon-to-wake each note is, and re-sorting here would be a
-  /// second opinion about something that is not this side's to decide.
-  public static func partition(_ items: [Sticky]) -> (surfacing: [Sticky], sleeping: [Sticky]) {
-    (items.filter(\.surfacing), items.filter { !$0.surfacing })
-  }
 }

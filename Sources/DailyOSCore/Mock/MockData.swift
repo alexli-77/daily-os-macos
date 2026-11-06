@@ -354,10 +354,11 @@ public enum MockData {
 
   // MARK: 便签
 
-  /// A wall with a couple awake and a couple asleep, so the two bands both
-  /// render. The `nextSurface` dates are fixed against the same 2026-04-01 the
-  /// countdown fixture uses, for the same reason — a fixture that recomputes
-  /// itself can never be checked against a screenshot.
+  /// A canvas with a couple awake (🔔) and a couple asleep (💤), scattered at
+  /// fixed `x,y` so the preview is stable. The `nextSurface` dates are fixed
+  /// against the same 2026-04-01 the countdown fixture uses, for the same
+  /// reason — a fixture that recomputes itself can never be checked against a
+  /// screenshot.
   public static let stickies: [Sticky] = [
     Sticky(
       id: "st_energy",
@@ -365,7 +366,9 @@ public enum MockData {
       color: .blue,
       box: 1,
       nextSurface: "2026-03-30",
-      surfacing: true
+      surfacing: true,
+      x: 40,
+      y: 40
     ),
     Sticky(
       id: "st_circuit",
@@ -373,7 +376,9 @@ public enum MockData {
       color: .yellow,
       box: 0,
       nextSurface: "2026-04-01",
-      surfacing: true
+      surfacing: true,
+      x: 320,
+      y: 150
     ),
     Sticky(
       id: "st_badminton",
@@ -381,7 +386,9 @@ public enum MockData {
       color: .green,
       box: 2,
       nextSurface: "2026-04-09",
-      surfacing: false
+      surfacing: false,
+      x: 90,
+      y: 290
     ),
     Sticky(
       id: "st_visa",
@@ -389,7 +396,9 @@ public enum MockData {
       color: .pink,
       box: 3,
       nextSurface: "2026-04-17",
-      surfacing: false
+      surfacing: false,
+      x: 380,
+      y: 380
     ),
   ]
 

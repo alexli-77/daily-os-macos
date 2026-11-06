@@ -17,17 +17,37 @@ struct StickyDTO: Decodable {
   let box: Int?
   let nextSurface: String
   let surfacing: Bool?
+  let x: Double?
+  let y: Double?
 }
 
 struct StickyListResponse: Decodable {
   let items: [StickyDTO]
 }
 
+/// Coordinates are `encodeIfPresent`, never `null`: the service reads `x`/`y`
+/// with `Number(...)`, and `Number(null)` is `0` — sending null on an edit would
+/// silently teleport the note to the origin. Omitting the keys leaves position
+/// untouched, which is exactly what an edit (vs a drag) should do.
 private struct StickySaveRequest: Encodable {
   let id: String?
   let text: String
   let color: String
   let tz: String
+  let x: Double?
+  let y: Double?
+
+  enum CodingKeys: String, CodingKey { case id, text, color, tz, x, y }
+
+  func encode(to encoder: Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encodeIfPresent(id, forKey: .id)
+    try c.encode(text, forKey: .text)
+    try c.encode(color, forKey: .color)
+    try c.encode(tz, forKey: .tz)
+    try c.encodeIfPresent(x, forKey: .x)
+    try c.encodeIfPresent(y, forKey: .y)
+  }
 }
 
 private struct StickySurfaceRequest: Encodable {
@@ -38,6 +58,13 @@ private struct StickySurfaceRequest: Encodable {
 
 private struct StickyArchiveRequest: Encodable {
   let id: String
+  let tz: String
+}
+
+private struct StickyMoveRequest: Encodable {
+  let id: String
+  let x: Double
+  let y: Double
   let tz: String
 }
 
@@ -53,15 +80,27 @@ extension DailyOSClient {
     return response.items.map(Self.sticky)
   }
 
-  public func saveSticky(_ draft: StickyDraft) async throws -> [Sticky] {
+  /// `at` is the spot the board picked for a brand-new note; nil on an edit,
+  /// which leaves the existing position alone.
+  public func saveSticky(_ draft: StickyDraft, at position: (x: Double, y: Double)? = nil) async throws -> [Sticky] {
     let response: StickyListResponse = try await post(
       "/api/stickies/save",
       body: StickySaveRequest(
         id: draft.id,
         text: draft.text.trimmingCharacters(in: .whitespacesAndNewlines),
         color: draft.color.rawValue,
-        tz: deviceTimeZone
+        tz: deviceTimeZone,
+        x: position?.x,
+        y: position?.y
       )
+    )
+    return response.items.map(Self.sticky)
+  }
+
+  public func moveSticky(_ id: String, x: Double, y: Double) async throws -> [Sticky] {
+    let response: StickyListResponse = try await post(
+      "/api/stickies/move",
+      body: StickyMoveRequest(id: id, x: x, y: y, tz: deviceTimeZone)
     )
     return response.items.map(Self.sticky)
   }
@@ -91,7 +130,9 @@ extension DailyOSClient {
       color: Sticky.Color(rawValue: dto.color ?? "") ?? .yellow,
       box: dto.box ?? 0,
       nextSurface: dto.nextSurface,
-      surfacing: dto.surfacing ?? false
+      surfacing: dto.surfacing ?? false,
+      x: dto.x,
+      y: dto.y
     )
   }
 }
