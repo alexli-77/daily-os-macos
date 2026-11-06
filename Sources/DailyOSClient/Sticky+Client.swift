@@ -139,8 +139,10 @@ extension DailyOSClient {
   }
 
   /// An unrecognised colour reads as the quiet default rather than failing the
-  /// row — the same forgiveness the countdown decoder extends.
-  private static func sticky(_ dto: StickyDTO) -> Sticky {
+  /// row — the same forgiveness the countdown decoder extends. Internal, not
+  /// private, so the teammate-board client (`TeamStickies+Client`) maps rows the
+  /// same way your own board does.
+  static func sticky(_ dto: StickyDTO) -> Sticky {
     Sticky(
       id: dto.id,
       text: dto.text,

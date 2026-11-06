@@ -17,6 +17,32 @@ struct TeamSection: View {
     if snapshot.team.configured {
       MembershipPanel(store: store, snapshot: snapshot)
     }
+    if snapshot.team.hasTeam {
+      StickySharePanel(store: store)
+    }
+  }
+}
+
+/// 便签共享 (LEO-358): the opt-in, off-by-default switch that pushes the whole
+/// sticky board to the team. Read-only for them — teammates see the board in
+/// 便签's 看谁的 picker but cannot edit it. Lives here with the other team
+/// switches rather than on the board, since sharing is an account-level choice.
+private struct StickySharePanel: View {
+  let store: SettingsStore
+
+  var body: some View {
+    @Bindable var store = store
+    Panel("便签共享", subtitle: "默认关。开启后，整块便签板对队友只读可见") {
+      SettingToggle(
+        label: "把便签板共享给 team",
+        isOn: $store.draft.shareStickies,
+        hint: "队友能在「便签 · 看谁的」里只读看到你的板，不能编辑。关掉后你的板会从他们那里消失。"
+      )
+    } actions: {
+      SaveAction(isDirty: store.isStickyShareDirty, isBusy: store.isBusy) {
+        Task { await store.saveStickyShare() }
+      }
+    }
   }
 }
 

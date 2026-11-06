@@ -404,6 +404,20 @@ public enum MockData {
     ),
   ]
 
+  /// One teammate (partner) sharing a read-only board, for the 看谁的 preview.
+  public static let teamStickies: [TeamStickyEntry] = [
+    TeamStickyEntry(
+      id: "u_partner",
+      displayName: "partner",
+      stickies: [
+        Sticky(id: "pt_1", text: "搜索召回那块的 A/B 下周出结论", color: .green, box: 1, nextSurface: "2026-03-31", surfacing: true, x: 40, y: 40),
+        Sticky(id: "pt_2", text: "帮 Leon 看下 K8s 滚动更新的那个 bug", color: .blue, box: 0, nextSurface: "2026-04-05", surfacing: false, x: 300, y: 150),
+      ],
+      hasBoard: true,
+      updatedAt: minutesAgo(23)
+    ),
+  ]
+
   // MARK: OKR
 
   public static let okrFiles: [OkrFile] = [

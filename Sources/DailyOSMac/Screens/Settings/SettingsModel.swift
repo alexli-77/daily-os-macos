@@ -562,6 +562,9 @@ struct SettingsDraft: Equatable {
 
   // 团队
   var supabaseURL = ""
+  /// 便签共享 (LEO-358): off by default; when on, the whole active board is
+  /// pushed to the team (read-only for them).
+  var shareStickies = false
 
   // 作息
   var rhythmEnabled = false
@@ -676,6 +679,7 @@ struct SettingsDraft: Equatable {
     backgroundChangeOnly = background["send_on_change_only"].bool
 
     supabaseURL = snapshot.supabaseURL
+    shareStickies = config["reminders"]["share_with_team"].bool
 
     // The schema materialises `user.rhythm` for anything that went through
     // `loadConfig`, so these three read straight out of the config — except the

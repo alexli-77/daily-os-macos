@@ -29,6 +29,11 @@ open class AppState {
   /// team sync is off or nobody else has joined; `teamTodaySync` says which.
   public var teamToday: [TeamTodayEntry]
   public var teamTodaySync: TeamSyncState?
+  /// Teammates' shared sticky boards (LEO-358), from the service's sync cache.
+  /// Empty when nobody shares; read-only — the board screen shows a teammate's
+  /// via the 看谁的 picker but offers no edit.
+  public var teamStickies: [TeamStickyEntry]
+  public var teamStickiesSync: TeamSyncState?
   public var todos: [TodoItem]
   public var okrFiles: [OkrFile]
   /// Countdown days, already resolved against today by the service. Ordered as
@@ -226,6 +231,8 @@ open class AppState {
     plan = MockData.plan
     teamToday = MockData.teamToday
     teamTodaySync = MockData.teamSync
+    teamStickies = MockData.teamStickies
+    teamStickiesSync = MockData.teamSync
     todos = MockData.todos
     okrFiles = MockData.okrFiles
     countdowns = MockData.countdowns

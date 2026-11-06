@@ -14,6 +14,7 @@ public enum ReloadChunk: String, CaseIterable, Sendable {
   case todos = "待办"
   case plan = "今日计划"
   case teamToday = "团队今天"
+  case teamStickies = "团队便签"
   case artifacts = "产物"
   case okr = "OKR"
   case countdowns = "倒数日"
@@ -91,6 +92,9 @@ extension AppState {
     case .teamToday:
       teamToday = []
       teamTodaySync = nil
+    case .teamStickies:
+      teamStickies = []
+      teamStickiesSync = nil
     case .artifacts:
       artifacts = []
       selectedArtifactID = nil
