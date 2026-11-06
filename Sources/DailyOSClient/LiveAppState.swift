@@ -423,12 +423,26 @@ public final class LiveAppState: AppState {
   // response rather than calling `reload()`, since nothing else reads the
   // sticky store and the service already answers with the whole wall.
 
-  public override func saveSticky(_ draft: StickyDraft) async -> ActionOutcome {
+  public override func saveSticky(_ draft: StickyDraft, at position: StickyPoint? = nil) async -> ActionOutcome {
     guard let client else { return .failed("没有连接到服务。") }
     do {
-      stickies = try await client.saveSticky(draft)
+      stickies = try await client.saveSticky(draft, at: position.map { ($0.x, $0.y) })
       markLoaded(.stickies)
       return .ok(draft.id == nil ? "写好了" : "改好了")
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      lastActionError = reason
+      return .failed(reason)
+    }
+  }
+
+  public override func moveSticky(_ id: Sticky.ID, to position: StickyPoint) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      stickies = try await client.moveSticky(id, x: position.x, y: position.y)
+      markLoaded(.stickies)
+      // No toast: a drag is its own feedback, and a toast on every drop is noise.
+      return .ok(nil)
     } catch {
       let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
       lastActionError = reason

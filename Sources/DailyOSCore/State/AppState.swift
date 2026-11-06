@@ -560,8 +560,14 @@ open class AppState {
   // surfacing count without the board being open. Writes return the whole list
   // resolved against today, so they reconcile without a full reload.
 
-  /// Create a sticky, or edit the text/colour of the one carrying `id`.
-  open func saveSticky(_ draft: StickyDraft) async -> ActionOutcome {
+  /// Create a sticky, or edit the text/colour of the one carrying `id`. `at` is
+  /// the canvas spot the board picked for a brand-new note; nil on an edit.
+  open func saveSticky(_ draft: StickyDraft, at position: StickyPoint? = nil) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  /// Persist a note's new canvas position after a drag. Schedule is untouched.
+  open func moveSticky(_ id: Sticky.ID, to position: StickyPoint) async -> ActionOutcome {
     .unsupported("这一版没有连接到服务。")
   }
 
