@@ -352,6 +352,47 @@ public enum MockData {
     ),
   ]
 
+  // MARK: 便签
+
+  /// A wall with a couple awake and a couple asleep, so the two bands both
+  /// render. The `nextSurface` dates are fixed against the same 2026-04-01 the
+  /// countdown fixture uses, for the same reason — a fixture that recomputes
+  /// itself can never be checked against a screenshot.
+  public static let stickies: [Sticky] = [
+    Sticky(
+      id: "st_energy",
+      text: "问 Heng：agent 轨迹能耗怎么做归一化，按 token 还是按墙钟时间",
+      color: .blue,
+      box: 1,
+      nextSurface: "2026-03-30",
+      surfacing: true
+    ),
+    Sticky(
+      id: "st_circuit",
+      text: "circuit tracing 那条线，先读完 Anthropic 那篇再决定要不要开",
+      color: .yellow,
+      box: 0,
+      nextSurface: "2026-04-01",
+      surfacing: true
+    ),
+    Sticky(
+      id: "st_badminton",
+      text: "周四订羽毛球场",
+      color: .green,
+      box: 2,
+      nextSurface: "2026-04-09",
+      surfacing: false
+    ),
+    Sticky(
+      id: "st_visa",
+      text: "转 Polymtl 的 CAQ/学签改派，开学前三个月弄",
+      color: .pink,
+      box: 3,
+      nextSurface: "2026-04-17",
+      surfacing: false
+    ),
+  ]
+
   // MARK: OKR
 
   public static let okrFiles: [OkrFile] = [

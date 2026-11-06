@@ -42,6 +42,9 @@ open class AppState {
   /// at home; different only while the person is somewhere else, which is the
   /// one case the screen says so.
   public var countdownCardTimezone: String = ""
+  /// 便签 (LEO-355): sticky notes, ordered by the service — the ones surfacing
+  /// today first. Resolved against today the same way countdowns are.
+  public var stickies: [Sticky]
   public var runs: [WorkflowRun]
   public var artifacts: [Artifact]
   public var schedules: [ScheduleEntry]
@@ -228,6 +231,7 @@ open class AppState {
     countdowns = MockData.countdowns
     countdownTimezone = MockData.countdownTimezone
     countdownCardTimezone = MockData.countdownTimezone
+    stickies = MockData.stickies
     runs = MockData.runs
     artifacts = MockData.artifacts
     schedules = MockData.schedules
@@ -547,6 +551,27 @@ open class AppState {
   /// Pin or unpin, which is the one edit worth its own one-tap path: pinning is
   /// how an entry gets onto the morning card.
   open func toggleCountdownPin(_ id: Countdown.ID) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  // MARK: - 便签 (LEO-355)
+  //
+  // Part of the global reload, like countdowns — the Today-page hook needs the
+  // surfacing count without the board being open. Writes return the whole list
+  // resolved against today, so they reconcile without a full reload.
+
+  /// Create a sticky, or edit the text/colour of the one carrying `id`.
+  open func saveSticky(_ draft: StickyDraft) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  /// Apply a response to a surfaced note — done / keep / ok — and reschedule it.
+  open func surfaceSticky(_ id: Sticky.ID, _ response: SurfaceResponse) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
+  /// Archive a note so it drops off the wall and stops surfacing.
+  open func archiveSticky(_ id: Sticky.ID) async -> ActionOutcome {
     .unsupported("这一版没有连接到服务。")
   }
 

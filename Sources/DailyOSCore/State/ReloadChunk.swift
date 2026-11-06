@@ -17,6 +17,7 @@ public enum ReloadChunk: String, CaseIterable, Sendable {
   case artifacts = "产物"
   case okr = "OKR"
   case countdowns = "倒数日"
+  case stickies = "便签"
   case service = "服务状态"
   case chat = "对话"
 
@@ -101,6 +102,8 @@ extension AppState {
       // line qualifying counts that are no longer on screen.
       countdownTimezone = ""
       countdownCardTimezone = ""
+    case .stickies:
+      stickies = []
     case .chat:
       threads = []
       selectedThreadID = nil
