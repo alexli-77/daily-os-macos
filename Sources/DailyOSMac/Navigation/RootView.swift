@@ -33,6 +33,7 @@ struct SectionView: View {
     case .okr: OKRScreen()
     case .countdown: CountdownScreen()
     case .journal: JournalScreen()
+    case .stickies: StickyBoardScreen()
     case .runs: RunsScreen()
     case .artifacts: ArtifactsScreen()
     case .schedules: SchedulesScreen()

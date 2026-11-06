@@ -31,7 +31,7 @@ public final class LiveAppState: AppState {
   /// a new section in one and not the other would either mark a live screen as
   /// fixture or claim a fixture screen is live, and neither shows up until
   /// someone reconnects.
-  private static let liveSections: Set<AppSection> = [.today, .cycles, .routine, .okr, .countdown, .artifacts, .settings]
+  private static let liveSections: Set<AppSection> = [.today, .cycles, .routine, .okr, .countdown, .stickies, .artifacts, .settings]
 
   public init(connection: ServiceConnection) {
     self.connection = connection
@@ -63,6 +63,7 @@ public final class LiveAppState: AppState {
     countdowns = []
     countdownTimezone = ""
     countdownCardTimezone = ""
+    stickies = []
     runs = []
     artifacts = []
     schedules = []
@@ -260,6 +261,10 @@ public final class LiveAppState: AppState {
       self.apply(try await client.countdowns())
     }
 
+    await load(.stickies) {
+      self.stickies = try await client.stickies()
+    }
+
     await load(.service) {
       self.service = try await client.serviceStatus()
     }
@@ -405,6 +410,55 @@ public final class LiveAppState: AppState {
       apply(try await client.deleteCountdown(id: id))
       markLoaded(.countdowns)
       return .ok("已删除")
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      lastActionError = reason
+      return .failed(reason)
+    }
+  }
+
+  // MARK: 便签 (LEO-355)
+  //
+  // Like the countdown writes: each takes the resolved list straight out of the
+  // response rather than calling `reload()`, since nothing else reads the
+  // sticky store and the service already answers with the whole wall.
+
+  public override func saveSticky(_ draft: StickyDraft) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      stickies = try await client.saveSticky(draft)
+      markLoaded(.stickies)
+      return .ok(draft.id == nil ? "写好了" : "改好了")
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      lastActionError = reason
+      return .failed(reason)
+    }
+  }
+
+  public override func surfaceSticky(_ id: Sticky.ID, _ response: SurfaceResponse) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      stickies = try await client.surfaceSticky(id, response: response)
+      markLoaded(.stickies)
+      switch response {
+      case .done: return .ok("完成，收起来了")
+      case .keep: return .ok("过两天再来找你")
+      case .ok: return .ok("知道了，往后放一放")
+      }
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      lastActionError = reason
+      return .failed(reason)
+    }
+  }
+
+  public override func archiveSticky(_ id: Sticky.ID) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      stickies = try await client.archiveSticky(id)
+      markLoaded(.stickies)
+      return .ok("收起来了")
     } catch {
       let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
       lastActionError = reason

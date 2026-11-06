@@ -201,6 +201,9 @@ struct TodayScreen: View {
       // 今日 AI 播报 — a shared daily brief pulled live off the radar's public
       // files. Today only, for the same reason the team list is.
       if !state.isViewingPast { BroadcastCard() }
+      // 便签 (LEO-355): the hook that keeps the wall from becoming a drawer you
+      // forget. Shown only when notes have surfaced today, and only on today.
+      if !state.isViewingPast { StickyHook() }
     }
   }
 
@@ -2827,6 +2830,46 @@ private struct DayReviewPanel: View {
     case .done: .ok
     case .progressed: .accent
     case .open: .neutral
+    }
+  }
+}
+
+/// 便签 (LEO-355): a one-line nudge in the Today rail when sticky notes have
+/// surfaced for the day. This is the whole reason the wall does not rot — a
+/// board you must remember to open is a drawer; a line that appears on the page
+/// you already open every morning is a reminder. Silent when nothing is due.
+private struct StickyHook: View {
+  @Environment(AppState.self) private var state
+
+  private var count: Int { state.stickies.filter(\.surfacing).count }
+
+  var body: some View {
+    if count > 0 {
+      Button {
+        state.section = .stickies
+      } label: {
+        HStack(spacing: Metrics.sm) {
+          Image(systemName: "note.text")
+            .foregroundStyle(Palette.moss)
+          Text("今天冒头 \(count) 张便签")
+            .inkStyle(Typo.bodyStrong)
+          Spacer(minLength: Metrics.xs)
+          Image(systemName: "chevron.right")
+            .font(Typo.caption)
+            .foregroundStyle(Palette.inkMuted)
+        }
+        .padding(.horizontal, Metrics.panelPadding)
+        .padding(.vertical, Metrics.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusMedium, style: .continuous))
+        .overlay(
+          RoundedRectangle(cornerRadius: Metrics.radiusMedium, style: .continuous)
+            .strokeBorder(Palette.line, lineWidth: Metrics.hairline)
+        )
+      }
+      .buttonStyle(.plain)
+      .help("去便签墙看看")
     }
   }
 }
