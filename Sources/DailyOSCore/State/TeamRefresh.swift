@@ -79,4 +79,11 @@ extension AppState {
     teamToday = entries
     teamTodaySync = sync
   }
+
+  /// Replace teammates' shared sticky boards (LEO-358). Read-only and
+  /// unselectable like `applyTeamToday`, so this is a straight swap.
+  public func applyTeamStickies(entries: [TeamStickyEntry], sync: TeamSyncState) {
+    teamStickies = entries
+    teamStickiesSync = sync
+  }
 }

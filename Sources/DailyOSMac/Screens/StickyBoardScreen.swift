@@ -30,16 +30,20 @@ struct StickyBoardScreen: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.md) {
       header
-      if state.stickies.isEmpty {
-        Panel {
-          EmptyState(
-            icon: "note.text",
-            title: "还没有便签",
-            message: "记点小事——一个想法、要问的、别忘的。写下后它就钉在这块板上，你拖到哪它就待在哪、想多大就拉多大；每隔几天自己醒一次（🔔）提醒你还惦记着。"
-          )
+      if state.isViewingSelf {
+        if state.stickies.isEmpty {
+          Panel {
+            EmptyState(
+              icon: "note.text",
+              title: "还没有便签",
+              message: "记点小事——一个想法、要问的、别忘的。写下后它就钉在这块板上，你拖到哪它就待在哪、想多大就拉多大；每隔几天自己醒一次（🔔）提醒你还惦记着。"
+            )
+          }
+        } else {
+          canvas
         }
       } else {
-        canvas
+        teammateBoard
       }
     }
     .padding(Metrics.screenPadding)
@@ -72,12 +76,43 @@ struct StickyBoardScreen: View {
         + Text(subtitle.map { "    \($0)" } ?? "").font(Typo.caption).foregroundColor(Palette.ink2))
         .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: Metrics.sm)
-      Button("写一张") { editing = StickyDraft() }
-        .buttonStyle(MossButtonStyle())
+      if hasTeammates { whosePicker }
+      if state.isViewingSelf {
+        Button("写一张") { editing = StickyDraft() }
+          .buttonStyle(MossButtonStyle())
+      }
     }
   }
 
+  private var hasTeammates: Bool { state.members.contains { !$0.isSelf } }
+
+  /// 看谁的 — reuses the same `viewingMemberID` selector the Today and Cycles
+  /// teammate views use, so "我 / 队友" is one choice across the app.
+  private var whosePicker: some View {
+    @Bindable var state = state
+    return Menu {
+      ForEach(state.members) { member in
+        Button {
+          state.viewingMemberID = member.id
+        } label: {
+          Label(member.isSelf ? "我" : member.displayName, systemImage: member.id == state.viewingMemberID ? "checkmark" : "")
+        }
+      }
+    } label: {
+      HStack(spacing: Metrics.xxs) {
+        Image(systemName: "person.2")
+        Text(state.isViewingSelf ? "我的" : (state.viewingMember?.displayName ?? "队友"))
+      }
+      .font(Typo.caption)
+    }
+    .menuStyle(.borderlessButton)
+    .fixedSize()
+  }
+
   private var subtitle: String? {
+    if !state.isViewingSelf {
+      return "只读 · \(state.viewingMember?.displayName ?? "队友")共享的板"
+    }
     guard !state.stickies.isEmpty else { return nil }
     let up = state.stickies.filter(\.surfacing).count
     if up == 0 { return "都在睡 · 拖着摆、拉角改大小" }
@@ -102,11 +137,73 @@ struct StickyBoardScreen: View {
             position: entry.point,
             width: width(for: entry.item),
             height: height(for: entry.item),
+            readOnly: false,
             onMove: { commitMove(entry.item.id, to: $0) },
             onResize: { commitResize(entry.item.id, to: $0) },
             onEdit: { editing = StickyDraft(editing: entry.item) },
             onArchive: { run { await state.archiveSticky(entry.item.id) } },
             onRespond: { response in run { await state.surfaceSticky(entry.item.id, response) } }
+          )
+        }
+      }
+      .frame(width: bounds.width, height: bounds.height, alignment: .topLeading)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .clipShape(RoundedRectangle(cornerRadius: StickyTile.radius, style: .continuous))
+  }
+
+  // MARK: Teammate board (read-only, LEO-358)
+
+  @ViewBuilder
+  private var teammateBoard: some View {
+    let entry = state.teamStickies.first { $0.id == state.viewingMemberID }
+    if let entry, !entry.stickies.isEmpty {
+      readOnlyCanvas(entry.stickies)
+    } else {
+      Panel {
+        EmptyState(
+          icon: "person.crop.circle",
+          title: "\(state.viewingMember?.displayName ?? "这位队友")没有共享便签",
+          message: entry?.hasBoard == true
+            ? "他们的板现在是空的。"
+            : "只有当对方在设置里开启「把便签板共享给 team」时，你才会在这里看到他们的便签。"
+        )
+      }
+    }
+  }
+
+  /// A teammate's board, laid out from the positions and sizes they pushed, with
+  /// every gesture and control stripped — their notes are theirs to move.
+  private func readOnlyCanvas(_ list: [Sticky]) -> some View {
+    var unplaced = 0
+    let placed: [Placed] = list.map { item in
+      let point: CGPoint
+      if let x = item.x, let y = item.y {
+        point = CGPoint(x: x, y: y)
+      } else {
+        point = gridSlot(unplaced)
+        unplaced += 1
+      }
+      return Placed(item: item, point: point)
+    }
+    let bounds = canvasBounds(placed)
+    return ScrollView([.horizontal, .vertical]) {
+      ZStack(alignment: .topLeading) {
+        RoundedRectangle(cornerRadius: StickyTile.radius, style: .continuous)
+          .fill(Palette.surface.opacity(0.4))
+          .frame(width: bounds.width, height: bounds.height)
+        ForEach(placed, id: \.item.id) { entry in
+          StickyTile(
+            item: entry.item,
+            position: entry.point,
+            width: width(for: entry.item),
+            height: height(for: entry.item),
+            readOnly: true,
+            onMove: { _ in },
+            onResize: { _ in },
+            onEdit: {},
+            onArchive: {},
+            onRespond: { _ in }
           )
         }
       }
@@ -199,6 +296,8 @@ private struct StickyTile: View {
   let width: CGFloat
   /// nil = content-driven height.
   let height: CGFloat?
+  /// A teammate's board: render the note, strip every gesture and control.
+  let readOnly: Bool
   let onMove: (CGPoint) -> Void
   let onResize: (CGSize) -> Void
   let onEdit: () -> Void
@@ -239,7 +338,7 @@ private struct StickyTile: View {
           .fixedSize(horizontal: false, vertical: shownHeight == nil)
       }
 
-      if item.surfacing {
+      if item.surfacing && !readOnly {
         Divider().overlay(Self.ink.opacity(0.18))
         HStack(spacing: Metrics.xs) {
           response("完成", .done)
@@ -264,24 +363,26 @@ private struct StickyTile: View {
         tileButton("xmark", help: item.surfacing ? "收起来" : "不用了，收起来", action: onArchive)
       }
       .padding(Metrics.xs)
-      .opacity(hovering && !dragging ? 1 : 0)
+      .opacity(hovering && !dragging && !readOnly ? 1 : 0)
     }
-    .overlay(alignment: .bottomTrailing) { resizeHandle }
+    .overlay(alignment: .bottomTrailing) { if !readOnly { resizeHandle } }
     .shadow(color: .black.opacity(dragging ? 0.18 : 0.06), radius: dragging ? 10 : 3, y: dragging ? 6 : 1)
     .opacity(item.surfacing ? 1 : 0.82)
     .offset(x: position.x + translation.width, y: position.y + translation.height)
     .zIndex(dragging || liveSize != nil ? 1 : 0)
     .onHover { hovering = $0 }
-    .onTapGesture(count: 2, perform: onEdit)
+    .onTapGesture(count: 2) { if !readOnly { onEdit() } }
     .gesture(
       // minimumDistance keeps a click on a button a click, not a micro-drag.
+      // Disabled on a teammate's board — their notes are not ours to move.
       DragGesture(minimumDistance: 6, coordinateSpace: .local)
         .updating($translation) { value, state, _ in state = value.translation }
         .onChanged { _ in if !dragging { dragging = true } }
         .onEnded { value in
           dragging = false
           onMove(CGPoint(x: position.x + value.translation.width, y: position.y + value.translation.height))
-        }
+        },
+      including: readOnly ? .subviews : .all
     )
     .animation(.easeInOut(duration: 0.12), value: dragging)
     .animation(.easeInOut(duration: 0.12), value: hovering)
@@ -470,6 +571,14 @@ private enum StickyTileFill {
 #Preview("便签 · 空") {
   let state = AppState.previewOwner()
   state.stickies = []
+  return StickyBoardScreen()
+    .environment(state)
+    .frame(width: 940, height: 760)
+}
+
+#Preview("便签 · 队友只读") {
+  let state = AppState.previewOwner()
+  state.viewingMemberID = "u_partner"
   return StickyBoardScreen()
     .environment(state)
     .frame(width: 940, height: 760)

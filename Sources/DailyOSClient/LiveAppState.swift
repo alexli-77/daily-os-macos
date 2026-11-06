@@ -73,6 +73,8 @@ public final class LiveAppState: AppState {
     teamSync = nil
     teamToday = []
     teamTodaySync = nil
+    teamStickies = []
+    teamStickiesSync = nil
     hasPlan = false
     planStaleDate = nil
     planGeneratedAt = nil
@@ -244,6 +246,14 @@ public final class LiveAppState: AppState {
       let team = try await client.teamToday()
       self.teamToday = team.entries
       self.teamTodaySync = team.sync
+    }
+
+    await load(.teamStickies) {
+      // The same sync cache again (LEO-358): teammates who share a board come
+      // back with it; those who don't are simply absent from the list.
+      let team = try await client.teamStickies()
+      self.teamStickies = team.entries
+      self.teamStickiesSync = team.sync
     }
 
     await load(.artifacts) {
@@ -1109,6 +1119,9 @@ public final class LiveAppState: AppState {
 
     if let team = try? await client.teamToday() {
       applyTeamToday(entries: team.entries, sync: team.sync)
+    }
+    if let board = try? await client.teamStickies() {
+      applyTeamStickies(entries: board.entries, sync: board.sync)
     }
     if let result = try? await client.cycles() {
       applyTeamCycles(members: result.members, cycles: result.teammates, sync: result.sync)

@@ -500,6 +500,12 @@ final class SettingsStore {
     ])
   }
 
+  func stickyShareEdits(_ draft: SettingsDraft) -> ConfigEdits {
+    ConfigEdits(config: [
+      ConfigEdit(path: ["reminders", "share_with_team"], value: .bool(draft.shareStickies)),
+    ])
+  }
+
   var isBasicsDirty: Bool { basicsEdits(draft) != basicsEdits(original) }
   var isRhythmDirty: Bool { rhythmEdits(draft) != rhythmEdits(original) }
   var isRhythmTimesDirty: Bool { rhythmTimeEdits(draft) != rhythmTimeEdits(original) }
@@ -507,6 +513,7 @@ final class SettingsStore {
   var isFeishuDirty: Bool { feishuEdits(draft) != feishuEdits(original) }
   var isSourcesDirty: Bool { sourcesEdits(draft) != sourcesEdits(original) }
   var isWorkflowsDirty: Bool { workflowEdits(draft) != workflowEdits(original) }
+  var isStickyShareDirty: Bool { stickyShareEdits(draft) != stickyShareEdits(original) }
   /// The URL, or a key the user has started typing. The stored key is never read
   /// back, so it can only ever be compared against "did you type a new one".
   var isTeamConnectionDirty: Bool {
@@ -520,6 +527,7 @@ final class SettingsStore {
   func saveFeishu() async { await save("飞书设置", feishuEdits(draft)) }
   func saveSources() async { await save("数据源", sourcesEdits(draft)) }
   func saveWorkflows() async { await save("工作流", workflowEdits(draft)) }
+  func saveStickyShare() async { await save("便签共享", stickyShareEdits(draft)) }
 
   /// `caffeinate` only applies while the service process is alive, so this is a
   /// service setting and lives with the launchd panel rather than with the

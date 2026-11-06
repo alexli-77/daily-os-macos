@@ -177,6 +177,30 @@ public struct TeamTodayEntry: Sendable, Equatable, Identifiable {
   }
 }
 
+/// One teammate's shared sticky board, as their machine last pushed it (LEO-358).
+///
+/// Read-only by construction, like `TeamTodayEntry`: the stickies carry their
+/// owner's positions and sizes, but there is nothing to drag or edit on this
+/// side — the service refuses any write naming another owner. `nil`/empty
+/// `stickies` with `hasBoard == false` means this teammate shares nothing.
+public struct TeamStickyEntry: Sendable, Equatable, Identifiable {
+  /// The member's uuid, never a display label.
+  public let id: String
+  public var displayName: String
+  public var stickies: [Sticky]
+  public var hasBoard: Bool
+  /// When their machine last pushed this board.
+  public var updatedAt: Date?
+
+  public init(id: String, displayName: String, stickies: [Sticky], hasBoard: Bool, updatedAt: Date?) {
+    self.id = id
+    self.displayName = displayName
+    self.stickies = stickies
+    self.hasBoard = hasBoard
+    self.updatedAt = updatedAt
+  }
+}
+
 // MARK: - Cycles
 
 public enum CycleMode: String, Sendable, CaseIterable {
