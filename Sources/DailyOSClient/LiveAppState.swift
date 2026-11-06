@@ -450,6 +450,19 @@ public final class LiveAppState: AppState {
     }
   }
 
+  public override func resizeSticky(_ id: Sticky.ID, to size: StickySize) async -> ActionOutcome {
+    guard let client else { return .failed("没有连接到服务。") }
+    do {
+      stickies = try await client.resizeSticky(id, w: size.w, h: size.h)
+      markLoaded(.stickies)
+      return .ok(nil)
+    } catch {
+      let reason = (error as? ClientError)?.errorDescription ?? error.localizedDescription
+      lastActionError = reason
+      return .failed(reason)
+    }
+  }
+
   public override func surfaceSticky(_ id: Sticky.ID, _ response: SurfaceResponse) async -> ActionOutcome {
     guard let client else { return .failed("没有连接到服务。") }
     do {

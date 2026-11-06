@@ -1,29 +1,30 @@
 import SwiftUI
 import DailyOSCore
 
-/// 便签墙 (LEO-355 · 自由画布 LEO-356).
+/// 便签墙 (LEO-355 · 自由画布 LEO-356 · 大圆角与改尺寸 LEO-357).
 ///
 /// A free canvas of sticky notes for small things with no deadline. Nothing here
-/// nags. Each note carries its own `x,y`: you drag it where you want and it stays
-/// there — position is yours, not the schedule's. Spaced repetition still runs,
-/// but it only flips a note's badge (💤 asleep → 🔔 awake) and shows the
-/// response row in place, never moving the note. The "N surfaced today" nudge
-/// lives on the Today page, not here.
+/// nags. Each note carries its own `x,y` and optional `w,h`: you drag it where
+/// you want, drag its corner to resize it, and it stays. Position and size are
+/// yours, not the schedule's. Spaced repetition still runs, but it only flips a
+/// note's badge (💤 asleep → 🔔 awake) and shows the response row in place, never
+/// moving the note. The "N surfaced today" nudge lives on the Today page.
 ///
 /// Not a list screen: the whole point of a sticky wall is a note you recognise
-/// by colour and *where you left it*, so these are tiles on a board you scroll in
-/// two directions, not rows in a ledger.
+/// by colour, size and *where you left it*, so these are tiles on a board you
+/// scroll in two directions, not rows in a ledger.
 struct StickyBoardScreen: View {
   @Environment(AppState.self) private var state
   @State private var editing: StickyDraft?
 
-  /// Positions the user just dropped a note at, held locally so the tile lands
-  /// smoothly the instant a drag ends rather than after the service round-trip.
-  /// The resolved list comes back with the same coordinates, so these stay in
+  /// Geometry the user just dropped/resized a note at, held locally so the tile
+  /// settles the instant a gesture ends rather than after the service round-trip.
+  /// The resolved list comes back with the same numbers, so these stay in
   /// agreement; a stale entry is harmless (it only ever equals the truth).
   @State private var dropped: [Sticky.ID: CGPoint] = [:]
+  @State private var resized: [Sticky.ID: CGSize] = [:]
 
-  private let tileWidth: CGFloat = 200
+  private let defaultWidth: CGFloat = 200
   private let margin: CGFloat = 40
 
   var body: some View {
@@ -34,7 +35,7 @@ struct StickyBoardScreen: View {
           EmptyState(
             icon: "note.text",
             title: "还没有便签",
-            message: "记点小事——一个想法、要问的、别忘的。写下后它就钉在这块板上，你拖到哪它就待在哪；每隔几天自己醒一次（🔔）提醒你还惦记着。"
+            message: "记点小事——一个想法、要问的、别忘的。写下后它就钉在这块板上，你拖到哪它就待在哪、想多大就拉多大；每隔几天自己醒一次（🔔）提醒你还惦记着。"
           )
         }
       } else {
@@ -79,8 +80,8 @@ struct StickyBoardScreen: View {
   private var subtitle: String? {
     guard !state.stickies.isEmpty else { return nil }
     let up = state.stickies.filter(\.surfacing).count
-    if up == 0 { return "都在睡 · 拖着随便摆" }
-    return "\(up) 张冒头了（🔔）· 拖着随便摆"
+    if up == 0 { return "都在睡 · 拖着摆、拉角改大小" }
+    return "\(up) 张冒头了（🔔）· 拖着摆、拉角改大小"
   }
 
   // MARK: Canvas
@@ -91,7 +92,7 @@ struct StickyBoardScreen: View {
     return ScrollView([.horizontal, .vertical]) {
       ZStack(alignment: .topLeading) {
         // A faint board so the scrollable area reads as a surface, not a void.
-        RoundedRectangle(cornerRadius: Metrics.radiusMedium, style: .continuous)
+        RoundedRectangle(cornerRadius: StickyTile.radius, style: .continuous)
           .fill(Palette.surface.opacity(0.4))
           .frame(width: bounds.width, height: bounds.height)
 
@@ -99,8 +100,10 @@ struct StickyBoardScreen: View {
           StickyTile(
             item: entry.item,
             position: entry.point,
-            width: tileWidth,
+            width: width(for: entry.item),
+            height: height(for: entry.item),
             onMove: { commitMove(entry.item.id, to: $0) },
+            onResize: { commitResize(entry.item.id, to: $0) },
             onEdit: { editing = StickyDraft(editing: entry.item) },
             onArchive: { run { await state.archiveSticky(entry.item.id) } },
             onRespond: { response in run { await state.surfaceSticky(entry.item.id, response) } }
@@ -110,10 +113,10 @@ struct StickyBoardScreen: View {
       .frame(width: bounds.width, height: bounds.height, alignment: .topLeading)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusMedium, style: .continuous))
+    .clipShape(RoundedRectangle(cornerRadius: StickyTile.radius, style: .continuous))
   }
 
-  // MARK: Placement
+  // MARK: Geometry
 
   private struct Placed { let item: Sticky; let point: CGPoint }
 
@@ -136,11 +139,21 @@ struct StickyBoardScreen: View {
     }
   }
 
+  private func width(for item: Sticky) -> CGFloat {
+    resized[item.id]?.width ?? item.w.map { CGFloat($0) } ?? defaultWidth
+  }
+
+  /// nil means content-driven height — the note hugs its text until the user
+  /// drags the resize handle, which fixes an explicit height.
+  private func height(for item: Sticky) -> CGFloat? {
+    resized[item.id]?.height ?? item.h.map { CGFloat($0) }
+  }
+
   private func gridSlot(_ index: Int) -> CGPoint {
     let columns = 3
     let col = index % columns
     let row = index / columns
-    return CGPoint(x: margin + CGFloat(col) * (tileWidth + 30), y: margin + CGFloat(row) * 170)
+    return CGPoint(x: margin + CGFloat(col) * (defaultWidth + 30), y: margin + CGFloat(row) * 170)
   }
 
   /// A cascading spot for a brand-new note, nudged by how many already exist so
@@ -151,10 +164,9 @@ struct StickyBoardScreen: View {
   }
 
   private func canvasBounds(_ placed: [Placed]) -> CGSize {
-    let right = placed.map { $0.point.x }.max() ?? 0
-    let bottom = placed.map { $0.point.y }.max() ?? 0
-    // Generous tile-height allowance so a long note near the edge still has room.
-    return CGSize(width: max(1000, right + tileWidth + margin), height: max(680, bottom + 220 + margin))
+    let right = placed.map { $0.point.x + width(for: $0.item) }.max() ?? 0
+    let bottom = placed.map { $0.point.y + (height(for: $0.item) ?? 200) }.max() ?? 0
+    return CGSize(width: max(1000, right + margin), height: max(680, bottom + margin))
   }
 
   private func commitMove(_ id: Sticky.ID, to point: CGPoint) {
@@ -162,6 +174,11 @@ struct StickyBoardScreen: View {
     let clamped = CGPoint(x: max(margin / 2, point.x), y: max(margin / 2, point.y))
     dropped[id] = clamped
     run { await state.moveSticky(id, to: StickyPoint(x: Double(clamped.x), y: Double(clamped.y))) }
+  }
+
+  private func commitResize(_ id: Sticky.ID, to size: CGSize) {
+    resized[id] = size
+    run { await state.resizeSticky(id, to: StickySize(w: Double(size.width), h: Double(size.height))) }
   }
 
   private func run(_ action: @escaping () async -> AppState.ActionOutcome) {
@@ -180,14 +197,34 @@ private struct StickyTile: View {
   let item: Sticky
   let position: CGPoint
   let width: CGFloat
+  /// nil = content-driven height.
+  let height: CGFloat?
   let onMove: (CGPoint) -> Void
+  let onResize: (CGSize) -> Void
   let onEdit: () -> Void
   let onArchive: () -> Void
   let onRespond: (SurfaceResponse) -> Void
 
   @GestureState private var translation: CGSize = .zero
   @State private var dragging = false
+  @State private var liveSize: CGSize?
   @State private var hovering = false
+
+  /// Sticky notes get a big, soft corner on purpose — the one place the app
+  /// departs from the 4pt "paper" radius, because a sticky should read as a
+  /// physical scrap, not another surface.
+  static let radius: CGFloat = 16
+
+  /// Resize bounds, mirrored from the service's `STICKY_SIZE` clamp.
+  private static let minW: CGFloat = 140
+  private static let maxW: CGFloat = 460
+  private static let minH: CGFloat = 72
+  private static let maxH: CGFloat = 560
+  /// Height the first resize starts from when a note is still auto-height.
+  private static let autoBaseH: CGFloat = 140
+
+  private var shownWidth: CGFloat { liveSize?.width ?? width }
+  private var shownHeight: CGFloat? { liveSize?.height ?? height }
 
   var body: some View {
     VStack(alignment: .leading, spacing: Metrics.xs) {
@@ -198,8 +235,8 @@ private struct StickyTile: View {
           .foregroundStyle(Self.ink)
           .frame(maxWidth: .infinity, alignment: .leading)
           .multilineTextAlignment(.leading)
-          .lineLimit(item.surfacing ? 7 : 4)
-          .fixedSize(horizontal: false, vertical: true)
+          .lineLimit(shownHeight == nil ? (item.surfacing ? 7 : 4) : nil)
+          .fixedSize(horizontal: false, vertical: shownHeight == nil)
       }
 
       if item.surfacing {
@@ -210,13 +247,14 @@ private struct StickyTile: View {
           response("知道了", .ok)
         }
       }
+      if shownHeight != nil { Spacer(minLength: 0) }
     }
     .padding(Metrics.sm)
-    .frame(width: width, alignment: .topLeading)
+    .frame(width: shownWidth, height: shownHeight, alignment: .topLeading)
     .background(StickyTileFill.of(item.color))
-    .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusMedium, style: .continuous))
+    .clipShape(RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
     .overlay(
-      RoundedRectangle(cornerRadius: Metrics.radiusMedium, style: .continuous)
+      RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
         .strokeBorder(Self.ink.opacity(0.10), lineWidth: Metrics.hairline)
     )
     .overlay(alignment: .topTrailing) {
@@ -228,10 +266,11 @@ private struct StickyTile: View {
       .padding(Metrics.xs)
       .opacity(hovering && !dragging ? 1 : 0)
     }
+    .overlay(alignment: .bottomTrailing) { resizeHandle }
     .shadow(color: .black.opacity(dragging ? 0.18 : 0.06), radius: dragging ? 10 : 3, y: dragging ? 6 : 1)
     .opacity(item.surfacing ? 1 : 0.82)
     .offset(x: position.x + translation.width, y: position.y + translation.height)
-    .zIndex(dragging ? 1 : 0)
+    .zIndex(dragging || liveSize != nil ? 1 : 0)
     .onHover { hovering = $0 }
     .onTapGesture(count: 2, perform: onEdit)
     .gesture(
@@ -258,6 +297,35 @@ private struct StickyTile: View {
       .clipShape(Circle())
       .help(item.surfacing ? "今天冒头了" : "沉睡中")
       .accessibilityLabel(item.surfacing ? "冒头" : "沉睡")
+  }
+
+  /// Bottom-right grip. `highPriorityGesture` so grabbing the corner resizes
+  /// rather than moving the note — the body's move drag never sees it.
+  private var resizeHandle: some View {
+    Image(systemName: "arrow.down.right")
+      .font(.system(size: 9, weight: .bold))
+      .foregroundStyle(Self.ink.opacity(0.55))
+      .frame(width: 18, height: 18)
+      .background(Self.ink.opacity(0.08))
+      .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+      .padding(Metrics.xxs)
+      .opacity(hovering || liveSize != nil ? 1 : 0)
+      .highPriorityGesture(
+        DragGesture(minimumDistance: 2, coordinateSpace: .local)
+          .onChanged { value in
+            let baseW = width
+            let baseH = height ?? Self.autoBaseH
+            liveSize = CGSize(
+              width: min(max(baseW + value.translation.width, Self.minW), Self.maxW),
+              height: min(max(baseH + value.translation.height, Self.minH), Self.maxH)
+            )
+          }
+          .onEnded { _ in
+            if let size = liveSize { onResize(size) }
+            liveSize = nil
+          }
+      )
+      .help("拖这里改大小")
   }
 
   private func response(_ label: String, _ value: SurfaceResponse) -> some View {
@@ -327,7 +395,7 @@ private struct StickyEditor: View {
         }
       }
 
-      Text("便签没有截止日。写下后它钉在板上，你拖到哪就待在哪；每隔几天自己醒一次来找你，你回应得越从容，它就睡得越久。")
+      Text("便签没有截止日。写下后它钉在板上，你拖到哪就待在哪、想多大就拉多大；每隔几天自己醒一次来找你，你回应得越从容，它就睡得越久。")
         .mutedStyle(Typo.caption)
         .fixedSize(horizontal: false, vertical: true)
 
