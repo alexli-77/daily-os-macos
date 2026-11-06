@@ -571,6 +571,11 @@ open class AppState {
     .unsupported("这一版没有连接到服务。")
   }
 
+  /// Persist a note's new canvas size after a resize drag. Schedule is untouched.
+  open func resizeSticky(_ id: Sticky.ID, to size: StickySize) async -> ActionOutcome {
+    .unsupported("这一版没有连接到服务。")
+  }
+
   /// Apply a response to a surfaced note — done / keep / ok — and reschedule it.
   open func surfaceSticky(_ id: Sticky.ID, _ response: SurfaceResponse) async -> ActionOutcome {
     .unsupported("这一版没有连接到服务。")

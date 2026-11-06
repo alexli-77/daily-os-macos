@@ -49,6 +49,10 @@ public struct Sticky: Identifiable, Sendable, Hashable {
   /// not yet dragged. The board lays those out and persists on first drag.
   public var x: Double?
   public var y: Double?
+  /// Canvas size (points), or nil until the user drags the resize handle; the
+  /// board then uses its default tile width and a content-driven height.
+  public var w: Double?
+  public var h: Double?
 
   public init(
     id: String,
@@ -58,7 +62,9 @@ public struct Sticky: Identifiable, Sendable, Hashable {
     nextSurface: String,
     surfacing: Bool = false,
     x: Double? = nil,
-    y: Double? = nil
+    y: Double? = nil,
+    w: Double? = nil,
+    h: Double? = nil
   ) {
     self.id = id
     self.text = text
@@ -68,6 +74,8 @@ public struct Sticky: Identifiable, Sendable, Hashable {
     self.surfacing = surfacing
     self.x = x
     self.y = y
+    self.w = w
+    self.h = h
   }
 }
 
@@ -79,6 +87,16 @@ public struct StickyPoint: Sendable, Equatable {
   public init(x: Double, y: Double) {
     self.x = x
     self.y = y
+  }
+}
+
+/// A canvas size in points, the resize sibling of `StickyPoint`.
+public struct StickySize: Sendable, Equatable {
+  public var w: Double
+  public var h: Double
+  public init(w: Double, h: Double) {
+    self.w = w
+    self.h = h
   }
 }
 
